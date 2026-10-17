@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { HTML_SPECS } from '../../src/adapters/html/specs.js'
+import { ravensburgerSpec } from '../../src/adapters/html/ravensburger.js'
 
 test('giochiuniti follows its sitemap into the igiochideigrandi catalog', async () => {
   const pages: Record<string, string> = {
@@ -30,7 +31,7 @@ test('ravensburger filters product pages from its italian sitemap', async () => 
       <url><loc>https://www.ravensburger.it/it-IT/brio/products/railway-toys/trains-wagons-vehicles/tow-truck-63352800</loc></url>
     </urlset>`,
   }
-  const urls = await HTML_SPECS.ravensburger.discover(async (u) => pages[u] ?? null)
+  const urls = await ravensburgerSpec.discover(async (u) => pages[u] ?? null)
   expect(urls).toEqual([
     'https://www.ravensburger.it/it-IT/ravensburger/products/jigsaw-puzzles/adult-puzzles/afterglow-12001471',
     'https://www.ravensburger.it/it-IT/brio/products/railway-toys/trains-wagons-vehicles/tow-truck-63352800',

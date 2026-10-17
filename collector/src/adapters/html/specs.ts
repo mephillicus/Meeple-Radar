@@ -2,11 +2,11 @@ import type { HtmlSourceSpec } from './crawl.js'
 import { uplaySpec } from './uplay.js'
 import { asmodeeSpec } from './asmodee.js'
 import { giochiunitiSpec } from './giochiuniti.js'
-import { ravensburgerSpec } from './ravensburger.js'
+import { philibertSpec } from './philibert.js'
 
 export const HTML_SPECS: Record<string, HtmlSourceSpec> = {
   uplay: uplaySpec,
   asmodee: asmodeeSpec,
   giochiuniti: giochiunitiSpec,
-  ravensburger: ravensburgerSpec,
+  philibert: philibertSpec,
 }
