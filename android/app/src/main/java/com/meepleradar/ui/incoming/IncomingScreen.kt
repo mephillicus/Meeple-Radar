@@ -19,6 +19,7 @@ import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.components.ErrorView
 import com.meepleradar.ui.components.ListingCard
 import com.meepleradar.ui.components.LoadingView
+import com.meepleradar.ui.components.ScreenContentInsets
 import com.meepleradar.ui.components.ScreenHeader
 
 @Composable
@@ -31,7 +32,10 @@ fun IncomingScreen(
 
     LaunchedEffect(Unit) { vm.refresh() }
 
-    Scaffold(modifier = modifier.fillMaxSize()) { padding ->
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        contentWindowInsets = ScreenContentInsets,
+    ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             ScreenHeader(title = "In arrivo", onRefresh = { vm.refresh() })
             when (val current = state) {

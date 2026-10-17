@@ -85,6 +85,12 @@ class IncomingViewModelTest {
         state as IncomingUiState.Content
         assertEquals(listOf("game:5"), state.items.map { it.key })
         assertEquals(setOf("game:5"), state.favorites)
+
+        viewModel.refresh()
+        assertEquals(IncomingUiState.Loading, viewModel.state.value)
+
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value is IncomingUiState.Content)
     }
 
     @Test
