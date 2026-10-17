@@ -27,9 +27,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.meepleradar.AppContainer
-import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.detail.DetailScreen
 import com.meepleradar.ui.detail.DetailViewModel
+import com.meepleradar.ui.favorites.FavoritesScreen
+import com.meepleradar.ui.favorites.FavoritesViewModel
 import com.meepleradar.ui.incoming.IncomingScreen
 import com.meepleradar.ui.incoming.IncomingViewModel
 
@@ -86,7 +87,15 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
             }
 
             composable(ROUTE_FAVORITES) {
-                EmptyView("Preferiti in arrivo")
+                val vm: FavoritesViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer { FavoritesViewModel(container.repository) }
+                    },
+                )
+                FavoritesScreen(
+                    vm = vm,
+                    onOpen = { item -> navController.navigate(detailRoute(item.key)) },
+                )
             }
 
             composable(
