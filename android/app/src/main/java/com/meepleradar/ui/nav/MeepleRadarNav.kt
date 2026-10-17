@@ -1,5 +1,6 @@
 package com.meepleradar.ui.nav
 
+import android.net.Uri
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -19,17 +20,26 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.meepleradar.AppContainer
 import com.meepleradar.ui.components.EmptyView
+import com.meepleradar.ui.detail.DetailScreen
+import com.meepleradar.ui.detail.DetailViewModel
 import com.meepleradar.ui.incoming.IncomingScreen
 import com.meepleradar.ui.incoming.IncomingViewModel
 
 const val ROUTE_INCOMING = "incoming"
 const val ROUTE_FAVORITES = "favorites"
+const val ROUTE_DETAIL = "detail/{key}"
+
+private const val ARG_KEY = "key"
+
+private fun detailRoute(key: String): String = "detail/${Uri.encode(key)}"
 
 @Composable
 fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
@@ -39,19 +49,21 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = currentRoute == ROUTE_INCOMING,
-                    onClick = { navController.switchTab(ROUTE_INCOMING) },
-                    icon = { Icon(Icons.Filled.Home, contentDescription = null) },
-                    label = { Text("In arrivo") },
-                )
-                NavigationBarItem(
-                    selected = currentRoute == ROUTE_FAVORITES,
-                    onClick = { navController.switchTab(ROUTE_FAVORITES) },
-                    icon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
-                    label = { Text("Preferiti") },
-                )
+            if (currentRoute != ROUTE_DETAIL) {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = currentRoute == ROUTE_INCOMING,
+                        onClick = { navController.switchTab(ROUTE_INCOMING) },
+                        icon = { Icon(Icons.Filled.Home, contentDescription = null) },
+                        label = { Text("In arrivo") },
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == ROUTE_FAVORITES,
+                        onClick = { navController.switchTab(ROUTE_FAVORITES) },
+                        icon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
+                        label = { Text("Preferiti") },
+                    )
+                }
             }
         },
         contentWindowInsets = WindowInsets(0),
@@ -67,11 +79,27 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         initializer { IncomingViewModel(container.repository) }
                     },
                 )
-                IncomingScreen(vm = vm, onOpen = { })
+                IncomingScreen(
+                    vm = vm,
+                    onOpen = { item -> navController.navigate(detailRoute(item.key)) },
+                )
             }
 
             composable(ROUTE_FAVORITES) {
                 EmptyView("Preferiti in arrivo")
+            }
+
+            composable(
+                route = ROUTE_DETAIL,
+                arguments = listOf(navArgument(ARG_KEY) { type = NavType.StringType }),
+            ) { entry ->
+                val key = entry.arguments?.getString(ARG_KEY).orEmpty()
+                val vm: DetailViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer { DetailViewModel(container.repository, key) }
+                    },
+                )
+                DetailScreen(vm = vm, onBack = { navController.popBackStack() })
             }
         }
     }
