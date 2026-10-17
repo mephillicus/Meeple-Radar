@@ -38,3 +38,44 @@ test('dvgiochi extract returns null when the page has no h2', () => {
   const html = `<html><body><div>nessun titolo</div></body></html>`
   expect(HTML_SPECS.dvgiochi.extract?.(html, 'https://www.dvgiochi.com/catalogo/senza-titolo/')).toBeNull()
 })
+
+const HG_LISTING = 'https://horribleguild.com/eu/shop/'
+
+test('horribleguild discovers only the /eu/product/ links from the shop listing', async () => {
+  const pages: Record<string, string> = {
+    [HG_LISTING]: `<html><body>
+      <a href="https://horribleguild.com/eu/product/railroad-ink-challenge/">Railroad Ink Challenge</a>
+      <a href="https://horribleguild.com/eu/product/kingdomino/">Kingdomino</a>
+      <a href="https://horribleguild.com/us/product/railroad-ink-challenge/">Railroad Ink Challenge (US)</a>
+      <a href="https://horribleguild.com/eu/cart/">Carrello</a>
+    </body></html>`,
+  }
+  const items = await HTML_SPECS.horribleguild.discover(async (u) => pages[u] ?? null)
+  expect(items).toEqual([
+    { url: 'https://horribleguild.com/eu/product/railroad-ink-challenge/' },
+    { url: 'https://horribleguild.com/eu/product/kingdomino/' },
+  ])
+})
+
+test('horribleguild extract reads the WooCommerce title and the EUR price', () => {
+  const html = `<html><body>
+    <h2 class="single-post-title product_title entry-title" itemprop="name">Railroad Ink Challenge</h2>
+    <div class="summary entry-summary">
+      <p class="price"><span class="woocommerce-Price-amount amount"><bdi>24.90<span>€</span></bdi></span></p>
+    </div>
+  </body></html>`
+  const product = HTML_SPECS.horribleguild.extract?.(html, 'https://horribleguild.com/eu/product/railroad-ink-challenge/')
+  expect(product?.title).toBe('Railroad Ink Challenge')
+  expect(product?.priceRaw).toBe('24.90')
+  expect(product?.currencyRaw).toBe('EUR')
+})
+
+test('horribleguild extract keeps priceRaw undefined when the page has no price', () => {
+  const html = `<html><body>
+    <h2 class="single-post-title product_title entry-title" itemprop="name">Railroad Ink Challenge</h2>
+    <div class="summary entry-summary"></div>
+  </body></html>`
+  const product = HTML_SPECS.horribleguild.extract?.(html, 'https://horribleguild.com/eu/product/railroad-ink-challenge/')
+  expect(product?.title).toBe('Railroad Ink Challenge')
+  expect(product?.priceRaw).toBeUndefined()
+})
