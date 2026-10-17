@@ -14,7 +14,7 @@ Meeple Radar ribalta il flusso: invece di andare a cercare, l'utente **riceve** 
 
 ## 2. Obiettivi (goals)
 
-- G1 — Aggregare le uscite dalle 14 fonti elencate nel txt (8 editori + 6 negozi).
+- G1 — Aggregare le uscite dalle fonti degli editori e dei negozi mappati (12 fonti: 6 editori + 6 negozi, dopo la rimozione di Kosmos e Stonemaier Games).
 - G2 — Mostrarle in un'unica interfaccia curata e accattivante, con **data di uscita** e **prezzo in euro (Italia)**.
 - G3 — Mostrare il **voto BGG** (e rank) quando il titolo esiste su BGG.
 - G4 — Su ogni voce: azione **Ignora** o **Preferito**.
@@ -43,7 +43,7 @@ Meeple Radar ribalta il flusso: invece di andare a cercare, l'utente **riceve** 
 
 - Sviluppo in **Android Studio**; stack **Kotlin + Jetpack Compose**, Material 3.
 - Progetto ospitato in `E:\Ai\appgiochi`. Sviluppo su Windows / PowerShell.
-- Fonti: le 14 del file `appgiochi\lista negozi e produttori.txt`.
+- Fonti: le 12 fonti configurate in `collector/src/sources.seed.ts` (il file txt di ricognizione è stato rimosso dal repo).
 - **Hosting (deciso): Opzione A "niente server"** — raccolta con **GitHub Actions** programmate, dati e API su **Supabase**, notifiche push con **Firebase Cloud Messaging**. Nessun server sempre attivo.
 - **Linguaggio del collector: Node.js (TypeScript)**, con **fetcher dedicati** per le fonti protette (sitemap+HTML e `curl` per le fonti Cloudflare).
 - Integrazione **BoardGameGeek XML API 2** (`boardgamegeek.com/xmlapi2`).
@@ -61,10 +61,8 @@ Ho sondato le fonti. **Buona notizia: la maggior parte espone dati strutturati**
 | Fonte | Piattaforma rilevata | Accesso effettivo | Stato |
 |---|---|---|---|
 | Cranio Creations | **Shopify** | `GET /products.json` ✅ | abilitata |
-| Kosmos | **Shopify** | `GET /products.json` ✅ | abilitata |
 | Ghenos Games | WordPress + WooCommerce | `GET /wp-json/wp/v2/product` ✅ | abilitata |
 | Pendragon Game Studio | WooCommerce | `GET /wp-json/wc/store/v1/products` ✅ | abilitata |
-| Stonemaier Games | WordPress (REST) | custom post type `smg_game` → `GET /wp-json/wp/v2/smg_game` ✅ (28) | abilitata |
 | Giochi Uniti | Sitemap index (Magento; prodotti su `igiochideigrandi.it`) | sitemap → parsing HTML/JSON-LD ✅ (40) | abilitata |
 | Ravensburger IT | Custom — base **`ravensburger.it`** (non più `.org`, la cui sitemap era vuota) | sitemap urlset (~2.476 prodotti) → parsing HTML/JSON-LD; Cloudflare: raggiungibile da **IP residenziale** (via `curl`), **bloccata dagli IP datacenter di Actions** | disabilitata |
 | Asmodee Italia | Custom — `product-sitemap.xml` | sitemap → parsing HTML/JSON-LD ✅ (40) | abilitata |
@@ -80,16 +78,16 @@ Ho sondato le fonti. **Buona notizia: la maggior parte espone dati strutturati**
 | DungeonDice | Anti-bot (Cloudflare) | tag Open Graph; raggiungibile da IP residenziale (via `curl`), **bloccata dagli IP datacenter di Actions** | disabilitata |
 | Magic Merchant | Anti-bot (Cloudflare, **managed challenge**) | blocca `fetch`, browser **e** `curl`; spec pronto ma fonte **disabilitata** | disabilitata |
 
-**Conseguenza per il design:** conviene un livello di **"adattatori" per fonte** (uno per piattaforma/metodo), così aggiungere o riparare una fonte non tocca il resto. Le fonti **Shopify** restano il caso più economico; sitemap+HTML coprono editori e negozi. Il discriminante reale è **Cloudflare**: le 4 fonti protette (uplay, Ravensburger, DungeonDice, Magic Merchant) sono raggiungibili **da IP residenziale** ma **bloccate dagli IP datacenter dei runner di Actions**. Per il kind `headless` esiste un fetcher **`curl`** in sottoprocesso (`src/adapters/headless/fetch.ts`) che in locale supera Cloudflare (Ravensburger/DungeonDice, non Magic Merchant), ma da CI non basta: quindi queste fonti restano **disabilitate** con lo spec pronto, pronte a riaccendersi da un'esecuzione non datacenter (es. self-hosted runner / PC di casa). Verifica end-to-end CI: **10/14 fonti abilitate**, `zeroed: []`.
+**Conseguenza per il design:** conviene un livello di **"adattatori" per fonte** (uno per piattaforma/metodo), così aggiungere o riparare una fonte non tocca il resto. Le fonti **Shopify** restano il caso più economico; sitemap+HTML coprono editori e negozi. Il discriminante reale è **Cloudflare**: le 4 fonti protette (uplay, Ravensburger, DungeonDice, Magic Merchant) sono raggiungibili **da IP residenziale** ma **bloccate dagli IP datacenter dei runner di Actions**. Per il kind `headless` esiste un fetcher **`curl`** in sottoprocesso (`src/adapters/headless/fetch.ts`) che in locale supera Cloudflare (Ravensburger/DungeonDice, non Magic Merchant), ma da CI non basta: quindi queste fonti restano **disabilitate** con lo spec pronto, pronte a riaccendersi da un'esecuzione non datacenter (es. self-hosted runner / PC di casa). Verifica end-to-end CI: **8/12 fonti abilitate**, `zeroed: []` (dopo la rimozione di Kosmos e Stonemaier Games).
 
 **Nota Telegram:** i canali Telegram non offrono un'API pulita per la lettura di *altri* canali (un bot non può leggere canali di terzi). Servirebbe un client MTProto (es. Telethon). Propongo di **escludere Telegram da v1** e valutarlo in seguito.
 
 ## 7. Architettura (deciso: Opzione A — "niente server")
 
-La raccolta non avviene sul telefono: 14 siti eterogenei, blocchi anti-bot e parser da aggiornare rendono l'app inaffidabile. Adottiamo l'Opzione A, senza server sempre attivo.
+La raccolta non avviene sul telefono: 12 siti eterogenei, blocchi anti-bot e parser da aggiornare rendono l'app inaffidabile. Adottiamo l'Opzione A, senza server sempre attivo.
 
 ```
-[14 fonti] --(adattatori)--> [ GitHub Actions  (Node.js, cron) ]
+[12 fonti] --(adattatori)--> [ GitHub Actions  (Node.js, cron) ]
                                      |                      |
                           [ Supabase: Postgres + API ]     [ BGG XML API 2 ]
                                      |
@@ -102,7 +100,7 @@ La raccolta non avviene sul telefono: 14 siti eterogenei, blocchi anti-bot e par
 
 1. **Collector — job Node.js su GitHub Actions**
    - Linguaggio: **Node.js / TypeScript**.
-   - Esecuzione: **workflow programmati** (es. più volte al giorno per gli store, giornaliero per gli editori). 2.000 min/mese gratuiti; run tipica ~20 min (dominata dai cataloghi grandi: Games Academy ~15.000, Kosmos ~5.400).
+   - Esecuzione: **workflow programmati** (es. più volte al giorno per gli store, giornaliero per gli editori). 2.000 min/mese gratuiti; run tipica ~20 min (dominata dal catalogo grande di Games Academy: ~15.000 prodotti).
    - **Fetcher dedicato per le fonti protette**: il kind `headless` usa un fetcher **`curl`** in sottoprocesso (`src/adapters/headless/fetch.ts`). In locale supera Cloudflare, ma **gli IP datacenter dei runner di Actions vengono sfidati** → le 4 fonti Cloudflare restano **disabilitate** (spec pronti per un'esecuzione non datacenter). Nessun browser (Playwright è stato rimosso: bloccato dalle stesse challenge).
    - Adattatori per fonte isolati tra loro: Shopify, WooCommerce, WordPress, Sitemap+HTML, HTML-crawl, fetcher protetto (`curl`).
    - Normalizzazione, deduplica, abbinamento a BGG, calcolo delle novità, invio push.
@@ -189,7 +187,7 @@ La raccolta non avviene sul telefono: 14 siti eterogenei, blocchi anti-bot e par
 **Tue (concordate):**
 
 - **13.A.1 Hosting = Opzione A "niente server"**: GitHub Actions (Node.js) + Supabase + Firebase Cloud Messaging. Gratuito, nessun server sempre attivo.
-- **13.A.2 v1 abilita 10 delle 14 fonti** (verificate end-to-end in CI). Le **4 fonti dietro Cloudflare** (uplay, Ravensburger, DungeonDice, Magic Merchant) sono raggiungibili da IP residenziale ma **bloccate dagli IP datacenter dei runner di Actions** → restano `enabled: false` con spec pronti, riaccendibili da un'esecuzione non datacenter (self-hosted runner / PC di casa). Magic Merchant in più ha una *managed challenge* JS che blocca anche `curl`.
+- **13.A.2 v1 abilita 8 delle 12 fonti** (verificate end-to-end in CI). Le **4 fonti dietro Cloudflare** (uplay, Ravensburger, DungeonDice, Magic Merchant) sono raggiungibili da IP residenziale ma **bloccate dagli IP datacenter dei runner di Actions** → restano `enabled: false` con spec pronti, riaccendibili da un'esecuzione non datacenter (self-hosted runner / PC di casa). Magic Merchant in più ha una *managed challenge* JS che blocca anche `curl`.
 - **13.A.3 Notifiche push con Firebase** (progetto Google da predisporre), con fallback locale.
 
 **Mie (verificabili — correggimi se qualcuna non ti va):**
@@ -206,7 +204,7 @@ La raccolta non avviene sul telefono: 14 siti eterogenei, blocchi anti-bot e par
 
 ## 14. Fasi proposte (il piano dettagliato seguirà)
 
-**Criterio di "fatto" per la v1 (rivisto): 10 delle 14 fonti abilitate e verificate end-to-end in CI** (13.A.2); le 4 fonti Cloudflare (uplay, Ravensburger, DungeonDice, Magic Merchant) restano disabilitate con spec pronti perché i runner di Actions non le raggiungono. Le fasi sotto organizzano il lavoro; le fonti difficili non sono un extra opzionale.
+**Criterio di "fatto" per la v1 (rivisto): 8 delle 12 fonti abilitate e verificate end-to-end in CI** (13.A.2); le 4 fonti Cloudflare (uplay, Ravensburger, DungeonDice, Magic Merchant) restano disabilitate con spec pronti perché i runner di Actions non le raggiungono. Le fasi sotto organizzano il lavoro; le fonti difficili non sono un extra opzionale.
 
 - **M0 — Spike e struttura:** scheletro del collector Node/TS, workflow GitHub Actions, progetto Supabase, primo adattatore Shopify + uno WooCommerce; verificare i requisiti correnti dell'API BGG.
 - **M1 — Collector base:** scheletro, scheduling, normalizzazione, deduplica, monitoraggio.
