@@ -160,18 +160,19 @@ Expected: `"count"` > 0 per tutte e tre, con `sample[0].title` non vuoto; per `s
 **Interfaces:**
 - Consumes: `DiscoveredProduct`, `HtmlSourceSpec` (Task 2), `buildProduct` (Task 1).
 - Produces: `export const dvgiochiSpec: HtmlSourceSpec` con
-  - `discover`: legge `https://www.dvgiochi.com/prossime-uscite/`, e per ogni `a[href]` il cui URL assoluto rispetta `/^https:\/\/www\.dvgiochi\.com\/catalogo\/[a-z0-9-]+\/$/` restituisce `{ url, releaseDate }` dove `releaseDate` è la data trovata nel testo dell'ancora nel formato `DD MESE YYYY` (es. `27 OTTOBRE 2026` → `2026-10-27`); date non trovata → campo assente.
-  - `extract`: titolo = testo del primo `<h2>`, ripulito dal suffisso ` | DV Games` e dal contenuto degli elementi figli (`$('h2').first().contents().first().text()`); prodotto costruito con `buildProduct({ title, url })`.
+  - `discover`: legge `https://www.dvgiochi.com/prossime-uscite/`, e per ogni `a[href]` il cui URL assoluto rispetta `/^https:\/\/www\.dvgiochi\.com\/catalogo\/[a-z0-9-]+\/$/` restituisce `{ url, releaseDate }` dove `releaseDate` è la data trovata **all'inizio** del testo dell'ancora (`/^(\d{1,2})\s+(GENNAIO|FEBBRAIO|…|DICEMBRE)\s+(\d{4})/`, es. `27 OTTOBRE 2026` → `2026-10-27`); ancore senza data all'inizio (es. `DA DEFINIRE …`) → campo assente. L'ancora contiene anche una descrizione dopo la data, quindi il pattern va ancorato.
+  - `extract`: titolo = attributo `title` dell'`<img>` dentro il primo `<h2>` (fallback `alt`), trim; se manca o è vuoto, primo nodo di testo dell'`<h2>` (`$('h2').first().contents().first().text()`) senza il suffisso ` | DV Games` (case-insensitive), trim; titolo vuoto → `null`. Prodotto costruito con `buildProduct({ title, url })`.
+    - Evidenza dal vivo (7/7 pagine, 2026-10-17): l'`<h2>` è `{linea o categoria} | {nome} | DV Games` (6 casi: `Giochi per tutti | Villa | DV Games`, `BANG! Game System | Black Flag! (ITA) | DV Games`) oppure solo `{nome}` (1 caso: `Combo Creatures: Piccoli e scattanti`); l'`<img>` interno porta **sempre** il nome pulito in `title`/`alt` (`Villa`, `Black Flag! (ITA)`, `Combo Creatures: Piccoli e scattanti`). Prendere il primo nodo di testo non basta: conserva la categoria (`Giochi per tutti | Villa`).
 - Registrazione: `dvgiochi: dvgiochiSpec` in `HTML_SPECS`; seed `{ id: 'dvgiochi', name: 'dV Games', kind: 'html', baseUrl: 'https://www.dvgiochi.com', enabled: true }` (abilitare **dopo** la sonda dello Step 5).
 
-- [ ] **Step 1: Test che falliscono** — in `specs-publishers.test.ts`: (a) da una fixture con due ancore prodotto (una con `27 OTTOBRE 2026`, una senza data) e un'ancora di menu, `discover` restituisce esattamente i due prodotti con `releaseDate` `'2026-10-27'` sulla prima e assente sulla seconda; (b) `extract` sulla fixture del markup reale `<h2>BANG! Game System | Black Flag! (ITA) | DV Games<br /> <img ...></h2>` restituisce titolo `'BANG! Game System | Black Flag! (ITA)'`, `externalId` `'black-flag-ita'` e `priceRaw` `undefined`; (c) `extract` su una pagina senza `<h2>` restituisce `null` (non lancia).
+- [ ] **Step 1: Test che falliscono** — in `specs-publishers.test.ts`: (a) da una fixture con due ancore prodotto (una con `27 OTTOBRE 2026` seguita da descrizione, una senza data) e un'ancora di menu, `discover` restituisce esattamente i due prodotti con `releaseDate` `'2026-10-27'` sulla prima e assente sulla seconda; (b) `extract` sulla fixture del markup reale `<h2>BANG! Game System | Black Flag! (ITA) | DV Games<br /> <img src="…/infobox.gif" alt="Black Flag! (ITA)" title="Black Flag! (ITA)" …></h2>` restituisce titolo `'Black Flag! (ITA)'`, `externalId` `'black-flag-ita'` e `priceRaw` `undefined`; (b2) `extract` su una fixture con `<h2>Combo Creatures: Piccoli e scattanti</h2>` (senza prefisso, senza img) restituisce titolo `'Combo Creatures: Piccoli e scattanti'`; (c) `extract` su una pagina senza `<h2>` restituisce `null` (non lancia).
 
 - [ ] **Step 2: Esegui e verifica che falliscano**
 
 Run: `npm.cmd test test/adapters/specs-publishers.test.ts`
 Expected: FAIL (modulo `dvgiochi.js` inesistente).
 
-- [ ] **Step 3: Implementa** — i mesi in italiano (`GENNAIO…DICEMBRE`) mappati a `01…12` con zeri iniziali; `discover` con cheerio su una pagina sola; `extract` come da interfacce. Registra lo spec e aggiungi la voce al seed.
+- [ ] **Step 3: Implementa** — i mesi in italiano (`GENNAIO…DICEMBRE`) mappati a `01…12` con zeri iniziali; `discover` con cheerio su una pagina sola e pattern della data ancorato all'inizio; `extract` col titolo dall'`<img>` del primo `<h2>` (fallback: primo nodo di testo senza ` | DV Games`). Registra lo spec e aggiungi la voce al seed.
 
 - [ ] **Step 4: Esegui e verifica che passino**
 
@@ -181,7 +182,7 @@ Expected: PASS.
 - [ ] **Step 5: Sonda dal vivo**
 
 Run: `npx tsx scripts/probe-source.ts dvgiochi`
-Expected: `count` ≥ 3 con titoli non vuoti; `sample[0]` dal `/prossime-uscite/`. Se `count: 0`, indaga i selettori (il titolo è il primo `<h2>` della pagina prodotto) e **non** abilitare la fonte finché non produce ≥ 3 prodotti.
+Expected: `count` ≥ 3 con titoli non vuoti e **puliti** (senza prefisso di categoria, senza ` | DV Games`); `sample[0]` dal `/prossime-uscite/`. Se `count: 0`, indaga i selettori (il titolo viene dall'`<img>` dentro il primo `<h2>` della pagina prodotto) e **non** abilitare la fonte finché non produce ≥ 3 prodotti.
 
 - [ ] **Step 6: Aggiorna il test dei seed e committa** — aggiungi `dvgiochi` all'elenco ordinato delle abilitate (15 fonti, 11 abilitate).
 
