@@ -7,8 +7,6 @@ export const SOURCES: Source[] = [
   { id: 'giochiuniti',   name: 'Giochi Uniti',         kind: 'html',        baseUrl: 'https://www.giochiuniti.it',       enabled: true },
   { id: 'ghenos',        name: 'Ghenos Games',         kind: 'wordpress',   baseUrl: 'https://www.ghenosgames.com',      enabled: true },
   { id: 'pendragon',     name: 'Pendragon Game Studio', kind: 'woocommerce', baseUrl: 'https://www.pendragongamestudio.com', enabled: true },
-  { id: 'stonemaier',    name: 'Stonemaier Games',     kind: 'wordpress',   baseUrl: 'https://stonemaiergames.com',      enabled: true },  // WordPress custom post type 'smg_game' (route wp/v2/smg_game)
-  { id: 'kosmos',        name: 'Kosmos',               kind: 'shopify',     baseUrl: 'https://www.kosmos.de',            enabled: true },
   { id: 'dungeondice',   name: 'DungeonDice',          kind: 'headless',    baseUrl: 'https://www.dungeondice.it',       enabled: false }, // Cloudflare: gli IP datacenter di Actions sono sfidati (curl OK da IP residenziale); spec in html/dungeondice.ts
   { id: 'magicmerchant', name: 'Magic Merchant',       kind: 'headless',    baseUrl: 'https://magicmerchant.it',         enabled: false }, // Cloudflare managed challenge: blocca anche curl → resta disabilitata
   { id: 'uplay',         name: 'uplay.it',             kind: 'html',        baseUrl: 'https://www.uplay.it',             enabled: false }, // Cloudflare: gli IP datacenter di Actions sono sfidati (OK da IP residenziale)
