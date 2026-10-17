@@ -14,3 +14,8 @@ test('registry provides an adapter for every kind', () => {
     expect(typeof r[k]).toBe('function')
   }
 })
+
+test('only sources with a verified working adapter are enabled', () => {
+  const enabled = SOURCES.filter(s => s.enabled).map(s => s.id).sort()
+  expect(enabled).toEqual(['boardhouse', 'cranio', 'ghenos', 'kosmos', 'pendragon'])
+})
