@@ -1,6 +1,10 @@
+import { pathToFileURL } from 'node:url'
 import type { RawProduct, Source, SourceKind } from './types.js'
 import { normalizeListing } from './normalize.js'
-import type { ListingStore } from './db.js'
+import { createSupabaseClient, type ListingStore } from './db.js'
+import { loadConfig } from './config.js'
+import { buildRegistry } from './adapters/registry.js'
+import { SOURCES } from './sources.seed.js'
 
 export type Adapter = (source: Source) => Promise<RawProduct[]>
 
@@ -36,4 +40,23 @@ export async function runCollector(args: {
   const report: RunReport = { ok, perSource, failures }
   await store.logRun(ok, report)
   return report
+}
+
+export async function main(): Promise<number> {
+  const { supabaseUrl, supabaseServiceKey } = loadConfig(process.env)
+  const store = createSupabaseClient(supabaseUrl, supabaseServiceKey)
+  const report = await runCollector({ sources: SOURCES, adapters: buildRegistry(), store })
+  console.log(JSON.stringify(report, null, 2))
+  return report.ok ? 0 : 1
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .then((code) => {
+      process.exitCode = code
+    })
+    .catch((err: unknown) => {
+      console.error(err instanceof Error ? err.message : String(err))
+      process.exitCode = 1
+    })
 }
