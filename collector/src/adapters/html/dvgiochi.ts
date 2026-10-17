@@ -6,9 +6,7 @@ const LISTING_URL = 'https://www.dvgiochi.com/prossime-uscite/'
 
 const PRODUCT_URL = /^https:\/\/www\.dvgiochi\.com\/catalogo\/[a-z0-9-]+\/$/
 
-const DATE_TEXT = /(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/
-
-// I mesi in italiano compaiono in maiuscolo nel testo delle ancore ("27 OTTOBRE 2026").
+// I mesi in italiano compaiono in maiuscolo all'inizio del testo dell'ancora ("27 OTTOBRE 2026").
 const MONTHS: Record<string, string> = {
   GENNAIO: '01',
   FEBBRAIO: '02',
@@ -24,18 +22,23 @@ const MONTHS: Record<string, string> = {
   DICEMBRE: '12',
 }
 
+// La data sta all'inizio del testo, seguita dalla descrizione: il pattern è ancorato.
+const DATE_TEXT = new RegExp(`^(\\d{1,2})\\s+(${Object.keys(MONTHS).join('|')})\\s+(\\d{4})`)
+
 function releaseDateFromText(text: string): string | undefined {
-  const match = text.match(DATE_TEXT)
+  const match = text.trim().match(DATE_TEXT)
   if (!match) return undefined
-  const month = MONTHS[match[2].toUpperCase()]
-  if (!month) return undefined
-  return `${match[3]}-${month}-${match[1].padStart(2, '0')}`
+  return `${match[3]}-${MONTHS[match[2]]}-${match[1].padStart(2, '0')}`
 }
 
 function titleFromHtml(html: string): string {
   const $ = cheerio.load(html)
-  // Il primo nodo di testo dell'<h2> porta il titolo: il suffisso e l'<img> figlio vanno esclusi.
-  return $('h2').first().contents().first().text().replace(/\s*\|\s*DV Games\s*$/i, '').trim()
+  const h2 = $('h2').first()
+  // L'<img> interno porta sempre il nome pulito; il primo nodo di testo conserva invece la categoria.
+  const img = h2.find('img').first()
+  const fromImage = img.attr('title')?.trim() || img.attr('alt')?.trim()
+  if (fromImage) return fromImage
+  return h2.contents().first().text().replace(/\s*\|\s*DV Games\s*$/i, '').trim()
 }
 
 export const dvgiochiSpec: HtmlSourceSpec = {
