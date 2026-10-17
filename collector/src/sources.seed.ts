@@ -3,7 +3,7 @@ import type { Source } from './types.js'
 export const SOURCES: Source[] = [
   { id: 'asmodee',       name: 'Asmodee Italia',       kind: 'html',        baseUrl: 'https://www.asmodee.it',           enabled: false },
   { id: 'cranio',        name: 'Cranio Creations',     kind: 'shopify',     baseUrl: 'https://craniocreations.it',       enabled: true },
-  { id: 'ravensburger',  name: 'Ravensburger',         kind: 'html',        baseUrl: 'https://www.ravensburger.org',     enabled: false },
+  { id: 'ravensburger',  name: 'Ravensburger',         kind: 'headless',    baseUrl: 'https://www.ravensburger.it',      enabled: false }, // Cloudflare: node fetch 403; richiede renderer headless (spec in html/ravensburger.ts)
   { id: 'giochiuniti',   name: 'Giochi Uniti',         kind: 'html',        baseUrl: 'https://www.giochiuniti.it',       enabled: false },
   { id: 'ghenos',        name: 'Ghenos Games',         kind: 'wordpress',   baseUrl: 'https://www.ghenosgames.com',      enabled: true },
   { id: 'pendragon',     name: 'Pendragon Game Studio', kind: 'woocommerce', baseUrl: 'https://www.pendragongamestudio.com', enabled: true },

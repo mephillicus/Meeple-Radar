@@ -37,7 +37,7 @@ function collectProductNodes(node: unknown, out: JsonObject[]): void {
   const obj = node as JsonObject
   const types = asArray(obj['@type'])
   if (types.some((t) => t === 'Product' || t === 'ProductGroup')) out.push(obj)
-  if (obj['@graph']) collectProductNodes(obj['@graph'], out)
+  for (const value of Object.values(obj)) collectProductNodes(value, out)
 }
 
 function deriveId(url: string): string {
