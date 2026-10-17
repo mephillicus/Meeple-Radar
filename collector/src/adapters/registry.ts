@@ -6,6 +6,8 @@ import { fetchWooCommerceProducts } from './woocommerce.js'
 import { fetchWordPressProducts } from './wordpress.js'
 import { collectHtmlProducts } from './html/crawl.js'
 import { HTML_SPECS } from './html/specs.js'
+import { HEADLESS_SPECS } from './headless/specs.js'
+import { getSharedFetcher } from './headless/fetch.js'
 
 const WP_SOURCES: Record<string, { postType: string; permalinkBase?: string }> = {
   stonemaier: { postType: 'smg_game', permalinkBase: '/games' },
@@ -24,6 +26,10 @@ export function buildRegistry(http?: HttpClient): Record<SourceKind, Adapter> {
       if (!spec) throw new Error(`nessuno spec HTML per la fonte "${source.id}"`)
       return collectHtmlProducts({ spec, fetchText: textFetcher(http) })
     },
-    headless: async () => [],
+    headless: async (source) => {
+      const spec = HEADLESS_SPECS[source.id]
+      if (!spec) throw new Error(`nessuno spec headless per la fonte "${source.id}"`)
+      return collectHtmlProducts({ spec, fetchText: getSharedFetcher() })
+    },
   }
 }
