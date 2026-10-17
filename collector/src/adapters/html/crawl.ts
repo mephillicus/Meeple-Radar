@@ -2,8 +2,10 @@ import type { RawProduct } from '../../types.js'
 import type { TextFetcher } from '../http.js'
 import { extractProduct } from './extract.js'
 
+export type DiscoveredProduct = { url: string; releaseDate?: string }
+
 export type HtmlSourceSpec = {
-  discover: (fetchText: TextFetcher) => Promise<string[]>
+  discover: (fetchText: TextFetcher) => Promise<DiscoveredProduct[]>
   extract?: (html: string, url: string) => RawProduct | null
 }
 
@@ -20,30 +22,34 @@ export async function collectHtmlProducts(args: {
   const maxProducts = args.maxProducts ?? (Number.isFinite(envMax) && envMax > 0 ? envMax : 400)
 
   const discovered = await spec.discover(fetchText)
-  const urls: string[] = []
+  const items: DiscoveredProduct[] = []
   const seenUrls = new Set<string>()
-  for (const url of discovered) {
-    if (seenUrls.has(url)) continue
-    seenUrls.add(url)
-    urls.push(url)
-    if (urls.length >= maxProducts) break
+  for (const item of discovered) {
+    if (seenUrls.has(item.url)) continue
+    seenUrls.add(item.url)
+    items.push(item)
+    if (items.length >= maxProducts) break
   }
 
   const out: RawProduct[] = []
   const seenIds = new Set<string>()
-  for (let i = 0; i < urls.length; i++) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
     if (i > 0 && delayMs > 0) await sleep(delayMs)
     let html: string | null = null
     try {
-      html = await fetchText(urls[i])
+      html = await fetchText(item.url)
     } catch {
       continue
     }
     if (!html) continue
-    const product = spec.extract ? spec.extract(html, urls[i]) : extractProduct(html, urls[i])
+    const product = spec.extract ? spec.extract(html, item.url) : extractProduct(html, item.url)
     if (!product) continue
     if (seenIds.has(product.externalId)) continue
     seenIds.add(product.externalId)
+    if (product.releaseDateRaw === undefined && item.releaseDate !== undefined) {
+      product.releaseDateRaw = item.releaseDate
+    }
     out.push(product)
   }
   return out

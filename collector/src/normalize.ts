@@ -31,6 +31,11 @@ export function extractReleaseDate(text?: string): string | null {
   return null
 }
 
+function isoOrNull(preferred?: string, text?: string): string | null {
+  if (preferred !== undefined && isValidIso(preferred)) return preferred
+  return extractReleaseDate(text)
+}
+
 export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
   return {
     sourceId,
@@ -40,7 +45,7 @@ export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
     price: toPrice(raw.priceRaw, raw.minorUnitRaw),
     currency: raw.currencyRaw ? raw.currencyRaw.toUpperCase() : null,
     availability: raw.availabilityRaw ?? null,
-    releaseDate: extractReleaseDate(raw.descriptionRaw),
+    releaseDate: isoOrNull(raw.releaseDateRaw, raw.descriptionRaw),
     imageUrl: raw.imageUrl ?? null,
   }
 }

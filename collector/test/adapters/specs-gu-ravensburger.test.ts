@@ -16,10 +16,10 @@ test('giochiuniti follows its sitemap into the igiochideigrandi catalog', async 
     </urlset>`,
   }
   const urls = await HTML_SPECS.giochiuniti.discover(async (u) => pages[u] ?? null)
-  expect(urls).toContain('https://www.igiochideigrandi.it/h6612.html')
-  expect(urls).toContain('https://www.igiochideigrandi.it/everdell-bellfaire.html')
-  expect(urls).toContain('https://www.igiochideigrandi.it/k7208.html')
-  expect(urls).not.toContain('https://www.igiochideigrandi.it/puzzle/1000-pz.html')
+  expect(urls).toContainEqual({ url: 'https://www.igiochideigrandi.it/h6612.html' })
+  expect(urls).toContainEqual({ url: 'https://www.igiochideigrandi.it/everdell-bellfaire.html' })
+  expect(urls).toContainEqual({ url: 'https://www.igiochideigrandi.it/k7208.html' })
+  expect(urls).not.toContainEqual({ url: 'https://www.igiochideigrandi.it/puzzle/1000-pz.html' })
 })
 
 test('ravensburger filters product pages from its italian sitemap', async () => {
@@ -33,7 +33,7 @@ test('ravensburger filters product pages from its italian sitemap', async () => 
   }
   const urls = await ravensburgerSpec.discover(async (u) => pages[u] ?? null)
   expect(urls).toEqual([
-    'https://www.ravensburger.it/it-IT/ravensburger/products/jigsaw-puzzles/adult-puzzles/afterglow-12001471',
-    'https://www.ravensburger.it/it-IT/brio/products/railway-toys/trains-wagons-vehicles/tow-truck-63352800',
+    { url: 'https://www.ravensburger.it/it-IT/ravensburger/products/jigsaw-puzzles/adult-puzzles/afterglow-12001471' },
+    { url: 'https://www.ravensburger.it/it-IT/brio/products/railway-toys/trains-wagons-vehicles/tow-truck-63352800' },
   ])
 })

@@ -13,7 +13,7 @@ test('philibert collects product links from its new-products listing', async () 
   }
   const urls = await HTML_SPECS.philibert.discover(async (u) => pages[u] ?? null)
   expect(urls).toEqual([
-    'https://www.philibertnet.com/en/super-meeple/181793-wondrous-creatures-3760426550387.html',
+    { url: 'https://www.philibertnet.com/en/super-meeple/181793-wondrous-creatures-3760426550387.html' },
   ])
 })
 
@@ -28,5 +28,5 @@ test('dungeondice collects product links from its new-arrivals pages', async () 
     'https://www.dungeondice.it/445-ultime-novita?page=4': `<html><body></body></html>`,
   }
   const urls = await dungeondiceSpec.discover(async (u) => pages[u] ?? null)
-  expect(urls).toEqual(['https://www.dungeondice.it/44937-barchette-papere-e-saponette.html'])
+  expect(urls).toEqual([{ url: 'https://www.dungeondice.it/44937-barchette-papere-e-saponette.html' }])
 })

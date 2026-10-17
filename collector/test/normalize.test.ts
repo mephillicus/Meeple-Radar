@@ -19,3 +19,15 @@ test('normalizes a raw product, never inventing a date', () => {
   })
   expect(l).toMatchObject({ sourceId: 'cranio', price: null, currency: null, releaseDate: null })
 })
+
+test('prefers a structured release date over the parsed description', () => {
+  const structured = normalizeListing('x', {
+    externalId: '1', title: 'X', url: 'https://e.com/x', releaseDateRaw: '2026-10-27',
+  })
+  expect(structured.releaseDate).toBe('2026-10-27')
+  const fallback = normalizeListing('x', {
+    externalId: '1', title: 'X', url: 'https://e.com/x', releaseDateRaw: 'non-una-data',
+    descriptionRaw: '<p>In uscita: 2026-04</p>',
+  })
+  expect(fallback.releaseDate).toBe('2026-04-01')
+})
