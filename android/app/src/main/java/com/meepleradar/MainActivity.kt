@@ -3,18 +3,16 @@ package com.meepleradar
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import com.meepleradar.ui.nav.MeepleRadarNav
+import com.meepleradar.ui.theme.MeepleRadarTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val container = (application as MeepleRadarApp).container
         setContent {
-            MaterialTheme {
-                Surface {
-                    Text("Meeple Radar")
-                }
+            MeepleRadarTheme {
+                MeepleRadarNav(container)
             }
         }
     }
