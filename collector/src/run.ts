@@ -48,6 +48,7 @@ export async function runCollector(args: {
 export async function main(): Promise<number> {
   const { supabaseUrl, supabaseServiceKey } = loadConfig(process.env)
   const store = createSupabaseClient(supabaseUrl, supabaseServiceKey)
+  await store.upsertSources(SOURCES)
   const report = await runCollector({ sources: SOURCES, adapters: buildRegistry(), store })
   console.log(JSON.stringify(report, null, 2))
   return report.ok && report.zeroed.length === 0 ? 0 : 1

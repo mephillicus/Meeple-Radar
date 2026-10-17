@@ -3,6 +3,7 @@ import { buildRegistry } from '../src/adapters/registry.js'
 import { runCollector } from '../src/run.js'
 
 const store = {
+  async upsertSources() {},
   async upsertListings() {},
   async markSourceScanned() {},
   async logRun() {},

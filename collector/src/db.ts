@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
-import type { Listing } from './types.js'
+import type { Listing, Source } from './types.js'
 
 export interface ListingStore {
+  upsertSources(sources: Source[]): Promise<void>
   upsertListings(rows: Listing[]): Promise<void>
   markSourceScanned(sourceId: string): Promise<void>
   logRun(ok: boolean, details: unknown): Promise<void>
@@ -14,6 +15,20 @@ export function createSupabaseStore(
   now: () => string = () => new Date().toISOString(),
 ): ListingStore {
   return {
+    async upsertSources(sources: Source[]): Promise<void> {
+      if (sources.length === 0) return
+      const payload = sources.map((s) => ({
+        id: s.id,
+        name: s.name,
+        kind: s.kind,
+        base_url: s.baseUrl,
+        adapter: s.kind,
+        enabled: s.enabled,
+      }))
+      const { error } = await client.from('source').upsert(payload, { onConflict: 'id' })
+      if (error) throw new Error(`upsert source: ${error.message}`)
+    },
+
     async upsertListings(rows: Listing[]): Promise<void> {
       if (rows.length === 0) return
       const seen = now()
