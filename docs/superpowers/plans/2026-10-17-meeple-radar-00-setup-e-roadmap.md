@@ -165,8 +165,11 @@ create policy "read collection" on collection_item for select using (true);
 
 ### A.5 BoardGameGeek
 
-- [ ] A.5.1 Verifica i requisiti correnti dell'API (registrazione applicativa?) sulla pagina ufficiale dell'XML API 2.
-- [ ] A.5.2 Annota l'**username BGG** dell'utente (collezione pubblica) come segreto `BGG_USERNAME`; se richiesto, registra l'app e salva il token in `BGG_API_TOKEN`.
+- [ ] A.5.1 Imposta la collezione BGG dell'utente come **pubblica** (BGG → profilo → Privacy/Collection). Il collector la legge da server, quindi non può "restare loggato".
+- [ ] A.5.2 **Registra l'app** su `https://boardgamegeek.com/applications` → "create an application" (tipo **non-commercial**). Attendi l'approvazione: può richiedere **una settimana o più**.
+- [ ] A.5.3 A registrazione avvenuta, nella tua applicazione clicca **Tokens** e crea un token; userai l'header `Authorization: Bearer <token>`.
+- [ ] A.5.4 Salva i segreti GitHub: `BGG_USERNAME` = il tuo username BGG; `BGG_API_TOKEN` = il token. Le richieste vanno a `boardgamegeek.com` (**senza `www`**).
+- [ ] A.5.5 (Nota) In uso pubblico va mostrato il logo **"Powered by BGG"** collegato a BoardGameGeek.
 
 ### A.6 Cadenze proposte (dentro i limiti gratuiti)
 

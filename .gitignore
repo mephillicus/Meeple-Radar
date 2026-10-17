@@ -1,0 +1,5 @@
+# Segreti — MAI committare
+.env
+*firebase-adminsdk*.json
+*serviceAccount*.json
+google-services.json

@@ -140,9 +140,9 @@ La raccolta non avviene sul telefono: 14 siti eterogenei, blocchi anti-bot e par
 ## 8. Integrazione BoardGameGeek
 
 - API: **XML API 2** — `collection` (collezione dell'utente), `thing` (dettagli/voti), `search`.
-- Autenticazione: **solo nome utente BGG** (collezione pubblica). Nessun OAuth, nessuna password.
+- Autenticazione: **nome utente BGG** (collezione pubblica) **+ un token di applicazione** inviato come header `Authorization: Bearer <token>`. BGG richiede la registrazione dell'app; nessuna password utente, nessun OAuth.
 - Dal `collection` con `stats=1` si ricava l'insieme dei giochi posseduti e il loro tipo; incrociando con i link "espande" si trovano le espansioni dei titoli posseduti → **preferito automatico**.
-- Vincoli: BGG ha in corso una transizione verso accessi registrati e applica rate-limit; tutte le chiamate passano dal collector, che mette in **cache** i risultati e le distanzia. Prevediamo che il collector tenga un'eventuale **credenziale/registrazione applicativa** fornita una volta. Se l'API cambia, è un punto di manutenzione noto (verifica dei requisiti correnti in M2).
+- Vincoli (verificati 2026-10): l'XML API richiede **registrazione dell'app** e **`Authorization: Bearer <token>`** su quasi tutti gli usi; le richieste vanno a `boardgamegeek.com` **senza `www`**. Scaricare la *propria* collezione senza token è permesso solo restando loggati, ma il collector è server-side e fa più tipi di chiamata, quindi si registra l'app. La registrazione è **gratuita** (non-commerciale) ma può richiedere **una settimana o più**. Tutte le chiamate passano dal collector, che mette in **cache** i risultati e li distanzia. In uso pubblico va mostrato il logo **"Powered by BGG"**.
 
 ## 9. Esperienza utente (schermate principali)
 
