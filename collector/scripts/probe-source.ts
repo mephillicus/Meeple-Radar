@@ -15,6 +15,7 @@ async function main(): Promise<void> {
     return
   }
   const registry = buildRegistry()
+  process.env.MEEPLE_MAX_PRODUCTS ??= '40'
   const items = await registry[source.kind](source)
   console.log(
     JSON.stringify({ id, kind: source.kind, count: items.length, sample: items.slice(0, 3) }, null, 2),

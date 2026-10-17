@@ -12,7 +12,9 @@ export async function collectHtmlProducts(args: {
   maxProducts?: number
   delayMs?: number
 }): Promise<RawProduct[]> {
-  const { spec, fetchText, maxProducts = 400, delayMs = 250 } = args
+  const { spec, fetchText, delayMs = 250 } = args
+  const envMax = Number(process.env.MEEPLE_MAX_PRODUCTS)
+  const maxProducts = args.maxProducts ?? (Number.isFinite(envMax) && envMax > 0 ? envMax : 400)
 
   const discovered = await spec.discover(fetchText)
   const urls: string[] = []
