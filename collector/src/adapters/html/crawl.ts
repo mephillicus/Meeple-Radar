@@ -2,7 +2,10 @@ import type { RawProduct } from '../../types.js'
 import type { TextFetcher } from '../http.js'
 import { extractProduct } from './extract.js'
 
-export type HtmlSourceSpec = { discover: (fetchText: TextFetcher) => Promise<string[]> }
+export type HtmlSourceSpec = {
+  discover: (fetchText: TextFetcher) => Promise<string[]>
+  extract?: (html: string, url: string) => RawProduct | null
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -37,7 +40,7 @@ export async function collectHtmlProducts(args: {
       continue
     }
     if (!html) continue
-    const product = extractProduct(html, urls[i])
+    const product = spec.extract ? spec.extract(html, urls[i]) : extractProduct(html, urls[i])
     if (!product) continue
     if (seenIds.has(product.externalId)) continue
     seenIds.add(product.externalId)

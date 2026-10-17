@@ -34,3 +34,19 @@ test('deduplicates product URLs by external id', async () => {
   const out = await collectHtmlProducts({ spec: { discover: async () => ['https://s/p1', 'https://s/p1?x=1'] }, fetchText: async () => P1, delayMs: 0 })
   expect(out).toHaveLength(1)
 })
+
+test('uses a per-source extract override when present', async () => {
+  const spec = { discover: async () => ['https://s/p1'], extract: (_html: string, url: string) => ({ externalId: 'custom', title: 'Custom', url }) }
+  const out = await collectHtmlProducts({ spec, fetchText: async () => P1, delayMs: 0 })
+  expect(out).toHaveLength(1)
+  expect(out[0].title).toBe('Custom')
+  expect(out[0].externalId).toBe('custom')
+})
+
+test('falls back to generic extraction when no extract override is given', async () => {
+  const spec = { discover: async () => ['https://s/p1'] }
+  const out = await collectHtmlProducts({ spec, fetchText: async () => P1, delayMs: 0 })
+  expect(out).toHaveLength(1)
+  expect(out[0].title).toBe('A')
+  expect(out[0].externalId).toBe('1')
+})
