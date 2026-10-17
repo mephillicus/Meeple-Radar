@@ -1,0 +1,23 @@
+import { expect, test } from 'vitest'
+import { fetchShopifyProducts } from '../../src/adapters/shopify.js'
+import fixture from '../fixtures/shopify-products.json' with { type: 'json' }
+
+const http = async () => ({ status: 200, json: async () => fixture })
+
+test('maps shopify products to RawProduct', async () => {
+  const out = await fetchShopifyProducts('https://shop.example', http)
+  expect(out).toHaveLength(1)
+  expect(out[0]).toMatchObject({
+    externalId: '16087837376843',
+    title: 'Ancient Empires - Deluxe Pack',
+    url: 'https://shop.example/products/ancient-empires-deluxe-pack',
+    priceRaw: '89.90',
+    currencyRaw: 'EUR',
+    imageUrl: 'https://cdn.shopify.com/x.jpg',
+  })
+})
+
+test('returns [] on an unexpected payload', async () => {
+  const bad = async () => ({ status: 200, json: async () => ({ nope: true }) })
+  expect(await fetchShopifyProducts('https://shop.example', bad)).toEqual([])
+})

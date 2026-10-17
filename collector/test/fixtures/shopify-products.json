@@ -1,0 +1,13 @@
+{
+  "products": [
+    {
+      "id": 16087837376843,
+      "title": "Ancient Empires - Deluxe Pack",
+      "handle": "ancient-empires-deluxe-pack",
+      "body_html": "<p>In uscita il 15/03/2026</p>",
+      "published_at": "2026-01-10T09:00:00-05:00",
+      "images": [{ "src": "https://cdn.shopify.com/x.jpg" }],
+      "variants": [{ "price": "89.90", "available": true }]
+    }
+  ]
+}
