@@ -41,8 +41,3 @@ Grande distributore e negozio online francese, molto utilizzato dagli appassiona
 
 Games Academy / Funside ( https://www.gamesacademy.it )
 Una delle reti di negozi fisici e fumetterie più diffuse sul territorio italiano, dotata anche di uno shop online integrato.
-
-password.
-
-Supabase
-	Database password: y6ImmVjOQT1zLdql
