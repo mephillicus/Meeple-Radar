@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { fetchWooCommerceProducts } from '../../src/adapters/woocommerce.js'
 import fixture from '../fixtures/woocommerce-products.json' with { type: 'json' }
 
-const http = async () => ({ status: 200, json: async () => fixture })
+const http = async () => ({ status: 200, json: async () => fixture, text: async () => '' })
 
 test('maps woocommerce store products to RawProduct', async () => {
   const out = await fetchWooCommerceProducts('https://pendragongamestudio.com', 'EUR', http)

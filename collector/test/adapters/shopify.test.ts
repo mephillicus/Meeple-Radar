@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { fetchShopifyProducts } from '../../src/adapters/shopify.js'
 import fixture from '../fixtures/shopify-products.json' with { type: 'json' }
 
-const http = async () => ({ status: 200, json: async () => fixture })
+const http = async () => ({ status: 200, json: async () => fixture, text: async () => '' })
 
 test('maps shopify products to RawProduct', async () => {
   const out = await fetchShopifyProducts('https://shop.example', http)
@@ -18,6 +18,6 @@ test('maps shopify products to RawProduct', async () => {
 })
 
 test('returns [] on an unexpected payload', async () => {
-  const bad = async () => ({ status: 200, json: async () => ({ nope: true }) })
+  const bad = async () => ({ status: 200, json: async () => ({ nope: true }), text: async () => '' })
   expect(await fetchShopifyProducts('https://shop.example', bad)).toEqual([])
 })
