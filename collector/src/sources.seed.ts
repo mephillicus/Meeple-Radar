@@ -15,4 +15,5 @@ export const SOURCES: Source[] = [
   { id: 'supernova',     name: 'Studio Supernova',      kind: 'shopify',     baseUrl: 'https://www.studiosupernova.it',   enabled: true },   // il dominio senza www ha TLS rotto
   { id: 'littlerocket',  name: 'Little Rocket Games',   kind: 'woocommerce', baseUrl: 'https://www.littlerocketgames.com', enabled: true },
   { id: 'msedizioni',    name: 'MS Edizioni',           kind: 'woocommerce', baseUrl: 'https://www.msedizioni.it',        enabled: true },
+  { id: 'dvgiochi',      name: 'dV Games',             kind: 'html',        baseUrl: 'https://www.dvgiochi.com',         enabled: true },
 ]
