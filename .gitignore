@@ -3,3 +3,12 @@
 *firebase-adminsdk*.json
 *serviceAccount*.json
 google-services.json
+
+# Android
+android/local.properties
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/.idea/
+*.apk
