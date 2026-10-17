@@ -12,6 +12,7 @@ export type RunReport = {
   ok: boolean
   perSource: Record<string, number>
   failures: Record<string, string>
+  zeroed: string[]
 }
 
 export async function runCollector(args: {
@@ -22,11 +23,13 @@ export async function runCollector(args: {
   const { sources, adapters, store } = args
   const perSource: Record<string, number> = {}
   const failures: Record<string, string> = {}
+  const zeroed: string[] = []
 
   for (const source of sources) {
     if (!source.enabled) continue
     try {
       const raw = await adapters[source.kind](source)
+      if (raw.length === 0) zeroed.push(source.id)
       const rows = raw.map((r) => normalizeListing(source.id, r))
       await store.upsertListings(rows)
       await store.markSourceScanned(source.id)
@@ -37,7 +40,7 @@ export async function runCollector(args: {
   }
 
   const ok = Object.keys(failures).length === 0
-  const report: RunReport = { ok, perSource, failures }
+  const report: RunReport = { ok, perSource, failures, zeroed }
   await store.logRun(ok, report)
   return report
 }
@@ -47,7 +50,7 @@ export async function main(): Promise<number> {
   const store = createSupabaseClient(supabaseUrl, supabaseServiceKey)
   const report = await runCollector({ sources: SOURCES, adapters: buildRegistry(), store })
   console.log(JSON.stringify(report, null, 2))
-  return report.ok ? 0 : 1
+  return report.ok && report.zeroed.length === 0 ? 0 : 1
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
