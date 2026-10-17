@@ -12,5 +12,4 @@ export const SOURCES: Source[] = [
   { id: 'uplay',         name: 'uplay.it',             kind: 'html',        baseUrl: 'https://www.uplay.it',             enabled: false }, // Cloudflare: gli IP datacenter di Actions sono sfidati (OK da IP residenziale)
   { id: 'boardhouse',    name: 'BoardHouse Store',     kind: 'shopify',     baseUrl: 'https://boardhousestore.com',      enabled: true },
   { id: 'philibert',     name: 'Philibert',            kind: 'html',        baseUrl: 'https://www.philibertnet.com',     enabled: true },
-  { id: 'gamesacademy',  name: 'Games Academy / Funside', kind: 'shopify', baseUrl: 'https://shop.gamesacademy.it',     enabled: true },  // lo shop è un dominio Shopify separato
 ]
