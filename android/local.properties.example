@@ -1,0 +1,12 @@
+# Copia questo file in `local.properties` (ignorato da git) e sostituisci i valori.
+# `sdk.dir` e' il percorso dell'SDK Android installato (Android Studio: SDK Manager -> Android SDK Location).
+# Nota l'escape dei due punti e dei backslash: e' il formato delle properties Java.
+
+sdk.dir=C\:\\Users\\<utente>\\AppData\\Local\\Android\\Sdk
+
+# Project URL Supabase (gia' valorizzato, non e' un segreto).
+SUPABASE_URL=https://cheboodgpnlmwmhdfgrz.supabase.co
+
+# Chiave "anon" pubblica (Project Settings -> API -> anon public). Senza questo valore
+# l'app si avvia lo stesso ma la schermata "In arrivo" mostra uno stato di errore.
+SUPABASE_ANON_KEY=<la tua chiave anon pubblica>
