@@ -7,11 +7,18 @@ import { fetchWordPressProducts } from './wordpress.js'
 import { collectHtmlProducts } from './html/crawl.js'
 import { HTML_SPECS } from './html/specs.js'
 
+const WP_SOURCES: Record<string, { postType: string; permalinkBase?: string }> = {
+  stonemaier: { postType: 'smg_game', permalinkBase: '/games' },
+}
+
 export function buildRegistry(http?: HttpClient): Record<SourceKind, Adapter> {
   return {
     shopify: (source) => fetchShopifyProducts(source.baseUrl, http),
     woocommerce: (source) => fetchWooCommerceProducts(source.baseUrl, 'EUR', http),
-    wordpress: (source) => fetchWordPressProducts(source.baseUrl, http),
+    wordpress: (source) => {
+      const wp = WP_SOURCES[source.id]
+      return fetchWordPressProducts(source.baseUrl, http, wp?.postType ?? 'product', wp?.permalinkBase)
+    },
     html: async (source) => {
       const spec = HTML_SPECS[source.id]
       if (!spec) throw new Error(`nessuno spec HTML per la fonte "${source.id}"`)

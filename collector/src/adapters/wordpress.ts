@@ -11,6 +11,12 @@ type WpPost = {
 
 const PAGE_SIZE = 100
 
+function normalizePermalink(link: string, base: string, postType: string, permalinkBase?: string): string {
+  if (!permalinkBase) return link
+  const match = link.match(new RegExp(`[?&]${postType}=([^&]+)`))
+  return match ? `${base}${permalinkBase}/${match[1]}/` : link
+}
+
 export function decodeHtml(s: string): string {
   return s
     .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
@@ -25,11 +31,13 @@ export function decodeHtml(s: string): string {
 export async function fetchWordPressProducts(
   baseUrl: string,
   http: HttpClient = defaultFetch,
+  postType = 'product',
+  permalinkBase?: string,
 ): Promise<RawProduct[]> {
   const base = baseUrl.replace(/\/+$/, '')
   const out: RawProduct[] = []
   for (let page = 1; ; page++) {
-    const res = await http(`${base}/wp-json/wp/v2/product?per_page=${PAGE_SIZE}&page=${page}`, {
+    const res = await http(`${base}/wp-json/wp/v2/${postType}?per_page=${PAGE_SIZE}&page=${page}`, {
       'User-Agent': USER_AGENT,
     })
     if (res.status !== 200) break
@@ -40,7 +48,7 @@ export async function fetchWordPressProducts(
       const parsed = RawProductSchema.safeParse({
         externalId: String(p.id),
         title: decodeHtml(p.title?.rendered ?? ''),
-        url: p.link ?? '',
+        url: normalizePermalink(p.link ?? '', base, postType, permalinkBase),
         descriptionRaw: p.content?.rendered,
         publishedAtRaw: p.date,
       })
