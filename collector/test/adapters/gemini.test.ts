@@ -125,3 +125,25 @@ test('returns [] without throwing when nothing can be parsed as an array', async
   geminiOk('[]')
   expect(await fetchGeminiProducts(source)).toEqual([])
 })
+
+test('a dicembre chiede gennaio dell’anno successivo', async () => {
+  process.env.GEMINI_API_KEY = 'test-key'
+  vi.setSystemTime(new Date('2026-12-15T12:00:00Z'))
+  let corpo: string | undefined
+  fetchMock.mockImplementation(async (_url: string, init: any) => {
+    corpo = init.body as string
+    return { status: 200, ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '[]' }] } }] }), text: async () => '' } as any
+  })
+  await fetchGeminiProducts(source)
+  expect(corpo).toContain('gennaio 2027')
+})
+
+test('con HTTP 200 e corpo non JSON restituisce [] senza lanciare', async () => {
+  process.env.GEMINI_API_KEY = 'test-key'
+  fetchMock.mockResolvedValue({
+    status: 200, ok: true,
+    json: async () => { throw new Error('non è JSON') },
+    text: async () => 'ciao',
+  } as any)
+  expect(await fetchGeminiProducts(source)).toEqual([])
+})

@@ -19,8 +19,10 @@ export async function fetchGeminiProducts(
     'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
   ]
   const meseCorrente = mesi[now.getMonth()]
-  const meseSuccessivo = mesi[(now.getMonth() + 1) % 12]
-  const anno = now.getFullYear()
+  const prossimo = new Date(now)
+  prossimo.setMonth(now.getMonth() + 1)
+  const meseSuccessivo = mesi[prossimo.getMonth()]
+  const anno = prossimo.getFullYear()
 
   const promptPath = new URL('../../prompts/upcoming-releases.txt', import.meta.url)
   let prompt = await readFile(promptPath, 'utf-8')
@@ -36,9 +38,14 @@ export async function fetchGeminiProducts(
   })
   if (!res.ok) throw new Error(`Gemini API: ${res.status}`)
 
-  const data = (await res.json()) as {
+  let data: {
     candidates?: { content?: { parts?: { text?: unknown }[] } }[] | null
-  } | null
+  } | null = null
+  try {
+    data = await res.json()
+  } catch {
+    return []
+  }
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
   if (typeof text !== 'string') return []
 
