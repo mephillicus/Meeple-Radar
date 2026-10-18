@@ -2,31 +2,10 @@ import { readFile } from 'node:fs/promises'
 import type { GameFinder, GameMatch, RawProduct, Source } from '../types.js'
 import type { ListingRow, ListingStore } from '../db.js'
 import { normalizeTitle } from '../normalize.js'
+import { buildProviders, type AiOptions, type AiResult } from './ai-providers.js'
 
-// `gemini-2.0-flash` è stato dismesso il 2026-06-01 (404). Default a un modello GA
-// corrente, sovrascrivibile con la env `GEMINI_MODEL` senza toccare il codice.
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.6-flash'
-const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
-
-// Il modello può rispondere 429/503 (limite o "high demand" temporanea): ritenta con backoff.
-const RETRYABLE_STATUSES = new Set([429, 503])
-const MAX_ATTEMPTS = 3
-
-async function postWithRetry(url: string, init: RequestInit): Promise<Response> {
-  for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, init)
-    if (res.ok || !RETRYABLE_STATUSES.has(res.status) || attempt >= MAX_ATTEMPTS - 1) return res
-    await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt))
-  }
-}
-
-export async function fetchGeminiProducts(
-  source: Source,
-  gameFinder?: GameFinder,
-): Promise<RawProduct[]> {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) throw new Error('GEMINI_API_KEY non impostata')
-
+// Stesso prompt per tutti i provider: la cascata cambia solo chi lo esegue.
+export async function buildUpcomingPrompt(): Promise<string> {
   const now = new Date()
   const mesi = [
     'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
@@ -39,56 +18,42 @@ export async function fetchGeminiProducts(
   const anno = prossimo.getFullYear()
 
   const promptPath = new URL('../../prompts/upcoming-releases.txt', import.meta.url)
-  let prompt = await readFile(promptPath, 'utf-8')
-  prompt = prompt
+  const prompt = await readFile(promptPath, 'utf-8')
+  return prompt
     .replace(/\{MESE_CORRENTE\}/g, meseCorrente)
     .replace(/\{MESE_SUCCESSIVO\}/g, meseSuccessivo)
     .replace(/\{ANNO\}/g, String(anno))
+}
 
-  const res = await postWithRetry(`${API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    }),
-  })
-  if (!res.ok) {
-    let detail = ''
-    try {
-      detail = (await res.text()).slice(0, 300)
-    } catch {
-      // corpo non leggibile: ci accontentiamo dello status
-    }
-    throw new Error(`Gemini API: ${res.status}${detail ? ` ${detail}` : ''}`)
-  }
+export type ParsedUpcoming = {
+  ok: boolean
+  products: RawProduct[]
+}
 
-  let data: {
-    candidates?: { content?: { parts?: { text?: unknown; thought?: unknown }[] } }[] | null
-  } | null = null
-  try {
-    data = await res.json()
-  } catch {
-    return []
-  }
-  // I modelli 3.x "pensano" per default: scarta le parti di ragionamento e tieni il testo.
-  const parts = data?.candidates?.[0]?.content?.parts ?? []
-  const text = parts
-    .filter((p) => p && p.thought !== true && typeof p.text === 'string')
-    .map((p) => p.text as string)
-    .join('')
-  if (text === '') return []
-
+// `ok` distingue "risposta non interpretabile" da "array valido (anche vuoto)": solo la prima
+// è un errore che merita di passare al provider successivo come fallimento tecnico.
+export async function parseUpcomingJson(text: string, gameFinder?: GameFinder): Promise<ParsedUpcoming> {
   let parsed: unknown
   try {
-    parsed = JSON.parse(text.replace(/^```json\s*/, '').replace(/\s*```$/, ''))
+    parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
   } catch {
-    return []
+    return { ok: false, products: [] }
   }
-  if (!Array.isArray(parsed)) return []
+
+  let entries: unknown[]
+  if (Array.isArray(parsed)) {
+    entries = parsed
+  } else if (parsed !== null && typeof parsed === 'object') {
+    // Alcuni modelli avvolgono l'array: {"releases": [...]} → lo scartolo.
+    const arrays = Object.values(parsed as Record<string, unknown>).filter(Array.isArray)
+    if (arrays.length !== 1) return { ok: false, products: [] }
+    entries = arrays[0] as unknown[]
+  } else {
+    return { ok: false, products: [] }
+  }
 
   const out: RawProduct[] = []
-  for (const entry of parsed as unknown[]) {
+  for (const entry of entries) {
     if (!entry || typeof entry !== 'object') continue
     const e = entry as {
       title?: unknown; publisher?: unknown; articleCode?: unknown
@@ -135,7 +100,63 @@ export async function fetchGeminiProducts(
 
     out.push(raw)
   }
-  return out
+  return { ok: true, products: out }
+}
+
+// Cascata di provider LLM gratuiti: Gemini → Groq → OpenRouter. Si passa al successivo quando la
+// chiamata fallisce (429/503/404), la risposta non è interpretabile o l'array è vuoto.
+export async function fetchGeminiProducts(
+  _source: Source,
+  gameFinder?: GameFinder,
+  options?: AiOptions,
+): Promise<RawProduct[]> {
+  const providers = buildProviders(process.env, options)
+  if (providers.length === 0) {
+    throw new Error('nessuna chiave LLM: imposta GEMINI_API_KEY, GROQ_API_KEY o OPENROUTER_API_KEY')
+  }
+
+  const prompt = await buildUpcomingPrompt()
+  const errors: string[] = []
+  let anyResponded = false
+
+  for (const provider of providers) {
+    let result: AiResult
+    try {
+      result = await provider.call(prompt)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      errors.push(`${provider.id}: ${msg}`)
+      console.error(`[llm] ${provider.id}: ${msg}`)
+      continue
+    }
+
+    anyResponded = true
+    if (!result.ok) {
+      errors.push(`${provider.id}: ${result.reason}`)
+      console.error(`[llm] ${provider.id}: ${result.reason}`)
+      continue
+    }
+
+    const { ok, products } = await parseUpcomingJson(result.text, gameFinder)
+    if (!ok) {
+      errors.push(`${provider.id}: risposta non interpretabile`)
+      console.error(`[llm] ${provider.id}: risposta non interpretabile`)
+      continue
+    }
+    if (products.length === 0) {
+      console.error(`[llm] ${provider.id}: risposta vuota, provo il provider successivo`)
+      continue
+    }
+    if (provider.id !== providers[0].id) {
+      console.error(`[llm] ${products.length} prodotti da ${provider.id}`)
+    }
+    return products
+  }
+
+  if (!anyResponded) {
+    throw new Error(`nessun provider LLM ha funzionato: ${errors.join(' | ')}`)
+  }
+  return []
 }
 
 export function createGameFinder(store: ListingStore): GameFinder {
