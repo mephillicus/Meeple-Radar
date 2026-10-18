@@ -53,7 +53,7 @@
 **Files:**
 - Create: `collector/src/adapters/gemini.ts`
 - Create: `collector/prompts/upcoming-releases.txt`
-- Modify: `collector/src/types.ts`, `collector/src/normalize.ts`, `collector/src/db.ts`
+- Modify: `collector/src/types.ts`, `collector/src/normalize.ts`, `collector/src/db.ts`, `collector/src/adapters/registry.ts`
 - Test: `collector/test/adapters/gemini.test.ts`, `collector/test/db.test.ts`
 
 **Interfaces:**
@@ -84,6 +84,7 @@ Expected: FAIL (module `gemini.js` missing; `game_id` not in the upsert payload)
   - `upsertListings` in `db.ts` includes `game_id: r.gameId ?? null` in the payload.
   - `collector/prompts/upcoming-releases.txt` with the exact prompt (Italian, fields `title`/`publisher`/`articleCode`/`price`/`releaseDate`/`description`, demands a JSON array only, `{MESE_CORRENTE}` `{MESE_SUCCESSIVO}` `{ANNO}` placeholders).
   - `fetchGeminiProducts(source, gameFinder?)` in `gemini.ts`: read `process.env.GEMINI_API_KEY` (throw if missing); compute the current and next Italian month names + year; read the prompt file (via `import.meta.url`); POST to `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=...` with `{ contents: [{ parts: [{ text }] }] }`; extract `candidates[0].content.parts[0].text`; strip ```` ```json ```` fences; `JSON.parse`; keep entries with a non-empty `title`; map each to a `RawProduct` (`externalId` = articleCode ?? normalized-title slug, `url` = DuckDuckGo search, `priceRaw`/`currencyRaw` only when a price is present, `releaseDateRaw` only when present, `descriptionRaw` = description); when a `gameFinder` is given, call it with `normalizeTitle(title)` + publisher and copy the match's non-null `price`/`releaseDate`/`imageUrl` (model fills gaps) and set `gameId`.
+  - In `registry.ts`: add the one-line entry `gemini: (source) => fetchGeminiProducts(source)` so `Record<SourceKind, Adapter>` is satisfied.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -93,7 +94,6 @@ Expected: PASS, 60+ tests green, typecheck clean.
 - [ ] **Step 5: Commit**
 
 `git add collector/src collector/test collector/prompts; git commit -m "feat(collector): add the Gemini adapter that lists upcoming releases"`
-
 ---
 
 ### Task 2: Join with the database (GameFinder + store lookup + wiring)
@@ -124,7 +124,7 @@ Expected: FAIL (`createGameFinder` / `findListingsByTitle` missing).
 - [ ] **Step 3: Implement**
   - `findListingsByTitle(normalizedTitle)` in `db.ts`: `from('listing').select('id, title, url, price, currency, release_date, image_url, game_id')`, then filter in JS by `normalizeTitle(row.title) === normalizedTitle` (SQL cannot replicate the normalization). Return `ListingRow[]`.
   - `createGameFinder(store)` in `gemini.ts`: call `store.findListingsByTitle(title)`; if empty ⇒ `null`; if one ⇒ project to `GameMatch`; if several ⇒ prefer the row whose source name matches the publisher hint (via a `sources` lookup passed in or a second store method), else `null` (ambiguous ⇒ no match).
-  - `buildRegistry(http?, gameFinder?)`: the `gemini` entry becomes `(source) => fetchGeminiProducts(source, gameFinder)`.
+  - `buildRegistry(http?, gameFinder?)`: the `gemini` entry becomes `(source) => fetchGeminiProducts(source, gameFinder)`. **Nel Task 1** la voce `gemini: (source) => fetchGeminiProducts(source)` va aggiunta subito a `buildRegistry` (una riga), perché `Record<SourceKind, Adapter>` deve avere la chiave `gemini` non appena il kind esiste; il Task 2 la estende con `gameFinder`.
   - `run.ts`: build the registry with a `gameFinder` created from the store, and pass it through.
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -160,6 +160,7 @@ Expected: FAIL (counts are 17/13).
   - `collector/.env.example`: add `GEMINI_API_KEY=`.
   - `.github/workflows/collect.yml`: add `GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}` to the `npm run collect` env block.
   - Spec: add `'gemini'` to the source-kind list and a row for the Gemini source (LLM, daily, indicative data enriched by the DB join); update any source counters.
+  - `sources.test.ts`: add `'gemini'` to the two hardcoded kind lists (line 8 and line 13) so the kind-membership test passes once the seed has `gemini`.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
