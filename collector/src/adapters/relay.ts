@@ -4,7 +4,8 @@ import type { TextFetcher } from './http.js'
 // dagli IP datacenter dei runner di GitHub Actions. Per l'esecuzione in CI usiamo un
 // "reader" pubblico (Jina AI Reader) che scarica la pagina dai propri proxy e la
 // restituisce come HTML (`X-Return-Format: html`), così gli estrattori cheerio esistenti
-// funzionano senza modifiche. Con `JINA_API_KEY` si alzano i limiti di velocità.
+// funzionano senza modifiche. Con `JINA_API_KEY` si alzano i limiti di velocità (200
+// richieste/min contro ~20 senza chiave: senza chiave le fonti grandi vengono limitate).
 
 export type FetchLike = (
   url: string,
@@ -13,20 +14,32 @@ export type FetchLike = (
 
 export const RELAY_ENDPOINT = 'https://r.jina.ai/'
 
+const RETRYABLE_STATUSES = new Set([429, 502, 503])
+const MAX_ATTEMPTS = 3
+
+const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
 export function createRelayFetcher(
   fetchImpl: FetchLike = fetch as unknown as FetchLike,
   apiKey = process.env.JINA_API_KEY,
+  sleep: (ms: number) => Promise<void> = defaultSleep,
 ): TextFetcher {
   return async (url) => {
-    try {
-      const headers: Record<string, string> = { 'X-Return-Format': 'html' }
-      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
-      const res = await fetchImpl(`${RELAY_ENDPOINT}${url}`, { headers })
-      if (!res.ok) return null
-      const text = await res.text()
-      return text || null
-    } catch {
-      return null
+    const headers: Record<string, string> = { 'X-Return-Format': 'html' }
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1))
+      try {
+        const res = await fetchImpl(`${RELAY_ENDPOINT}${url}`, { headers })
+        if (res.ok) {
+          const text = await res.text()
+          return text || null
+        }
+        if (!RETRYABLE_STATUSES.has(res.status)) return null
+      } catch {
+        // errore di rete: ritenta
+      }
     }
+    return null
   }
 }

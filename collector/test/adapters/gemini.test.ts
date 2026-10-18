@@ -175,3 +175,17 @@ test('ignora le parti di ragionamento (thought) dei modelli 3.x', async () => {
   expect(products).toHaveLength(1)
   expect(products[0].title).toBe('Carcassonne')
 })
+
+test('ritenta su 503 transitorio e poi riesce', async () => {
+  process.env.GEMINI_API_KEY = 'test-key'
+  let calls = 0
+  fetchMock.mockImplementation(async () => {
+    calls++
+    if (calls === 1) return { status: 503, ok: false, json: async () => ({}), text: async () => 'high demand' } as any
+    return { status: 200, ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '[{"title": "X"}]' }] } }] }), text: async () => '' } as any
+  })
+  const products = await fetchGeminiProducts(source)
+  expect(calls).toBe(2)
+  expect(products).toHaveLength(1)
+  expect(products[0].title).toBe('X')
+})

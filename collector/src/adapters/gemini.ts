@@ -8,6 +8,18 @@ import { normalizeTitle } from '../normalize.js'
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.6-flash'
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
+// Il modello può rispondere 429/503 (limite o "high demand" temporanea): ritenta con backoff.
+const RETRYABLE_STATUSES = new Set([429, 503])
+const MAX_ATTEMPTS = 3
+
+async function postWithRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init)
+    if (res.ok || !RETRYABLE_STATUSES.has(res.status) || attempt >= MAX_ATTEMPTS - 1) return res
+    await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt))
+  }
+}
+
 export async function fetchGeminiProducts(
   source: Source,
   gameFinder?: GameFinder,
@@ -33,7 +45,7 @@ export async function fetchGeminiProducts(
     .replace(/\{MESE_SUCCESSIVO\}/g, meseSuccessivo)
     .replace(/\{ANNO\}/g, String(anno))
 
-  const res = await fetch(`${API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
+  const res = await postWithRetry(`${API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
