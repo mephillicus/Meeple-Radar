@@ -37,10 +37,11 @@ test('POSTs the prompt to the Gemini API', async () => {
   await fetchGeminiProducts(source)
   expect(fetchMock).toHaveBeenCalledTimes(1)
   const [url, init] = fetchMock.mock.calls[0]
-  expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=test-key')
+  expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=test-key')
   expect(init.method).toBe('POST')
   expect(init.headers).toMatchObject({ 'Content-Type': 'application/json' })
   const body = JSON.parse(init.body as string)
+  expect(body.generationConfig).toMatchObject({ responseMimeType: 'application/json' })
   expect(body.contents[0].parts[0].text).toContain('ottobre')
   expect(body.contents[0].parts[0].text).toContain('novembre')
   expect(body.contents[0].parts[0].text).toContain('2026')
@@ -146,4 +147,31 @@ test('con HTTP 200 e corpo non JSON restituisce [] senza lanciare', async () => 
     text: async () => 'ciao',
   } as any)
   expect(await fetchGeminiProducts(source)).toEqual([])
+})
+
+test('include il corpo della risposta nell’errore quando lo status non è ok', async () => {
+  process.env.GEMINI_API_KEY = 'test-key'
+  fetchMock.mockResolvedValue({
+    status: 404, ok: false,
+    json: async () => ({}),
+    text: async () => '{"error":{"code":404,"message":"model not found"}}',
+  } as any)
+  await expect(fetchGeminiProducts(source)).rejects.toThrow(/404.*model not found/s)
+})
+
+test('ignora le parti di ragionamento (thought) dei modelli 3.x', async () => {
+  process.env.GEMINI_API_KEY = 'test-key'
+  fetchMock.mockResolvedValue({
+    status: 200, ok: true,
+    json: async () => ({
+      candidates: [{ content: { parts: [
+        { text: 'sto ragionando...', thought: true },
+        { text: '[{"title": "Carcassonne"}]' },
+      ] } }],
+    }),
+    text: async () => '',
+  } as any)
+  const products = await fetchGeminiProducts(source)
+  expect(products).toHaveLength(1)
+  expect(products[0].title).toBe('Carcassonne')
 })

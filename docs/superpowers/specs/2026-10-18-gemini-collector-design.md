@@ -19,8 +19,8 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 
 ## 3. Decisioni mie (da verificare in builder-check)
 
-- **Modello**: `gemini-2.0-flash` (economico, veloce, free tier).
-- **Formato di risposta**: JSON array strict, definito dal prompt; il parser valida e butta le entry non valide senza far fallire il run.
+- **Modello**: `gemini-3.6-flash` (GA corrente, economico e veloce; sovrascrivibile con la env `GEMINI_MODEL`). Il vecchio `gemini-2.0-flash` è stato dismesso il 2026-06-01 e restituiva 404.
+- **Formato di risposta**: JSON array strict, definito dal prompt; la richiesta imposta `responseMimeType: application/json` e il parser scarta le parti di ragionamento (`thought`) e le entry non valide senza far fallire il run.
 - **Nessun nuovo workflow**: la fonte `gemini` è una source nel seed e gira con `npm run collect` (cron 5:00/17:00) come le altre; serve solo il segreto in più. Due chiamate al giorno sono idempotenti (upsert).
 - **Nuovo kind**: il set chiuso `SOURCE_KINDS` si estende con `'gemini'` (richiede aggiornamento della spec di sistema).
 - **Abbinamento**: per normalizzazione del titolo (minuscole, niente punteggiatura) con publisher come indizio. Il DB **non** ha i codici articolo (gli `external_id` slug), quindi il join è per titolo; il codice articolo è salvato come `external_id` della listing Gemini quando c'è, altrimenti uno slug del titolo. Se l'abbinamento è ambiguo, non abbina (restano i dati del modello).

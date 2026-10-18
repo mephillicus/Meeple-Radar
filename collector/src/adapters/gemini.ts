@@ -3,7 +3,9 @@ import type { GameFinder, GameMatch, RawProduct, Source } from '../types.js'
 import type { ListingRow, ListingStore } from '../db.js'
 import { normalizeTitle } from '../normalize.js'
 
-const GEMINI_MODEL = 'gemini-2.0-flash'
+// `gemini-2.0-flash` è stato dismesso il 2026-06-01 (404). Default a un modello GA
+// corrente, sovrascrivibile con la env `GEMINI_MODEL` senza toccare il codice.
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.6-flash'
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 export async function fetchGeminiProducts(
@@ -34,20 +36,36 @@ export async function fetchGeminiProducts(
   const res = await fetch(`${API_BASE}/${GEMINI_MODEL}:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json' },
+    }),
   })
-  if (!res.ok) throw new Error(`Gemini API: ${res.status}`)
+  if (!res.ok) {
+    let detail = ''
+    try {
+      detail = (await res.text()).slice(0, 300)
+    } catch {
+      // corpo non leggibile: ci accontentiamo dello status
+    }
+    throw new Error(`Gemini API: ${res.status}${detail ? ` ${detail}` : ''}`)
+  }
 
   let data: {
-    candidates?: { content?: { parts?: { text?: unknown }[] } }[] | null
+    candidates?: { content?: { parts?: { text?: unknown; thought?: unknown }[] } }[] | null
   } | null = null
   try {
     data = await res.json()
   } catch {
     return []
   }
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
-  if (typeof text !== 'string') return []
+  // I modelli 3.x "pensano" per default: scarta le parti di ragionamento e tieni il testo.
+  const parts = data?.candidates?.[0]?.content?.parts ?? []
+  const text = parts
+    .filter((p) => p && p.thought !== true && typeof p.text === 'string')
+    .map((p) => p.text as string)
+    .join('')
+  if (text === '') return []
 
   let parsed: unknown
   try {
