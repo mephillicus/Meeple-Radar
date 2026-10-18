@@ -32,7 +32,7 @@ class DetailViewModel(
     init {
         viewModelScope.launch {
             _state.value = try {
-                val item = repo.incoming(today).firstOrNull { it.key == key }
+                val item = repo.incoming(today, emptySet()).firstOrNull { it.key == key }
                 if (item == null) {
                     DetailUiState.NotFound
                 } else {

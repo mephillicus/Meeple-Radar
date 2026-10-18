@@ -25,7 +25,7 @@ class FavoritesViewModel(
         _state.value = IncomingUiState.Loading
         viewModelScope.launch {
             _state.value = try {
-                val items = repo.favorites(today)
+                val items = repo.favorites(today, emptySet())
                 IncomingUiState.Content(items = items, favorites = items.map { it.key }.toSet())
             } catch (e: CancellationException) {
                 throw e

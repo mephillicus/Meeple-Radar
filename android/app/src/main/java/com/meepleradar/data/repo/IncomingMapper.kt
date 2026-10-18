@@ -23,8 +23,11 @@ fun buildIncomingItems(
     sources: Map<String, Source>,
     ignoredKeys: Set<String>,
     today: LocalDate,
+    sourceIds: Set<String>? = null,
+    includeUndated: Boolean = true,
 ): List<IncomingItem> =
     listings
+        .filter { sourceIds == null || it.sourceId in sourceIds }
         .groupBy { keyOf(it) }
         .filterKeys { it !in ignoredKeys }
         .map { (key, groupListings) ->
@@ -55,7 +58,11 @@ fun buildIncomingItems(
                 offers = offers,
             )
         }
-        .filter { it.releaseDate == null || !it.releaseDate.isBefore(today) }
+        .filter {
+            val isNotPast = it.releaseDate == null || !it.releaseDate.isBefore(today)
+            val isUndatedAllowed = includeUndated || it.releaseDate != null
+            isNotPast && isUndatedAllowed
+        }
         .sortedWith(
             compareBy<IncomingItem> { if (it.kind == ItemKind.UPCOMING) 0 else 1 }
                 .thenBy { it.releaseDate ?: LocalDate.MAX }

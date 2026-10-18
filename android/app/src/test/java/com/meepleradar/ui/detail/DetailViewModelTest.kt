@@ -5,6 +5,7 @@ import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
+import com.meepleradar.data.model.Source
 import com.meepleradar.data.repo.ListingRepository
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -37,9 +38,11 @@ class DetailViewModelTest {
     }
 
     private class FakeRepo(private val items: List<IncomingItem>) : ListingRepository {
-        override suspend fun incoming(today: LocalDate): List<IncomingItem> = items
+        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> = items
 
-        override suspend fun favorites(today: LocalDate): List<IncomingItem> = emptyList()
+        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> = emptyList()
+
+        override suspend fun sources(): List<Source> = emptyList()
 
         override suspend fun setAction(key: String, action: Action) = Unit
     }

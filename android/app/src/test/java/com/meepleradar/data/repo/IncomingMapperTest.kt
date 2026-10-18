@@ -144,6 +144,23 @@ class IncomingMapperTest {
     }
 
     @Test
+    fun `includeUndated falso esclude gli item senza data`() {
+        val future = listing(id = 2, gameId = 2, releaseDate = today.plusDays(3))
+        val undated = listing(id = 3, gameId = 3, releaseDate = null)
+
+        val items = buildIncomingItems(
+            listings = listOf(future, undated),
+            games = mapOf(2L to game(2, "Futuro"), 3L to game(3, "SenzaData")),
+            sources = sources("s1"),
+            ignoredKeys = emptySet(),
+            today = today,
+            includeUndated = false,
+        )
+
+        assertEquals(listOf("game:2"), items.map { it.key })
+    }
+
+    @Test
     fun `ordinamento upcoming per data crescente poi undated per titolo`() {
         val later = listing(id = 1, gameId = 1, releaseDate = today.plusDays(10))
         val sooner = listing(id = 2, gameId = 2, releaseDate = today.plusDays(2))

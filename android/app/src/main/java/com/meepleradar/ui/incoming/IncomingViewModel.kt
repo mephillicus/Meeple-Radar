@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.IncomingItem
+import com.meepleradar.data.model.Source
 import com.meepleradar.data.repo.ListingRepository
 import java.time.LocalDate
 import kotlin.coroutines.cancellation.CancellationException
@@ -28,13 +29,38 @@ class IncomingViewModel(
     private val _state = MutableStateFlow<IncomingUiState>(IncomingUiState.Loading)
     val state: StateFlow<IncomingUiState> = _state.asStateFlow()
 
+    private val _sources = MutableStateFlow<List<Source>>(emptyList())
+    val sources: StateFlow<List<Source>> = _sources.asStateFlow()
+
+    private val _selectedSources = MutableStateFlow<Set<String>?>(null)
+    val selectedSources: StateFlow<Set<String>?> = _selectedSources.asStateFlow()
+
+    private val _hideUndated = MutableStateFlow<Boolean>(false)
+    val hideUndated: StateFlow<Boolean> = _hideUndated.asStateFlow()
+
+    init {
+        loadSources()
+    }
+
+    fun applyFilters(sourceIds: Set<String>?, hideUndated: Boolean) {
+        _selectedSources.value = sourceIds
+        _hideUndated.value = hideUndated
+        refresh()
+    }
+
+    fun resetFilters() {
+        _selectedSources.value = null
+        _hideUndated.value = false
+        refresh()
+    }
+
     fun refresh() {
         _state.value = IncomingUiState.Loading
         viewModelScope.launch {
             _state.value = try {
                 IncomingUiState.Content(
-                    items = repo.incoming(today),
-                    favorites = repo.favorites(today).map { it.key }.toSet(),
+                    items = repo.incoming(today, _selectedSources.value, includeUndated = !_hideUndated.value),
+                    favorites = repo.favorites(today, _selectedSources.value, includeUndated = !_hideUndated.value).map { it.key }.toSet(),
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -43,6 +69,18 @@ class IncomingViewModel(
             }
         }
     }
+
+    fun loadSources() {
+        viewModelScope.launch {
+            try {
+                _sources.value = repo.sources()
+            } catch (e: Exception) {
+                _sources.value = emptyList()
+            }
+        }
+    }
+
+
 
     fun toggleFavorite(item: IncomingItem) {
         viewModelScope.launch {

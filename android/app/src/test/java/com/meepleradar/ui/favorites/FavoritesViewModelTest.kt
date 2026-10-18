@@ -3,6 +3,7 @@ package com.meepleradar.ui.favorites
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
+import com.meepleradar.data.model.Source
 import com.meepleradar.data.repo.ListingRepository
 import com.meepleradar.ui.incoming.IncomingUiState
 import java.io.IOException
@@ -42,12 +43,14 @@ class FavoritesViewModelTest {
     ) : ListingRepository {
         val actions = mutableListOf<Pair<String, Action>>()
 
-        override suspend fun incoming(today: LocalDate): List<IncomingItem> = emptyList()
+        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> = emptyList()
 
-        override suspend fun favorites(today: LocalDate): List<IncomingItem> {
+        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> {
             failure?.let { throw it }
             return favoriteItems
         }
+
+        override suspend fun sources(): List<Source> = emptyList()
 
         override suspend fun setAction(key: String, action: Action) {
             actions += key to action

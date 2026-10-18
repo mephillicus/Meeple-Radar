@@ -3,6 +3,7 @@ package com.meepleradar.ui.incoming
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
+import com.meepleradar.data.model.Source
 import com.meepleradar.data.repo.ListingRepository
 import java.io.IOException
 import java.time.LocalDate
@@ -42,15 +43,17 @@ class IncomingViewModelTest {
     ) : ListingRepository {
         val actions = mutableListOf<Pair<String, Action>>()
 
-        override suspend fun incoming(today: LocalDate): List<IncomingItem> {
+        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> {
             failure?.let { throw it }
             return incomingItems
         }
 
-        override suspend fun favorites(today: LocalDate): List<IncomingItem> {
+        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> {
             failure?.let { throw it }
             return favoriteItems
         }
+
+        override suspend fun sources(): List<Source> = emptyList()
 
         override suspend fun setAction(key: String, action: Action) {
             actions += key to action
@@ -146,5 +149,20 @@ class IncomingViewModelTest {
 
         assertEquals(listOf("game:5" to Action.IGNORED), repo.actions)
         assertTrue((viewModel.state.value as IncomingUiState.Content).items.isEmpty())
+    }
+
+    @Test
+    fun `applyFilters e resetFilters aggiornano lo stato dei filtri e fanno il refresh`() = runTest(dispatcher) {
+        val viewModel = IncomingViewModel(repo = FakeRepo(), today = today)
+        assertEquals(false, viewModel.hideUndated.value)
+        assertEquals(null, viewModel.selectedSources.value)
+
+        viewModel.applyFilters(sourceIds = setOf("s1"), hideUndated = true)
+        assertEquals(true, viewModel.hideUndated.value)
+        assertEquals(setOf("s1"), viewModel.selectedSources.value)
+
+        viewModel.resetFilters()
+        assertEquals(false, viewModel.hideUndated.value)
+        assertEquals(null, viewModel.selectedSources.value)
     }
 }
