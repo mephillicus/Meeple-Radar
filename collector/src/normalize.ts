@@ -1,5 +1,9 @@
 import type { Listing, RawProduct } from './types.js'
 
+export function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^\w\s]/gu, '').replace(/\s+/g, ' ').trim()
+}
+
 export function toPrice(priceRaw?: string, minorUnit?: number): number | null {
   if (priceRaw === undefined || priceRaw.trim() === '') return null
   const n = Number(priceRaw)
@@ -47,5 +51,6 @@ export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
     availability: raw.availabilityRaw ?? null,
     releaseDate: isoOrNull(raw.releaseDateRaw, raw.descriptionRaw),
     imageUrl: raw.imageUrl ?? null,
+    gameId: raw.gameId ?? null,
   }
 }

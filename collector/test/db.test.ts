@@ -7,10 +7,21 @@ test('upserts on the (source_id, external_id) conflict target', async () => {
   const store = createSupabaseStore({ from } as any, () => '2026-10-17T00:00:00Z')
   await store.upsertListings([
     { sourceId: 'cranio', externalId: '1', title: 'X', url: 'https://e.com/x',
-      price: 1, currency: 'EUR', availability: null, releaseDate: null, imageUrl: null },
+      price: 1, currency: 'EUR', availability: null, releaseDate: null, imageUrl: null, gameId: null },
   ])
   expect(from).toHaveBeenCalledWith('listing')
   expect(upsert.mock.calls[0][1]).toMatchObject({ onConflict: 'source_id,external_id' })
+})
+
+test('includes game_id in the upsert payload', async () => {
+  const upsert = vi.fn().mockResolvedValue({ error: null })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-17T00:00:00Z')
+  await store.upsertListings([
+    { sourceId: 'cranio', externalId: '1', title: 'X', url: 'https://e.com/x',
+      price: 1, currency: 'EUR', availability: null, releaseDate: null, imageUrl: null, gameId: 42 },
+  ])
+  expect(upsert.mock.calls[0][0][0]).toMatchObject({ game_id: 42 })
 })
 
 test('upserts sources on the id conflict target', async () => {

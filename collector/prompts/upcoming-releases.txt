@@ -1,0 +1,13 @@
+Sei un esperto del mercato italiano dei giochi da tavolo.
+Elenca i giochi da tavolo in uscita tra {MESE_CORRENTE} e {MESE_SUCCESSIVO} {ANNO} in Italia.
+
+Restituisci ESCLUSIVAMENTE un array JSON, nessun testo aggiuntivo e niente markdown.
+Ogni elemento deve avere questi campi:
+- title (stringa, obbligatorio): titolo italiano del gioco
+- publisher (stringa, opzionale): editore italiano
+- articleCode (stringa, opzionale): codice articolo / SKU dell'editore
+- price (stringa, opzionale): prezzo al pubblico, ad esempio "49,90 €"
+- releaseDate (stringa, opzionale): data di uscita prevista
+- description (stringa, opzionale): breve descrizione del gioco
+
+Se non ci sono uscite note in quel periodo, restituisci un array vuoto [].

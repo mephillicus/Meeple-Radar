@@ -2,6 +2,7 @@ import type { SourceKind } from '../types.js'
 import type { Adapter } from '../run.js'
 import { textFetcher, type HttpClient } from './http.js'
 import { fetchShopifyProducts } from './shopify.js'
+import { fetchGeminiProducts } from './gemini.js'
 import { fetchWooCommerceProducts } from './woocommerce.js'
 import { fetchWordPressProducts } from './wordpress.js'
 import { collectHtmlProducts } from './html/crawl.js'
@@ -24,5 +25,6 @@ export function buildRegistry(http?: HttpClient): Record<SourceKind, Adapter> {
       if (!spec) throw new Error(`nessuno spec headless per la fonte "${source.id}"`)
       return collectHtmlProducts({ spec, fetchText: getSharedFetcher() })
     },
+    gemini: (source) => fetchGeminiProducts(source),
   }
 }

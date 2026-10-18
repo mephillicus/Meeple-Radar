@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const SOURCE_KINDS = ['shopify', 'woocommerce', 'wordpress', 'html', 'headless'] as const
+export const SOURCE_KINDS = ['shopify', 'woocommerce', 'wordpress', 'html', 'headless', 'gemini'] as const
 export type SourceKind = (typeof SOURCE_KINDS)[number]
 
 export const RawProductSchema = z.object({
@@ -15,9 +15,20 @@ export const RawProductSchema = z.object({
   imageUrl: z.string().optional(),
   publishedAtRaw: z.string().optional(),
   releaseDateRaw: z.string().optional(),
+  gameId: z.number().optional(),
 })
 
 export type RawProduct = z.infer<typeof RawProductSchema>
+
+export type GameMatch = {
+  gameId: number | null
+  price: number | null
+  currency: string | null
+  releaseDate: string | null
+  imageUrl: string | null
+}
+
+export type GameFinder = (normalizedTitle: string, publisherHint?: string) => Promise<GameMatch | null>
 
 export type Listing = {
   sourceId: string
@@ -29,6 +40,7 @@ export type Listing = {
   availability: string | null
   releaseDate: string | null
   imageUrl: string | null
+  gameId: number | null
 }
 
 export type Source = {

@@ -42,6 +42,7 @@ export function createSupabaseStore(
         availability: r.availability,
         release_date: r.releaseDate,
         image_url: r.imageUrl,
+        game_id: r.gameId ?? null,
         last_seen_at: seen,
       }))
       const { error } = await client
