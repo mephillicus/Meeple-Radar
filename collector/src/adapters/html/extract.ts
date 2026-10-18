@@ -50,7 +50,7 @@ function deriveId(url: string): string {
   }
 }
 
-function buildProduct(fields: {
+export function buildProduct(fields: {
   title?: string
   url: string
   externalId?: string

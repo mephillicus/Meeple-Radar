@@ -1,5 +1,10 @@
 import * as cheerio from 'cheerio'
 import type { TextFetcher } from '../http.js'
+import type { DiscoveredProduct } from './crawl.js'
+
+export function toItems(urls: string[]): DiscoveredProduct[] {
+  return urls.map((url) => ({ url }))
+}
 
 export async function collectLinks(
   fetchText: TextFetcher,

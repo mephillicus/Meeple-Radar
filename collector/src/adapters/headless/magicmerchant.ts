@@ -1,5 +1,5 @@
 import type { HtmlSourceSpec } from '../html/crawl.js'
-import { collectLinks } from '../html/links.js'
+import { collectLinks, toItems } from '../html/links.js'
 
 // Magic Merchant è dietro una Cloudflare "managed challenge": anche un browser reale
 // (patchright + Chrome) resta sull'interstitziale, quindi la fonte resta `enabled: false`.
@@ -12,5 +12,5 @@ const SEEDS = [
 const PRODUCT_URL = /^https:\/\/magicmerchant\.it\/catalogue\/(?!category\/)[a-z0-9][a-z0-9-]*-\d+\/$/
 
 export const magicmerchantSpec: HtmlSourceSpec = {
-  discover: (fetchText) => collectLinks(fetchText, SEEDS, (url) => PRODUCT_URL.test(url)),
+  discover: async (fetchText) => toItems(await collectLinks(fetchText, SEEDS, (url) => PRODUCT_URL.test(url))),
 }

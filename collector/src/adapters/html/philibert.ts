@@ -1,5 +1,5 @@
 import type { HtmlSourceSpec } from './crawl.js'
-import { collectLinks } from './links.js'
+import { collectLinks, toItems } from './links.js'
 
 // Il negozio IT (philibertnet.com/it/…) risponde 500; la versione EN è raggiungibile
 // e in EUR, quindi si usa quella.
@@ -12,5 +12,5 @@ const SEEDS = [
 const PRODUCT_URL = /^https:\/\/www\.philibertnet\.com\/en\/[a-z0-9-]+\/\d+-[^/]+\.html$/
 
 export const philibertSpec: HtmlSourceSpec = {
-  discover: (fetchText) => collectLinks(fetchText, SEEDS, (url) => PRODUCT_URL.test(url)),
+  discover: async (fetchText) => toItems(await collectLinks(fetchText, SEEDS, (url) => PRODUCT_URL.test(url))),
 }

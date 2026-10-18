@@ -14,6 +14,7 @@ export const RawProductSchema = z.object({
   descriptionRaw: z.string().optional(),
   imageUrl: z.string().optional(),
   publishedAtRaw: z.string().optional(),
+  releaseDateRaw: z.string().optional(),
 })
 
 export type RawProduct = z.infer<typeof RawProductSchema>

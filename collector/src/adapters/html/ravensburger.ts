@@ -1,5 +1,6 @@
 import type { HtmlSourceSpec } from './crawl.js'
 import { fetchSitemapEntries, newestFirst } from '../sitemap.js'
+import { toItems } from './links.js'
 
 const SITEMAP = 'https://www.ravensburger.it/sitemap.xml'
 
@@ -14,8 +15,8 @@ function isProductUrl(url: string): boolean {
 export const ravensburgerSpec: HtmlSourceSpec = {
   discover: async (fetchText) => {
     const entries = await fetchSitemapEntries(SITEMAP, fetchText)
-    return newestFirst(entries)
+    return toItems(newestFirst(entries)
       .map((entry) => entry.loc)
-      .filter(isProductUrl)
+      .filter(isProductUrl))
   },
 }

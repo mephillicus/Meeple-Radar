@@ -10,7 +10,7 @@ test('uplay discovers product pages from its sitemap index', async () => {
     </urlset>`,
   }
   const urls = await HTML_SPECS.uplay.discover(async (u) => pages[u] ?? null)
-  expect(urls).toEqual(['https://www.uplay.it/it/gioco-da-tavolo-mystery-express.html'])
+  expect(urls).toEqual([{ url: 'https://www.uplay.it/it/gioco-da-tavolo-mystery-express.html' }])
 })
 
 test('asmodee discovers product pages from its product sitemap', async () => {
@@ -21,5 +21,5 @@ test('asmodee discovers product pages from its product sitemap', async () => {
     </urlset>`,
   }
   const urls = await HTML_SPECS.asmodee.discover(async (u) => pages[u] ?? null)
-  expect(urls).toEqual(['https://www.asmodee.it/product/catchables/'])
+  expect(urls).toEqual([{ url: 'https://www.asmodee.it/product/catchables/' }])
 })
