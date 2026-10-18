@@ -18,4 +18,5 @@ export const SOURCES: Source[] = [
   { id: 'dvgiochi',      name: 'dV Games',             kind: 'html',        baseUrl: 'https://www.dvgiochi.com',         enabled: true },
   { id: 'horribleguild', name: 'Horrible Guild',       kind: 'html',        baseUrl: 'https://horribleguild.com',        enabled: true },
   { id: 'gateongames',   name: 'GateOnGames',          kind: 'html',        baseUrl: 'https://www.gateongames.com',     enabled: true },
+  { id: 'gemini',        name: 'Gemini',               kind: 'gemini',      baseUrl: 'https://generativelanguage.googleapis.com', enabled: true },
 ]
