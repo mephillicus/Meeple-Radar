@@ -24,6 +24,24 @@ test('includes game_id in the upsert payload', async () => {
   expect(upsert.mock.calls[0][0][0]).toMatchObject({ game_id: 42 })
 })
 
+test('findListingsByTitle fetches the listing columns and filters by normalizeTitle', async () => {
+  const select = vi.fn().mockResolvedValue({
+    data: [
+      { id: 1, title: 'Carcassonne', url: 'https://e.com/c', price: 19.99, currency: 'EUR', release_date: '2026-11-10', image_url: 'https://e.com/i.jpg', game_id: 7 },
+      { id: 2, title: 'Carcassonne: Nuova Edizione', url: 'https://e.com/c2', price: 29.99, currency: 'EUR', release_date: null, image_url: null, game_id: null },
+      { id: 3, title: 'Cascadia', url: 'https://e.com/ca', price: null, currency: null, release_date: null, image_url: null, game_id: null },
+    ],
+    error: null,
+  })
+  const from = vi.fn(() => ({ select }))
+  const store = createSupabaseStore({ from } as any)
+  const rows = await store.findListingsByTitle('carcassonne')
+  expect(from).toHaveBeenCalledWith('listing')
+  expect(select).toHaveBeenCalledWith('id, title, url, price, currency, release_date, image_url, game_id')
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ id: 1, title: 'Carcassonne', gameId: 7, price: 19.99, currency: 'EUR', releaseDate: '2026-11-10', imageUrl: 'https://e.com/i.jpg' })
+})
+
 test('upserts sources on the id conflict target', async () => {
   const upsert = vi.fn().mockResolvedValue({ error: null })
   const from = vi.fn(() => ({ upsert }))

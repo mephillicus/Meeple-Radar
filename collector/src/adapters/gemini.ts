@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
-import type { GameFinder, RawProduct, Source } from '../types.js'
+import type { GameFinder, GameMatch, RawProduct, Source } from '../types.js'
+import type { ListingRow, ListingStore } from '../db.js'
 import { normalizeTitle } from '../normalize.js'
 
 const GEMINI_MODEL = 'gemini-2.0-flash'
@@ -98,6 +99,33 @@ export async function fetchGeminiProducts(
     out.push(raw)
   }
   return out
+}
+
+export function createGameFinder(store: ListingStore): GameFinder {
+  return async (normalizedTitle, publisherHint) => {
+    const rows = await store.findListingsByTitle(normalizedTitle)
+    if (rows.length === 0) return null
+    if (rows.length === 1) return listingToMatch(rows[0])
+    if (publisherHint !== undefined && publisherHint !== '') {
+      const hint = normalizeTitle(publisherHint)
+      const hits = rows.filter((row) => {
+        const sourceId = (row as unknown as Record<string, unknown>).sourceId
+        return sourceId !== undefined && sourceId !== null && normalizeTitle(String(sourceId)) === hint
+      })
+      if (hits.length === 1) return listingToMatch(hits[0])
+    }
+    return null
+  }
+}
+
+function listingToMatch(row: ListingRow): GameMatch {
+  return {
+    gameId: row.gameId,
+    price: row.price,
+    currency: row.currency,
+    releaseDate: row.releaseDate,
+    imageUrl: row.imageUrl,
+  }
 }
 
 function parsePrice(value: string): { raw: string; currency?: string } {

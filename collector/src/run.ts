@@ -4,6 +4,7 @@ import { normalizeListing } from './normalize.js'
 import { createSupabaseClient, type ListingStore } from './db.js'
 import { loadConfig } from './config.js'
 import { buildRegistry } from './adapters/registry.js'
+import { createGameFinder } from './adapters/gemini.js'
 import { SOURCES } from './sources.seed.js'
 
 export type Adapter = (source: Source) => Promise<RawProduct[]>
@@ -49,7 +50,11 @@ export async function main(): Promise<number> {
   const { supabaseUrl, supabaseServiceKey } = loadConfig(process.env)
   const store = createSupabaseClient(supabaseUrl, supabaseServiceKey)
   await store.upsertSources(SOURCES)
-  const report = await runCollector({ sources: SOURCES, adapters: buildRegistry(), store })
+  const report = await runCollector({
+    sources: SOURCES,
+    adapters: buildRegistry(undefined, createGameFinder(store)),
+    store,
+  })
   console.log(JSON.stringify(report, null, 2))
   return report.ok && report.zeroed.length === 0 ? 0 : 1
 }

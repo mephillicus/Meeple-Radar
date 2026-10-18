@@ -1,4 +1,4 @@
-import type { SourceKind } from '../types.js'
+import type { GameFinder, SourceKind } from '../types.js'
 import type { Adapter } from '../run.js'
 import { textFetcher, type HttpClient } from './http.js'
 import { fetchShopifyProducts } from './shopify.js'
@@ -10,7 +10,7 @@ import { HTML_SPECS } from './html/specs.js'
 import { HEADLESS_SPECS } from './headless/specs.js'
 import { getSharedFetcher } from './headless/fetch.js'
 
-export function buildRegistry(http?: HttpClient): Record<SourceKind, Adapter> {
+export function buildRegistry(http?: HttpClient, gameFinder?: GameFinder): Record<SourceKind, Adapter> {
   return {
     shopify: (source) => fetchShopifyProducts(source.baseUrl, http),
     woocommerce: (source) => fetchWooCommerceProducts(source.baseUrl, 'EUR', http),
@@ -25,6 +25,6 @@ export function buildRegistry(http?: HttpClient): Record<SourceKind, Adapter> {
       if (!spec) throw new Error(`nessuno spec headless per la fonte "${source.id}"`)
       return collectHtmlProducts({ spec, fetchText: getSharedFetcher() })
     },
-    gemini: (source) => fetchGeminiProducts(source),
+    gemini: (source) => fetchGeminiProducts(source, gameFinder),
   }
 }

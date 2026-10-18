@@ -1,11 +1,24 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Listing, Source } from './types.js'
+import { normalizeTitle } from './normalize.js'
+
+export interface ListingRow {
+  id: number
+  title: string
+  url: string
+  price: number | null
+  currency: string | null
+  releaseDate: string | null
+  imageUrl: string | null
+  gameId: number | null
+}
 
 export interface ListingStore {
   upsertSources(sources: Source[]): Promise<void>
   upsertListings(rows: Listing[]): Promise<void>
   markSourceScanned(sourceId: string): Promise<void>
   logRun(ok: boolean, details: unknown): Promise<void>
+  findListingsByTitle(normalizedTitle: string): Promise<ListingRow[]>
 }
 
 type SupabaseLike = { from(table: string): any }
@@ -64,6 +77,25 @@ export function createSupabaseStore(
         .from('run_log')
         .insert({ ok, details, finished_at: now() })
       if (error) throw new Error(`logRun: ${error.message}`)
+    },
+
+    async findListingsByTitle(normalizedTitle: string): Promise<ListingRow[]> {
+      const { data, error } = await client
+        .from('listing')
+        .select('id, title, url, price, currency, release_date, image_url, game_id')
+      if (error) throw new Error(`findListingsByTitle: ${error.message}`)
+      return (data ?? [])
+        .map((row: Record<string, unknown>) => ({
+          id: Number(row.id),
+          title: String(row.title ?? ''),
+          url: String(row.url ?? ''),
+          price: row.price === null || row.price === undefined ? null : Number(row.price),
+          currency: row.currency === null || row.currency === undefined ? null : String(row.currency),
+          releaseDate: row.release_date === null || row.release_date === undefined ? null : String(row.release_date),
+          imageUrl: row.image_url === null || row.image_url === undefined ? null : String(row.image_url),
+          gameId: row.game_id === null || row.game_id === undefined ? null : Number(row.game_id),
+        }))
+        .filter((row: ListingRow) => normalizeTitle(row.title) === normalizedTitle)
     },
   }
 }
