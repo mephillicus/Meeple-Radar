@@ -79,3 +79,43 @@ test('horribleguild extract keeps priceRaw undefined when the page has no price'
   expect(product?.title).toBe('Railroad Ink Challenge')
   expect(product?.priceRaw).toBeUndefined()
 })
+
+const GOG_SEEDS = [
+  'https://www.gateongames.com/prodotti/localizzazioni/',
+  'https://www.gateongames.com/prodotti/originali-gog/',
+]
+
+test('gateongames discovers only product links, skipping menu pages and the German subtree', async () => {
+  const pages: Record<string, string> = {
+    [GOG_SEEDS[0]]: `<html><body>
+      <a href="/alpaca/">Alpaca</a>
+      <a href="/mini-crimes/">Mini Crimes</a>
+      <a href="/chi-siamo/">Chi Siamo</a>
+      <a href="/privacy-policy/">Privacy Policy</a>
+      <a href="https://www.gateongames.com/de/prodotti/gog-originalen/">GOG Originalen</a>
+      <a href="/prodotti/localizzazioni/">Torna alle localizzazioni</a>
+    </body></html>`,
+  }
+  const items = await HTML_SPECS.gateongames.discover(async (u) => pages[u] ?? null)
+  expect(items).toEqual([
+    { url: 'https://www.gateongames.com/alpaca/' },
+    { url: 'https://www.gateongames.com/mini-crimes/' },
+  ])
+})
+
+test('gateongames deduplicates a link found on both source pages', async () => {
+  const pages: Record<string, string> = {
+    [GOG_SEEDS[0]]: `<html><body>
+      <a href="/alpaca/">Alpaca</a>
+      <a href="/contattaci/">Contattaci</a>
+    </body></html>`,
+    [GOG_SEEDS[1]]: `<html><body>
+      <a href="/alpaca/">Alpaca (originali GoG)</a>
+      <a href="/corti-in-gioco/">Corti in Gioco</a>
+    </body></html>`,
+  }
+  const items = await HTML_SPECS.gateongames.discover(async (u) => pages[u] ?? null)
+  expect(items).toEqual([
+    { url: 'https://www.gateongames.com/alpaca/' },
+  ])
+})

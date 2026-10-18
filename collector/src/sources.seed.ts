@@ -17,4 +17,5 @@ export const SOURCES: Source[] = [
   { id: 'msedizioni',    name: 'MS Edizioni',           kind: 'woocommerce', baseUrl: 'https://www.msedizioni.it',        enabled: true },
   { id: 'dvgiochi',      name: 'dV Games',             kind: 'html',        baseUrl: 'https://www.dvgiochi.com',         enabled: true },
   { id: 'horribleguild', name: 'Horrible Guild',       kind: 'html',        baseUrl: 'https://horribleguild.com',        enabled: true },
+  { id: 'gateongames',   name: 'GateOnGames',          kind: 'html',        baseUrl: 'https://www.gateongames.com',     enabled: true },
 ]
