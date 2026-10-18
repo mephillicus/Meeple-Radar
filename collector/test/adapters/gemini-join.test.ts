@@ -14,10 +14,19 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   releaseDate: '2026-11-10',
   imageUrl: 'https://e.com/img.jpg',
   gameId: 7,
+  sourceId: 'ghenos',
   ...overrides,
 })
 
-const storeWith = (rows: unknown[]) => ({ findListingsByTitle: vi.fn().mockResolvedValue(rows) } as any)
+const sources = [
+  { id: 'cranio', name: 'Cranio Creations' },
+  { id: 'ghenos', name: 'Ghenos Games' },
+]
+
+const storeWith = (rows: unknown[], srcs: { id: string; name: string }[] = sources) => ({
+  findListingsByTitle: vi.fn().mockResolvedValue(rows),
+  findSources: vi.fn().mockResolvedValue(srcs),
+} as any)
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -42,23 +51,34 @@ test('createGameFinder: no rows resolves to null', async () => {
   expect(match).toBeNull()
 })
 
-test('createGameFinder: several rows, publisher hint picks the matching sourceId', async () => {
+test('createGameFinder: several rows, publisher hint picks the row whose source_id matches the hint', async () => {
   const rows = [
     row({ id: 1, sourceId: 'cranio', title: 'Carcassonne', gameId: 7, price: 19.99 }),
     row({ id: 2, sourceId: 'ghenos', title: 'Carcassonne: Nuova Edizione', gameId: 9, price: 29.99 }),
   ]
-  const finder = createGameFinder(storeWith(rows))
-  const match = await finder('carcassonne', 'cranio')
+  const finder = createGameFinder(storeWith(rows, [
+    { id: 'cranio', name: 'Cranio Creations' },
+    { id: 'ghenos', name: 'Ghenos Games' },
+  ]))
+  const match = await finder('carcassonne', 'Cranio Creations')
   expect(match).toEqual({ gameId: 7, price: 19.99, currency: 'EUR', releaseDate: '2026-11-10', imageUrl: 'https://e.com/img.jpg' })
 })
 
-test('createGameFinder: several rows without a matching hint is ambiguous and returns null', async () => {
+test('createGameFinder: several rows with a hint matching no source is ambiguous and returns null', async () => {
   const rows = [
     row({ id: 1, sourceId: 'cranio', title: 'Carcassonne', gameId: 7 }),
     row({ id: 2, sourceId: 'ghenos', title: 'Carcassonne: Nuova Edizione', gameId: 9 }),
   ]
-  const finder = createGameFinder(storeWith(rows))
-  expect(await finder('carcassonne', 'giochiuniti')).toBeNull()
+  const finder = createGameFinder(storeWith(rows, sources))
+  expect(await finder('carcassonne', 'Giochi Uniti')).toBeNull()
+})
+
+test('createGameFinder: several rows without a hint is ambiguous and returns null', async () => {
+  const rows = [
+    row({ id: 1, sourceId: 'cranio', title: 'Carcassonne', gameId: 7 }),
+    row({ id: 2, sourceId: 'ghenos', title: 'Carcassonne: Nuova Edizione', gameId: 9 }),
+  ]
+  const finder = createGameFinder(storeWith(rows, sources))
   expect(await finder('carcassonne')).toBeNull()
 })
 

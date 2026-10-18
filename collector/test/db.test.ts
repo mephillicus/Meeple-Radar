@@ -24,12 +24,12 @@ test('includes game_id in the upsert payload', async () => {
   expect(upsert.mock.calls[0][0][0]).toMatchObject({ game_id: 42 })
 })
 
-test('findListingsByTitle fetches the listing columns and filters by normalizeTitle', async () => {
+test('findListingsByTitle fetches the listing columns including source_id and filters by normalizeTitle', async () => {
   const select = vi.fn().mockResolvedValue({
     data: [
-      { id: 1, title: 'Carcassonne', url: 'https://e.com/c', price: 19.99, currency: 'EUR', release_date: '2026-11-10', image_url: 'https://e.com/i.jpg', game_id: 7 },
-      { id: 2, title: 'Carcassonne: Nuova Edizione', url: 'https://e.com/c2', price: 29.99, currency: 'EUR', release_date: null, image_url: null, game_id: null },
-      { id: 3, title: 'Cascadia', url: 'https://e.com/ca', price: null, currency: null, release_date: null, image_url: null, game_id: null },
+      { id: 1, title: 'Carcassonne', url: 'https://e.com/c', price: 19.99, currency: 'EUR', release_date: '2026-11-10', image_url: 'https://e.com/i.jpg', game_id: 7, source_id: 'ghenos' },
+      { id: 2, title: 'Carcassonne: Nuova Edizione', url: 'https://e.com/c2', price: 29.99, currency: 'EUR', release_date: null, image_url: null, game_id: null, source_id: 'cranio' },
+      { id: 3, title: 'Cascadia', url: 'https://e.com/ca', price: null, currency: null, release_date: null, image_url: null, game_id: null, source_id: 'asmodee' },
     ],
     error: null,
   })
@@ -37,9 +37,28 @@ test('findListingsByTitle fetches the listing columns and filters by normalizeTi
   const store = createSupabaseStore({ from } as any)
   const rows = await store.findListingsByTitle('carcassonne')
   expect(from).toHaveBeenCalledWith('listing')
-  expect(select).toHaveBeenCalledWith('id, title, url, price, currency, release_date, image_url, game_id')
+  expect(select).toHaveBeenCalledWith('id, title, url, price, currency, release_date, image_url, game_id, source_id')
   expect(rows).toHaveLength(1)
-  expect(rows[0]).toMatchObject({ id: 1, title: 'Carcassonne', gameId: 7, price: 19.99, currency: 'EUR', releaseDate: '2026-11-10', imageUrl: 'https://e.com/i.jpg' })
+  expect(rows[0]).toMatchObject({ id: 1, title: 'Carcassonne', gameId: 7, sourceId: 'ghenos', price: 19.99, currency: 'EUR', releaseDate: '2026-11-10', imageUrl: 'https://e.com/i.jpg' })
+})
+
+test('findSources returns id/name rows from the source table', async () => {
+  const select = vi.fn().mockResolvedValue({
+    data: [
+      { id: 'cranio', name: 'Cranio Creations' },
+      { id: 'ghenos', name: 'Ghenos Games' },
+    ],
+    error: null,
+  })
+  const from = vi.fn(() => ({ select }))
+  const store = createSupabaseStore({ from } as any)
+  const found = await store.findSources()
+  expect(from).toHaveBeenCalledWith('source')
+  expect(select).toHaveBeenCalledWith('id, name')
+  expect(found).toEqual([
+    { id: 'cranio', name: 'Cranio Creations' },
+    { id: 'ghenos', name: 'Ghenos Games' },
+  ])
 })
 
 test('upserts sources on the id conflict target', async () => {

@@ -11,6 +11,7 @@ export interface ListingRow {
   releaseDate: string | null
   imageUrl: string | null
   gameId: number | null
+  sourceId: string
 }
 
 export interface ListingStore {
@@ -19,6 +20,7 @@ export interface ListingStore {
   markSourceScanned(sourceId: string): Promise<void>
   logRun(ok: boolean, details: unknown): Promise<void>
   findListingsByTitle(normalizedTitle: string): Promise<ListingRow[]>
+  findSources(): Promise<{ id: string; name: string }[]>
 }
 
 type SupabaseLike = { from(table: string): any }
@@ -82,7 +84,7 @@ export function createSupabaseStore(
     async findListingsByTitle(normalizedTitle: string): Promise<ListingRow[]> {
       const { data, error } = await client
         .from('listing')
-        .select('id, title, url, price, currency, release_date, image_url, game_id')
+        .select('id, title, url, price, currency, release_date, image_url, game_id, source_id')
       if (error) throw new Error(`findListingsByTitle: ${error.message}`)
       return (data ?? [])
         .map((row: Record<string, unknown>) => ({
@@ -94,8 +96,20 @@ export function createSupabaseStore(
           releaseDate: row.release_date === null || row.release_date === undefined ? null : String(row.release_date),
           imageUrl: row.image_url === null || row.image_url === undefined ? null : String(row.image_url),
           gameId: row.game_id === null || row.game_id === undefined ? null : Number(row.game_id),
+          sourceId: row.source_id === null || row.source_id === undefined ? '' : String(row.source_id),
         }))
         .filter((row: ListingRow) => normalizeTitle(row.title) === normalizedTitle)
+    },
+
+    async findSources(): Promise<{ id: string; name: string }[]> {
+      const { data, error } = await client
+        .from('source')
+        .select('id, name')
+      if (error) throw new Error(`findSources: ${error.message}`)
+      return (data ?? []).map((row: Record<string, unknown>) => ({
+        id: String(row.id ?? ''),
+        name: String(row.name ?? ''),
+      }))
     },
   }
 }

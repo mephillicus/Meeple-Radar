@@ -102,17 +102,28 @@ export async function fetchGeminiProducts(
 }
 
 export function createGameFinder(store: ListingStore): GameFinder {
+  let sourceIdByNameCache: Record<string, string> | null = null
+
+  async function loadSourceIdByName(): Promise<Record<string, string>> {
+    if (sourceIdByNameCache !== null) return sourceIdByNameCache
+    const sources = await store.findSources()
+    const map: Record<string, string> = {}
+    for (const s of sources) map[normalizeTitle(s.name)] = s.id
+    sourceIdByNameCache = map
+    return map
+  }
+
   return async (normalizedTitle, publisherHint) => {
     const rows = await store.findListingsByTitle(normalizedTitle)
     if (rows.length === 0) return null
     if (rows.length === 1) return listingToMatch(rows[0])
     if (publisherHint !== undefined && publisherHint !== '') {
-      const hint = normalizeTitle(publisherHint)
-      const hits = rows.filter((row) => {
-        const sourceId = (row as unknown as Record<string, unknown>).sourceId
-        return sourceId !== undefined && sourceId !== null && normalizeTitle(String(sourceId)) === hint
-      })
-      if (hits.length === 1) return listingToMatch(hits[0])
+      const byName = await loadSourceIdByName()
+      const targetSourceId = byName[normalizeTitle(publisherHint)]
+      if (targetSourceId !== undefined && targetSourceId !== '') {
+        const hits = rows.filter((row) => row.sourceId === targetSourceId)
+        if (hits.length === 1) return listingToMatch(hits[0])
+      }
     }
     return null
   }
