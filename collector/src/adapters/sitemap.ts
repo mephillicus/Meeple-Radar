@@ -6,7 +6,27 @@ const ENTRY_RE = /<(url|sitemap)\b[^>]*>([\s\S]*?)<\/\1>/gi
 const LOC_RE = /<loc>\s*([^<]*?)\s*<\/loc>/i
 const LASTMOD_RE = /<lastmod>\s*([^<]*?)\s*<\/lastmod>/i
 
+// Il reader Jina AI rende una sitemap come HTML: `<div><a href="URL">URL</a><br><time>LASTMOD</time></div>`.
+const JINA_ENTRY_RE = /<a\s+[^>]*href="([^"]+)"[^>]*>[^<]*<\/a>(?:\s*<br\s*\/?>\s*<time>\s*([^<]*?)\s*<\/time>)?/gi
+const JINA_INDEX_RE = /<title>\s*Sitemap Index\s*<\/title>/i
+
+function isJinaHtml(text: string): boolean {
+  return !/<loc>/.test(text) && /<a\s+[^>]*href="/.test(text)
+}
+
+function parseJinaEntries(html: string): SitemapEntry[] {
+  const out: SitemapEntry[] = []
+  for (const m of html.matchAll(JINA_ENTRY_RE)) {
+    const loc = m[1].trim()
+    if (!loc) continue
+    const lastmod = m[2]?.trim()
+    out.push(lastmod ? { loc, lastmod } : { loc })
+  }
+  return out
+}
+
 export function parseSitemapEntries(xml: string): SitemapEntry[] {
+  if (isJinaHtml(xml)) return parseJinaEntries(xml)
   const out: SitemapEntry[] = []
   for (const m of xml.matchAll(ENTRY_RE)) {
     const block = m[2]
@@ -19,7 +39,8 @@ export function parseSitemapEntries(xml: string): SitemapEntry[] {
 }
 
 export function isSitemapIndex(xml: string): boolean {
-  return /<sitemapindex[\s>]/.test(xml)
+  if (/<sitemapindex[\s>]/.test(xml)) return true
+  return JINA_INDEX_RE.test(xml)
 }
 
 export function newestFirst(entries: SitemapEntry[]): SitemapEntry[] {

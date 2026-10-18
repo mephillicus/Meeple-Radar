@@ -17,5 +17,5 @@ test('registry provides an adapter for every kind', () => {
 
 test('only sources with a verified working adapter are enabled', () => {
   const enabled = SOURCES.filter(s => s.enabled).map(s => s.id).sort()
-  expect(enabled).toEqual(['asmodee', 'boardhouse', 'cranio', 'dvgiochi', 'gateongames', 'gemini', 'ghenos', 'giochiuniti', 'horribleguild', 'littlerocket', 'msedizioni', 'pendragon', 'philibert', 'supernova'])
+  expect(enabled).toEqual(['asmodee', 'boardhouse', 'cranio', 'dungeondice', 'dvgiochi', 'gateongames', 'gemini', 'ghenos', 'giochiuniti', 'horribleguild', 'littlerocket', 'msedizioni', 'pendragon', 'philibert', 'ravensburger', 'supernova', 'uplay'])
 })

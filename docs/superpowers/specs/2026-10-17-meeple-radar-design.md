@@ -64,7 +64,7 @@ Ho sondato le fonti. **Buona notizia: la maggior parte espone dati strutturati**
 | Ghenos Games | WordPress + WooCommerce | `GET /wp-json/wp/v2/product` ✅ | abilitata |
 | Pendragon Game Studio | WooCommerce | `GET /wp-json/wc/store/v1/products` ✅ | abilitata |
 | Giochi Uniti | Sitemap index (Magento; prodotti su `igiochideigrandi.it`) | sitemap → parsing HTML/JSON-LD ✅ (40) | abilitata |
-| Ravensburger IT | Custom — base **`ravensburger.it`** (non più `.org`, la cui sitemap era vuota) | sitemap urlset (~2.476 prodotti) → parsing HTML/JSON-LD; Cloudflare: raggiungibile da **IP residenziale** (via `curl`), **bloccata dagli IP datacenter di Actions** | disabilitata |
+| Ravensburger IT | Custom — base **`ravensburger.it`** (non più `.org`, la cui sitemap era vuota) | sitemap urlset (~2.476 prodotti) → parsing HTML/JSON-LD; **Cloudflare**: via `curl` da IP residenziale, via reader **Jina AI** da CI ✅ | abilitata |
 | Asmodee Italia | Custom — `product-sitemap.xml` | sitemap → parsing HTML/JSON-LD ✅ (40) | abilitata |
 | Studio Supernova | **Shopify** | `GET /products.json` ✅ (334); il dominio senza `www` ha il TLS rotto → base obbligatoria **`www.studiosupernova.it`** | abilitata |
 | Little Rocket Games | WooCommerce | `GET /wp-json/wc/store/v1/products` ✅ (81) | abilitata |
@@ -80,12 +80,12 @@ Ho sondato le fonti. **Buona notizia: la maggior parte espone dati strutturati**
 | Fonte | Piattaforma rilevata | Accesso effettivo | Stato |
 |---|---|---|---|
 | BoardHouse Store | **Shopify** | `GET /products.json` ✅ | abilitata |
-| uplay.it | Sitemap index (8 sitemap prodotti) | sitemap → parsing HTML/JSON-LD; **Cloudflare**: raggiungibile da IP residenziale, **bloccata dagli IP datacenter di Actions** | disabilitata |
+| uplay.it | Sitemap index (8 sitemap prodotti) | sitemap → parsing HTML/JSON-LD; **Cloudflare**: via `curl` da IP residenziale, via reader **Jina AI** da CI ✅ (40) | abilitata |
 | Philibert | PrestaShop | sito IT `/it/` rotto (HTTP 500); si usa il sito EN `/en/` (prezzi EUR) → crawl HTML ✅ (40) | abilitata |
-| DungeonDice | Anti-bot (Cloudflare) | tag Open Graph; raggiungibile da IP residenziale (via `curl`), **bloccata dagli IP datacenter di Actions** | disabilitata |
+| DungeonDice | Anti-bot (Cloudflare) | tag Open Graph; via `curl` da IP residenziale, via reader **Jina AI** da CI ✅ (40) | abilitata |
 | Magic Merchant | Anti-bot (Cloudflare, **managed challenge**) | blocca `fetch`, browser **e** `curl`; spec pronto ma fonte **disabilitata** | disabilitata |
 
-**Conseguenza per il design:** conviene un livello di **"adattatori" per fonte** (uno per piattaforma/metodo), così aggiungere o riparare una fonte non tocca il resto. Le fonti **Shopify** restano il caso più economico; sitemap+HTML coprono editori e negozi. Il discriminante reale è **Cloudflare**: le 4 fonti protette (uplay, Ravensburger, DungeonDice, Magic Merchant) sono raggiungibili **da IP residenziale** ma **bloccate dagli IP datacenter dei runner di Actions**. Per il kind `headless` esiste un fetcher **`curl`** in sottoprocesso (`src/adapters/headless/fetch.ts`) che in locale supera Cloudflare (Ravensburger/DungeonDice, non Magic Merchant), ma da CI non basta: quindi queste fonti restano **disabilitate** con lo spec pronto, pronte a riaccendersi da un'esecuzione non datacenter (es. self-hosted runner / PC di casa). Verifica end-to-end CI: **14/18 fonti abilitate**, `zeroed: []` (dopo la rimozione di Kosmos, Stonemaier Games e Games Academy).
+**Conseguenza per il design:** conviene un livello di **"adattatori" per fonte** (uno per piattaforma/metodo), così aggiungere o riparare una fonte non tocca il resto. Le fonti **Shopify** restano il caso più economico; sitemap+HTML coprono editori e negozi. Il discriminante reale è **Cloudflare**: le 4 fonti protette (uplay, Ravensburger, DungeonDice, Magic Merchant) sono raggiungibili **da IP residenziale** ma **bloccate dagli IP datacenter dei runner di Actions**. Il kind `headless` risolve con un fetcher a due livelli (`src/adapters/headless/fetch.ts`): prima **`curl`** in sottoprocesso (IP residenziale: veloce, senza terze parti, supera Cloudflare) e, se questo fallisce o riceve una challenge, il **reader Jina AI** (`src/adapters/relay.ts`, `GET https://r.jina.ai/<url>` con `X-Return-Format: html`) che scarica la pagina dai propri proxy e la restituisce come HTML, così gli estrattori cheerio esistenti funzionano senza modifiche e anche la CI raggiunge le fonti. La sitemap resa in HTML dal reader è gestita dallo stesso `parseSitemapEntries`. Magic Merchant resta l'unica **disabilitata**: la *managed challenge* blocca `fetch`, browser, `curl` **e** il reader. Con `JINA_API_KEY` (secret opzionale) si alzano i limiti di velocità del reader. Verifica: **17/18 fonti abilitate** (Magic Merchant esclusa).
 
 **Nota Telegram:** i canali Telegram non offrono un'API pulita per la lettura di *altri* canali (un bot non può leggere canali di terzi). Servirebbe un client MTProto (es. Telethon). Propongo di **escludere Telegram da v1** e valutarlo in seguito.
 
@@ -108,8 +108,8 @@ La raccolta non avviene sul telefono: 17 siti eterogenei, blocchi anti-bot e par
 1. **Collector — job Node.js su GitHub Actions**
    - Linguaggio: **Node.js / TypeScript**.
    - Esecuzione: **workflow programmati** (es. più volte al giorno per gli store, giornaliero per gli editori). 2.000 min/mese gratuiti; la run è dominata dal catalogo della fonte abilitata più grande.
-   - **Fetcher dedicato per le fonti protette**: il kind `headless` usa un fetcher **`curl`** in sottoprocesso (`src/adapters/headless/fetch.ts`). In locale supera Cloudflare, ma **gli IP datacenter dei runner di Actions vengono sfidati** → le 4 fonti Cloudflare restano **disabilitate** (spec pronti per un'esecuzione non datacenter). Nessun browser (Playwright è stato rimosso: bloccato dalle stesse challenge).
-   - Adattatori per fonte isolati tra loro: Shopify, WooCommerce, WordPress, Sitemap+HTML, HTML-crawl, fetcher protetto (`curl`), LLM (`gemini`).
+   - **Fetcher dedicato per le fonti protette**: il kind `headless` usa un fetcher a due livelli (`src/adapters/headless/fetch.ts`): prima **`curl`** in sottoprocesso (supera Cloudflare da IP residenziale, senza terze parti), poi il **reader Jina AI** (`src/adapters/relay.ts`) quando `curl` fallisce o riceve una challenge — così le fonti Cloudflare (uplay, Ravensburger, DungeonDice) sono raccolte **anche dagli IP datacenter dei runner di Actions**. Magic Merchant resta l'unica disabilitata (managed challenge). Nessun browser (Playwright è stato rimosso: bloccato dalle stesse challenge).
+   - Adattatori per fonte isolati tra loro: Shopify, WooCommerce, WordPress, Sitemap+HTML, HTML-crawl, fetcher protetto (`curl` + reader Jina AI), LLM (`gemini`).
    - Normalizzazione, deduplica, abbinamento a BGG, calcolo delle novità, invio push.
    - Limiti noti: nessun processo sempre attivo; i cron di Actions possono ritardare di alcuni minuti; gli IP dei runner possono essere a volte bloccati (mitigato da fetcher dedicato e retry).
 
@@ -177,8 +177,8 @@ La raccolta non avviene sul telefono: 17 siti eterogenei, blocchi anti-bot e par
 
 | Rischio | Impatto | Mitigazione |
 |---|---|---|
-| Anti-bot / IP datacenter (uplay, Ravensburger, DungeonDice) | Fonti non raccoglibili da CI | Raggiungibili da IP residenziale: **disabilitate** finché non si usa un'esecuzione non datacenter (self-hosted runner / PC di casa), con **spec pronti**. Il monitoraggio le segnala come escluse |
-| Anti-bot (Magic Merchant) | Fonte non raccoglibile | **Managed challenge** JS che blocca anche `curl`: resta `enabled: false` con spec pronto; rivalutabile da un IP non sfidato |
+| Anti-bot / IP datacenter (uplay, Ravensburger, DungeonDice) | Fonti non raccoglibili da CI | Risolto con fetcher a due livelli: `curl` da IP residenziale, **reader Jina AI** da IP datacenter (la CI le raggiunge). Vedi §6 |
+| Anti-bot (Magic Merchant) | Fonte non raccoglibile | **Managed challenge** JS che blocca `curl` **e** il reader Jina AI: resta `enabled: false` con spec pronto; rivalutabile da un IP non sfidato |
 | Parser fragili | Dati mancanti senza accorgersene | Adattatori isolati + test + alert quando un parse cala a 0 |
 | Prezzi/data incoerenti tra fonti | Sfiducia | Normalizzazione + regole di priorità + indicare "prezzo da <fonte>" |
 | Abbinamenti BGG errati | Preferiti automatici sbagliati | Punteggio di confidenza; sotto soglia: non auto-preferire ma proporre |
@@ -194,7 +194,7 @@ La raccolta non avviene sul telefono: 17 siti eterogenei, blocchi anti-bot e par
 **Tue (concordate):**
 
 - **13.A.1 Hosting = Opzione A "niente server"**: GitHub Actions (Node.js) + Supabase + Firebase Cloud Messaging. Gratuito, nessun server sempre attivo.
-- **13.A.2 v1 abilita 14 delle 18 fonti** (verificate end-to-end in CI). Le **4 fonti dietro Cloudflare** (uplay, Ravensburger, DungeonDice, Magic Merchant) sono raggiungibili da IP residenziale ma **bloccate dagli IP datacenter dei runner di Actions** → restano `enabled: false` con spec pronti, riaccendibili da un'esecuzione non datacenter (self-hosted runner / PC di casa). Magic Merchant in più ha una *managed challenge* JS che blocca anche `curl`.
+- **13.A.2 v1 abilita 17 delle 18 fonti**. Le **4 fonti dietro Cloudflare** (uplay, Ravensburger, DungeonDice, Magic Merchant) sono raggiungibili da IP residenziale ma **bloccate dagli IP datacenter dei runner di Actions**: il kind `headless` le raccoglie con un fetcher a due livelli (`curl` → reader **Jina AI**), così anche la CI le raggiunge. Magic Merchant resta `enabled: false`: la *managed challenge* JS blocca `curl` e il reader.
 - **13.A.3 Notifiche push con Firebase** (progetto Google da predisporre), con fallback locale.
 
 **Mie (verificabili — correggimi se qualcuna non ti va):**
@@ -211,14 +211,14 @@ La raccolta non avviene sul telefono: 17 siti eterogenei, blocchi anti-bot e par
 
 ## 14. Fasi proposte (il piano dettagliato seguirà)
 
-**Criterio di "fatto" per la v1 (rivisto): 14 delle 18 fonti abilitate e verificate end-to-end in CI** (13.A.2); le 4 fonti Cloudflare (uplay, Ravensburger, DungeonDice, Magic Merchant) restano disabilitate con spec pronti perché i runner di Actions non le raggiungono. Le fasi sotto organizzano il lavoro; le fonti difficili non sono un extra opzionale.
+**Criterio di "fatto" per la v1 (rivisto): 17 delle 18 fonti abilitate** (13.A.2); le fonti Cloudflare (uplay, Ravensburger, DungeonDice) sono raccolte via fetcher a due livelli (`curl` → reader Jina AI), mentre Magic Merchant resta disabilitata (managed challenge). Le fasi sotto organizzano il lavoro; le fonti difficili non sono un extra opzionale.
 
 - **M0 — Spike e struttura:** scheletro del collector Node/TS, workflow GitHub Actions, progetto Supabase, primo adattatore Shopify + uno WooCommerce; verificare i requisiti correnti dell'API BGG.
 - **M1 — Collector base:** scheletro, scheduling, normalizzazione, deduplica, monitoraggio.
 - **M2 — BGG:** sync collezione, arricchimento voto/rank, rilevazione espansioni.
 - **M3 — API + app base:** lettura da Supabase, home "In arrivo", dettaglio, azioni Ignora/Preferito, offline.
 - **M4 — Notifiche + UI:** FCM, digest, design system, animazioni.
-- **M5 — Tutte le fonti + hardening:** gli adattatori rimanenti, casi limite, test. Le 4 fonti Cloudflare restano disabilitate (spec pronti) finché non si dispone di un'esecuzione non datacenter.
+- **M5 — Tutte le fonti + hardening:** gli adattatori rimanenti, casi limite, test. Le fonti Cloudflare (uplay, Ravensburger, DungeonDice) sono raccolte dal fetcher a due livelli; Magic Merchant resta l'unica disabilitata (managed challenge).
 
 ## 15. Cosa resta al costruttore
 

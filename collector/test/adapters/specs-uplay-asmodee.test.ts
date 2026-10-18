@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { HTML_SPECS } from '../../src/adapters/html/specs.js'
+import { HEADLESS_SPECS } from '../../src/adapters/headless/specs.js'
 
 test('uplay discovers product pages from its sitemap index', async () => {
   const pages: Record<string, string> = {
@@ -9,7 +10,7 @@ test('uplay discovers product pages from its sitemap index', async () => {
       <url><loc>https://www.uplay.it/it/gioco-da-tavolo-mystery-express.html</loc></url>
     </urlset>`,
   }
-  const urls = await HTML_SPECS.uplay.discover(async (u) => pages[u] ?? null)
+  const urls = await HEADLESS_SPECS.uplay.discover(async (u) => pages[u] ?? null)
   expect(urls).toEqual([{ url: 'https://www.uplay.it/it/gioco-da-tavolo-mystery-express.html' }])
 })
 

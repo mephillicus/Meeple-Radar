@@ -20,6 +20,6 @@ test('magic merchant extracts products from a rendered listing (Review Focus 5)'
   expect(out[0]).toMatchObject({ title: 'Catan', priceRaw: '29.90', currencyRaw: 'EUR' })
 })
 
-test('headless specs cover the browser-only sources', () => {
-  expect(Object.keys(HEADLESS_SPECS).sort()).toEqual(['dungeondice', 'magicmerchant', 'ravensburger'])
+test('headless specs cover the cloudflare-protected sources', () => {
+  expect(Object.keys(HEADLESS_SPECS).sort()).toEqual(['dungeondice', 'magicmerchant', 'ravensburger', 'uplay'])
 })

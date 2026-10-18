@@ -5,7 +5,7 @@ import { toItems } from './links.js'
 const SITEMAP = 'https://www.ravensburger.it/sitemap.xml'
 
 // ravensburger.it è dietro Cloudflare: il fetch di Node riceve 403 ("Just a moment…"),
-// quindi la fonte è `headless` (Task 9 riusa questo spec con il renderer browser).
+// quindi la fonte è `headless` (fetchText fornito dal fetcher dedicato: curl → reader Jina AI).
 function isProductUrl(url: string): boolean {
   if (!url.includes('/products/')) return false
   const last = url.split('/').pop() ?? ''

@@ -41,3 +41,25 @@ test('follows a sitemap index into child sitemaps', async () => {
 test('returns [] when a sitemap is unreachable', async () => {
   expect(await fetchSitemapEntries('https://e.com/sitemap.xml', async () => null)).toEqual([])
 })
+
+// Il reader Jina AI rende le sitemap come HTML: stessi dati, markup diverso.
+const JINA_URLSET = `<html><head><title>Sitemap</title></head><body><div><a href="https://e.com/it/gioco-da-tavolo-catan.html">https://e.com/it/gioco-da-tavolo-catan.html</a><br><time>2026-10-17T05:05:24+00:00</time></div><div><a href="https://e.com/it">https://e.com/it</a></div></body></html>`
+const JINA_INDEX = `<html><head><title>Sitemap Index</title></head><body><div><a href="https://e.com/sitemap-0.xml">https://e.com/sitemap-0.xml</a><br><time>2026-10-17T05:05:24+00:00</time></div></body></html>`
+
+test('parses a sitemap rendered as HTML by the relay', () => {
+  const e = parseSitemapEntries(JINA_URLSET)
+  expect(e).toHaveLength(2)
+  expect(e[0]).toMatchObject({ loc: 'https://e.com/it/gioco-da-tavolo-catan.html', lastmod: '2026-10-17T05:05:24+00:00' })
+  expect(e[1].lastmod).toBeUndefined()
+})
+
+test('detects a sitemap index rendered as HTML by the relay', () => {
+  expect(isSitemapIndex(JINA_INDEX)).toBe(true)
+  expect(isSitemapIndex(JINA_URLSET)).toBe(false)
+})
+
+test('follows an index rendered as HTML into child sitemaps', async () => {
+  const pages: Record<string, string> = { 'https://e.com/sitemap.xml': JINA_INDEX, 'https://e.com/sitemap-0.xml': JINA_URLSET }
+  const entries = await fetchSitemapEntries('https://e.com/sitemap.xml', async (u) => pages[u] ?? null)
+  expect(entries).toHaveLength(2)
+})
