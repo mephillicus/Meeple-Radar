@@ -119,3 +119,49 @@ test('gateongames deduplicates a link found on both source pages', async () => {
     { url: 'https://www.gateongames.com/alpaca/' },
   ])
 })
+
+test('horribleguild extract prefers the sale price over the struck-through original', () => {
+  const html = `<html><body>
+    <h2 class="single-post-title product_title entry-title" itemprop="name">Railroad Ink Challenge</h2>
+    <div class="summary entry-summary">
+      <p class="price"><del><span class="woocommerce-Price-amount amount"><bdi>29,90<span>€</span></bdi></span></del> <ins><span class="woocommerce-Price-amount amount"><bdi>24,90<span>€</span></bdi></span></ins></p>
+    </div>
+  </body></html>`
+  const product = HTML_SPECS.horribleguild.extract?.(html, 'https://horribleguild.com/eu/product/railroad-ink-challenge/')
+  expect(product?.priceRaw).toBe('24.90')
+  expect(product?.currencyRaw).toBe('EUR')
+})
+
+test('horribleguild extract normalizes comma decimals to a dot', () => {
+  const html = `<html><body>
+    <h2 class="single-post-title product_title entry-title" itemprop="name">Kingdomino</h2>
+    <div class="summary entry-summary">
+      <p class="price"><span class="woocommerce-Price-amount amount"><bdi>24,90<span>€</span></bdi></span></p>
+    </div>
+  </body></html>`
+  const product = HTML_SPECS.horribleguild.extract?.(html, 'https://horribleguild.com/eu/product/kingdomino/')
+  expect(product?.priceRaw).toBe('24.90')
+})
+
+test('horribleguild extract normalizes Italian thousands separators', () => {
+  const html = `<html><body>
+    <h2 class="single-post-title product_title entry-title" itemprop="name">Expensive Deluxe</h2>
+    <div class="summary entry-summary">
+      <p class="price"><span class="woocommerce-Price-amount amount"><bdi>1.234,56<span>€</span></bdi></span></p>
+    </div>
+  </body></html>`
+  const product = HTML_SPECS.horribleguild.extract?.(html, 'https://horribleguild.com/eu/product/expensive-deluxe/')
+  expect(product?.priceRaw).toBe('1234.56')
+})
+
+test('horribleguild extract leaves priceRaw undefined when the price text has no number', () => {
+  const html = `<html><body>
+    <h2 class="single-post-title product_title entry-title" itemprop="name">Mystery Box</h2>
+    <div class="summary entry-summary">
+      <p class="price"><span class="woocommerce-Price-amount amount"><bdi>N/A<span>€</span></bdi></span></p>
+    </div>
+  </body></html>`
+  const product = HTML_SPECS.horribleguild.extract?.(html, 'https://horribleguild.com/eu/product/mystery-box/')
+  expect(product?.title).toBe('Mystery Box')
+  expect(product?.priceRaw).toBeUndefined()
+})
