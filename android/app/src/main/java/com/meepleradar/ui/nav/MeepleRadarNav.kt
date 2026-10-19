@@ -83,6 +83,7 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                 IncomingScreen(
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
+                    imageLookup = container.boardGameImageLookup,
                 )
             }
 
@@ -95,6 +96,7 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                 FavoritesScreen(
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
+                    imageLookup = container.boardGameImageLookup,
                 )
             }
 
@@ -105,10 +107,20 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                 val key = entry.arguments?.getString(ARG_KEY).orEmpty()
                 val vm: DetailViewModel = viewModel(
                     factory = viewModelFactory {
-                        initializer { DetailViewModel(container.repository, key) }
+                        initializer {
+                            DetailViewModel(
+                                repo = container.repository,
+                                key = key,
+                                imageLookup = container.boardGameImageLookup,
+                            )
+                        }
                     },
                 )
-                DetailScreen(vm = vm, onBack = { navController.popBackStack() })
+                DetailScreen(
+                    vm = vm,
+                    onBack = { navController.popBackStack() },
+                    imageLookup = container.boardGameImageLookup,
+                )
             }
         }
     }

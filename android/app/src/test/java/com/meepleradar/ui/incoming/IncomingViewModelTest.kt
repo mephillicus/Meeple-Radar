@@ -40,6 +40,7 @@ class IncomingViewModelTest {
         private val incomingItems: List<IncomingItem> = emptyList(),
         private val favoriteItems: List<IncomingItem> = emptyList(),
         private val failure: Throwable? = null,
+        private val actionFailure: Throwable? = null,
     ) : ListingRepository {
         val actions = mutableListOf<Pair<String, Action>>()
 
@@ -56,6 +57,7 @@ class IncomingViewModelTest {
         override suspend fun sources(): List<Source> = emptyList()
 
         override suspend fun setAction(key: String, action: Action) {
+            actionFailure?.let { throw it }
             actions += key to action
         }
     }
@@ -134,6 +136,31 @@ class IncomingViewModelTest {
 
         assertEquals(listOf("game:5" to Action.FAVORITE), repo.actions)
         assertEquals(setOf("game:5"), (viewModel.state.value as IncomingUiState.Content).favorites)
+
+        viewModel.toggleFavorite(item)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("game:5" to Action.FAVORITE, "game:5" to Action.UNFAVORITED),
+            repo.actions,
+        )
+        assertTrue((viewModel.state.value as IncomingUiState.Content).favorites.isEmpty())
+    }
+
+    @Test
+    fun `errore nel salvataggio preferito viene mostrato`() = runTest(dispatcher) {
+        val item = item("game:5", "Catan")
+        val viewModel = IncomingViewModel(
+            repo = FakeRepo(incomingItems = listOf(item), actionFailure = IOException("salvataggio fallito")),
+            today = today,
+        )
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        viewModel.toggleFavorite(item)
+        advanceUntilIdle()
+
+        assertEquals(IncomingUiState.Error("salvataggio fallito"), viewModel.state.value)
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.meepleradar.data.repo
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
@@ -25,15 +26,20 @@ interface ListingRepository {
     suspend fun setAction(key: String, action: Action)
 }
 
-class DefaultListingRepository(private val api: SupabaseApi) : ListingRepository {
+class DefaultListingRepository(
+    private val api: SupabaseApi,
+    private val favoriteStore: FavoriteStore,
+) : ListingRepository {
 
     override suspend fun incoming(
         today: LocalDate,
         sourceIds: Set<String>?,
         includeUndated: Boolean,
     ): List<IncomingItem> {
-        val ignored = api.userActions()
-            .mapNotNull { row -> row.keyOrNull()?.takeIf { row.action == Action.IGNORED } }
+        val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
+        val ignored = latestActionsByKey(userActions)
+            .filterValues { it == Action.IGNORED }
+            .keys
             .toSet()
         return buildItems(ignored, today, sourceIds, includeUndated)
     }
@@ -43,13 +49,11 @@ class DefaultListingRepository(private val api: SupabaseApi) : ListingRepository
         sourceIds: Set<String>?,
         includeUndated: Boolean,
     ): List<IncomingItem> {
-        val actions = api.userActions()
-        val ignored = actions
-            .mapNotNull { row -> row.keyOrNull()?.takeIf { row.action != Action.FAVORITE } }
-            .toSet()
-        val favoriteKeys = actions
-            .mapNotNull { row -> row.keyOrNull()?.takeIf { row.action == Action.FAVORITE } }
-            .toSet()
+        val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
+        val actionsMap = latestActionsByKey(userActions)
+        val ignored = actionsMap.filterValues { it == Action.IGNORED }.keys
+        val remoteFavoriteKeys = actionsMap.filterValues { it == Action.FAVORITE }.keys
+        val favoriteKeys = favoriteStore.keys() + remoteFavoriteKeys
         return buildItems(ignored, today, sourceIds, includeUndated).filter { it.key in favoriteKeys }
     }
 
@@ -57,12 +61,20 @@ class DefaultListingRepository(private val api: SupabaseApi) : ListingRepository
 
     override suspend fun setAction(key: String, action: Action) {
         val (kind, id) = parseKey(key)
-        val row = when (kind) {
-            "game" -> UserActionRow(gameId = id, listingId = null, action = action)
-            "listing" -> UserActionRow(gameId = null, listingId = id, action = action)
-            else -> throw IllegalArgumentException("chiave non valida: $key")
+        when (action) {
+            Action.FAVORITE -> favoriteStore.setFavorite(key, true)
+            Action.UNFAVORITED -> favoriteStore.setFavorite(key, false)
+            Action.IGNORED -> favoriteStore.setFavorite(key, false)
         }
-        api.insertAction(row)
+
+        runCatching {
+            val row = when (kind) {
+                "game" -> UserActionRow(gameId = id, listingId = null, action = action)
+                "listing" -> UserActionRow(gameId = null, listingId = id, action = action)
+                else -> throw IllegalArgumentException("chiave non valida: $key")
+            }
+            api.insertAction(row)
+        }
     }
 
     private suspend fun buildItems(
@@ -93,4 +105,9 @@ class DefaultListingRepository(private val api: SupabaseApi) : ListingRepository
         listingId != null -> "listing:$listingId"
         else -> null
     }
+
+    private fun latestActionsByKey(actions: List<UserActionRow>): Map<String, Action> =
+        actions.mapNotNull { row -> row.keyOrNull()?.let { it to row.action } }
+            .distinctBy { (key, _) -> key }
+            .toMap()
 }

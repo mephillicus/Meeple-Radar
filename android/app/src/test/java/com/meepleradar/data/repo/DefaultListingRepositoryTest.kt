@@ -4,6 +4,7 @@ import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
@@ -14,6 +15,16 @@ import org.junit.Test
 class DefaultListingRepositoryTest {
 
     private val today = LocalDate.of(2026, 10, 17)
+
+    private class FakeFavoriteStore(initialKeys: Set<String> = emptySet()) : FavoriteStore {
+        private val favoriteKeys = initialKeys.toMutableSet()
+
+        override fun keys(): Set<String> = favoriteKeys.toSet()
+
+        override fun setFavorite(key: String, favorite: Boolean) {
+            if (favorite) favoriteKeys.add(key) else favoriteKeys.remove(key)
+        }
+    }
 
     private class FakeSupabaseApi(
         private val listings: List<Listing> = emptyList(),
@@ -34,6 +45,7 @@ class DefaultListingRepositoryTest {
         override suspend fun insertAction(row: UserActionRow) {
             inserted += row
         }
+
     }
 
     private fun listing(
@@ -71,7 +83,7 @@ class DefaultListingRepositoryTest {
             actions = listOf(UserActionRow(gameId = 6, listingId = null, action = Action.IGNORED)),
         )
 
-        val items = DefaultListingRepository(api).incoming(today)
+        val items = DefaultListingRepository(api, FakeFavoriteStore()).incoming(today)
 
         assertEquals(listOf("game:5"), items.map { it.key })
         assertEquals("Catan", items[0].title)
@@ -87,28 +99,61 @@ class DefaultListingRepositoryTest {
             ),
             games = listOf(game(5, "Catan"), game(6, "Carcassonne")),
             sources = listOf(Source("s1", "Store Uno")),
-            actions = listOf(UserActionRow(gameId = 5, listingId = null, action = Action.FAVORITE)),
         )
 
-        val items = DefaultListingRepository(api).favorites(today)
+        val items = DefaultListingRepository(api, FakeFavoriteStore(setOf("game:5"))).favorites(today)
 
         assertEquals(listOf("game:5"), items.map { it.key })
     }
 
     @Test
-    fun `setAction con chiave game invia gameId con listingId null`() = runTest {
-        val api = FakeSupabaseApi()
+    fun `l azione piu recente rimuove il preferito senza ignorare il gioco`() = runTest {
+        val api = FakeSupabaseApi(
+            listings = listOf(listing(id = 1, gameId = 5, releaseDate = today.plusDays(1))),
+            games = listOf(game(5, "Catan")),
+            sources = listOf(Source("s1", "Store Uno")),
+            actions = listOf(
+                UserActionRow(gameId = 5, listingId = null, action = Action.UNFAVORITED),
+                UserActionRow(gameId = 5, listingId = null, action = Action.FAVORITE),
+            ),
+        )
+        val repo = DefaultListingRepository(api, FakeFavoriteStore())
 
-        DefaultListingRepository(api).setAction("game:5", Action.FAVORITE)
+        assertEquals(emptyList<com.meepleradar.data.model.IncomingItem>(), repo.favorites(today))
+        assertEquals(listOf("game:5"), repo.incoming(today).map { it.key })
+    }
 
-        assertEquals(listOf(UserActionRow(gameId = 5, listingId = null, action = Action.FAVORITE)), api.inserted)
+    @Test
+    fun `setAction favorite e unfavorite sono persistiti localmente`() = runTest {
+        val api = FakeSupabaseApi(
+            listings = listOf(listing(id = 5, gameId = 5, releaseDate = today.plusDays(1))),
+            games = listOf(game(5, "Catan")),
+            sources = listOf(Source("s1", "Store Uno")),
+        )
+        val store = FakeFavoriteStore()
+        val repo = DefaultListingRepository(api, store)
+
+        repo.setAction("game:5", Action.FAVORITE)
+        assertEquals(setOf("game:5"), store.keys())
+        assertEquals(listOf("game:5"), repo.favorites(today).map { it.key })
+
+        repo.setAction("game:5", Action.UNFAVORITED)
+        assertEquals(emptySet<String>(), store.keys())
+        assertEquals(emptyList<com.meepleradar.data.model.IncomingItem>(), repo.favorites(today))
+        assertEquals(
+            listOf(
+                UserActionRow(gameId = 5, listingId = null, action = Action.FAVORITE),
+                UserActionRow(gameId = 5, listingId = null, action = Action.UNFAVORITED),
+            ),
+            api.inserted,
+        )
     }
 
     @Test
     fun `setAction con chiave listing invia listingId con gameId null`() = runTest {
         val api = FakeSupabaseApi()
 
-        DefaultListingRepository(api).setAction("listing:9", Action.IGNORED)
+        DefaultListingRepository(api, FakeFavoriteStore()).setAction("listing:9", Action.IGNORED)
 
         assertEquals(listOf(UserActionRow(gameId = null, listingId = 9, action = Action.IGNORED)), api.inserted)
     }
@@ -118,10 +163,9 @@ class DefaultListingRepositoryTest {
         val api = FakeSupabaseApi(
             listings = listOf(listing(id = 9, gameId = null, releaseDate = null)),
             sources = listOf(Source("s1", "Store Uno")),
-            actions = listOf(UserActionRow(gameId = null, listingId = 9, action = Action.FAVORITE)),
         )
 
-        val items = DefaultListingRepository(api).favorites(today)
+        val items = DefaultListingRepository(api, FakeFavoriteStore(setOf("listing:9"))).favorites(today)
 
         assertEquals(listOf("listing:9"), items.map { it.key })
     }

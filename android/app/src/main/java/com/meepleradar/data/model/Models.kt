@@ -2,7 +2,7 @@ package com.meepleradar.data.model
 
 import java.time.LocalDate
 
-enum class Action { FAVORITE, IGNORED }
+enum class Action { FAVORITE, UNFAVORITED, IGNORED }
 
 enum class ItemKind { UPCOMING, NEW_UNDATED }
 

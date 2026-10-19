@@ -111,17 +111,31 @@ class SupabaseRestApiTest {
     }
 
     @Test
-    fun `userActions traduce le azioni minuscole in Action`() = runTest {
+    fun `insertAction registra la rimozione del preferito`() = runTest {
+        val transport = FakeTransport()
+        SupabaseRestApi(base, anon, transport, json)
+            .insertAction(UserActionRow(gameId = 5, listingId = null, action = Action.UNFAVORITED))
+
+        val body = Json.parseToJsonElement(transport.calls.single().body!!).jsonObject
+        assertEquals(JsonPrimitive("unfavorite"), body["action"])
+    }
+
+    @Test
+    fun `userActions traduce le azioni minuscole e carica prima le piu recenti`() = runTest {
         val body = listingJson(
             """{"game_id":5,"listing_id":null,"action":"favorite"}""",
             """{"game_id":null,"listing_id":9,"action":"ignored"}""",
+            """{"game_id":5,"listing_id":null,"action":"unfavorite"}""",
         )
-        val transport = FakeTransport(mapOf("$base/rest/v1/user_action?select=*" to body))
+        val transport = FakeTransport(
+            mapOf("$base/rest/v1/user_action?select=*&order=created_at.desc,id.desc" to body),
+        )
 
         val actions = SupabaseRestApi(base, anon, transport, json).userActions()
 
         assertEquals(UserActionRow(5, null, Action.FAVORITE), actions[0])
         assertEquals(UserActionRow(null, 9, Action.IGNORED), actions[1])
+        assertEquals(UserActionRow(5, null, Action.UNFAVORITED), actions[2])
     }
 
     @Test

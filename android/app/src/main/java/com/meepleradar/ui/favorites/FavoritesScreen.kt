@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.IncomingItem
+import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.components.ErrorView
 import com.meepleradar.ui.components.ListingCard
@@ -27,6 +28,7 @@ import com.meepleradar.ui.incoming.IncomingUiState
 fun FavoritesScreen(
     vm: FavoritesViewModel,
     onOpen: (IncomingItem) -> Unit,
+    imageLookup: BoardGameImageLookup,
     modifier: Modifier = Modifier,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -61,6 +63,7 @@ fun FavoritesScreen(
                                 onOpen = { onOpen(item) },
                                 onToggleFavorite = { vm.toggleFavorite(item) },
                                 onIgnore = { vm.ignore(item) },
+                                imageLookup = imageLookup,
                             )
                         }
                     }

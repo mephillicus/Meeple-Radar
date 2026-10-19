@@ -10,7 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun MeepleRadarTheme(
     darkTheme: Boolean = true,
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {

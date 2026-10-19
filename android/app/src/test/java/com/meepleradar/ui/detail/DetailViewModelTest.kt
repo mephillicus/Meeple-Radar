@@ -6,6 +6,8 @@ import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.remote.BoardGameDetails
+import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.data.repo.ListingRepository
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -37,14 +39,35 @@ class DetailViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private class FakeRepo(private val items: List<IncomingItem>) : ListingRepository {
-        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> = items
+    private class FakeRepo(
+        private val items: List<IncomingItem>,
+        private val failure: Throwable? = null,
+    ) : ListingRepository {
+        var requestedSourceIds: Set<String>? = emptySet()
+
+        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> {
+            requestedSourceIds = sourceIds
+            failure?.let { throw it }
+            return items
+        }
 
         override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> = emptyList()
 
         override suspend fun sources(): List<Source> = emptyList()
 
         override suspend fun setAction(key: String, action: Action) = Unit
+    }
+
+    private class FakeImageLookup(
+        private val details: BoardGameDetails? = null,
+        private val failure: Throwable? = null,
+    ) : BoardGameImageLookup {
+        override suspend fun findImage(title: String, bggId: Int?): String? = null
+
+        override suspend fun findDetails(title: String, bggId: Int?): BoardGameDetails? {
+            failure?.let { throw it }
+            return details
+        }
     }
 
     private fun offer(sourceId: String, amount: Double?, currency: String?) = Offer(
@@ -77,7 +100,8 @@ class DetailViewModelTest {
             ),
         )
 
-        val viewModel = DetailViewModel(FakeRepo(listOf(item)), key = "game:5", today = today)
+        val repo = FakeRepo(listOf(item))
+        val viewModel = DetailViewModel(repo, key = "game:5", today = today)
         assertEquals(DetailUiState.Loading, viewModel.state.value)
 
         advanceUntilIdle()
@@ -90,6 +114,51 @@ class DetailViewModelTest {
             listOf("eur-low", "eur-high", "usd", "no-price"),
             state.offers.map { it.sourceId },
         )
+        assertEquals(null, repo.requestedSourceIds)
+    }
+
+    @Test
+    fun `carica specifiche del gioco e cerca tra tutti i negozi`() = runTest(dispatcher) {
+        val details = BoardGameDetails(
+            bggId = 13,
+            imageUrl = null,
+            description = "Descrizione",
+            yearPublished = 1995,
+            minPlayers = 3,
+            maxPlayers = 4,
+            playingTime = 90,
+            minAge = 10,
+            designers = listOf("Autore"),
+            categories = emptyList(),
+            mechanics = emptyList(),
+        )
+        val repo = FakeRepo(listOf(item("game:5", emptyList())))
+        val viewModel = DetailViewModel(
+            repo = repo,
+            key = "game:5",
+            today = today,
+            imageLookup = FakeImageLookup(details),
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as DetailUiState.Content
+        assertEquals(null, repo.requestedSourceIds)
+        assertEquals(details, state.boardGameDetails)
+        assertEquals(false, state.isLoadingDetails)
+    }
+
+    @Test
+    fun `errore nel caricamento del gioco e visibile invece di una pagina vuota`() = runTest(dispatcher) {
+        val viewModel = DetailViewModel(
+            repo = FakeRepo(emptyList(), IllegalStateException("Connessione assente")),
+            key = "game:5",
+            today = today,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(DetailUiState.Error("Connessione assente"), viewModel.state.value)
     }
 
     @Test

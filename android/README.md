@@ -66,10 +66,10 @@ app/src/main/java/com/meepleradar/
   AppContainer.kt            costruzione manuale delle dipendenze (OkHttp, Supabase, repository)
   MainActivity.kt            entry point Compose
   data/model/                modelli di dominio (IncomingItem, Offer, Price, ...)
-  data/remote/               trasporto HTTP e client REST Supabase (PostgREST)
+  data/remote/                trasporto HTTP, client REST Supabase e ricerca copertine BGG
   data/repo/                 IncomingMapper (raggruppa listing -> item) e ListingRepository
-  ui/theme/                  tema Material 3 (dark di default, colori dinamici su API 31+)
-  ui/components/             ListingCard, RatingBadge, viste Loading/Error/Empty, header
+  ui/theme/                  tema Material 3 (dark di default, palette Meeple Radar coerente)
+  ui/components/             ListingCard, GameCover, RatingBadge, viste Loading/Error/Empty
   ui/nav/                    NavHost: "In arrivo", "Preferiti", "detail/{key}", bottom bar
   ui/incoming/               schermata "In arrivo" + formattazione (priceLabel/dateLabel)
   ui/detail/                 dettaglio gioco con confronto prezzi tra store
@@ -78,9 +78,13 @@ app/src/main/java/com/meepleradar/
 
 ## Limiti noti (v1)
 
-- **Togliere un preferito e' solo locale**: l'API REST usata dall'app non espone una DELETE, quindi
-  l'elemento scompare subito dalla schermata ma ricompare dopo il prossimo refresh (i preferiti sono
-  additivi). Ignorare invece e' persistente.
-- Nessuna cache offline: senza rete le schermate mostrano lo stato di errore.
+- I preferiti sono memorizzati localmente sul dispositivo; giochi ignorati restano salvati come
+  azioni append-only su Supabase.
+- La schermata dettaglio recupera da BoardGameGeek descrizione, anno, numero di giocatori, durata,
+  eta', autori, categorie e meccaniche; mostra le offerte anche se il servizio BGG non e' disponibile.
+- Se una copertina non e' presente nei dati del negozio o del gioco, l'app prova a recuperarla da
+  BoardGameGeek usando l'ID BGG o, in mancanza, il nome esatto; i risultati sono memorizzati in
+  memoria per la sessione e non vengono scritti su Supabase.
+- Nessuna cache offline dei dati: senza rete le schermate mostrano lo stato di errore.
 - Il pulsante "Apri" di ogni offerta delega al browser di sistema; l'apertura e' silenziosamente
   ignorata se nessuna app puo' gestire l'URL.

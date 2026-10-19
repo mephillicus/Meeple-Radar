@@ -58,7 +58,12 @@ class SupabaseRestApi(
             .map { it.toDomain() }
 
     override suspend fun userActions(): List<UserActionRow> =
-        json.decodeFromString<List<UserActionDto>>(transport.get(selectUrl("user_action"), headers()))
+        json.decodeFromString<List<UserActionDto>>(
+            transport.get(
+                "$base/rest/v1/user_action?select=*&order=created_at.desc,id.desc",
+                headers(),
+            ),
+        )
             .map { it.toDomain() }
 
     override suspend fun insertAction(row: UserActionRow) {
@@ -87,6 +92,7 @@ private fun String?.asLocalDateOrNull(): LocalDate? {
 
 private fun String.toAction(): Action = when (lowercase()) {
     "favorite" -> Action.FAVORITE
+    "unfavorite" -> Action.UNFAVORITED
     "ignored" -> Action.IGNORED
     else -> Action.valueOf(uppercase())
 }
@@ -165,7 +171,11 @@ private data class ActionInsertDto(
         fun from(row: UserActionRow) = ActionInsertDto(
             gameId = row.gameId,
             listingId = row.listingId,
-            action = row.action.name.lowercase(),
+            action = when (row.action) {
+                Action.FAVORITE -> "favorite"
+                Action.UNFAVORITED -> "unfavorite"
+                Action.IGNORED -> "ignored"
+            },
         )
     }
 }

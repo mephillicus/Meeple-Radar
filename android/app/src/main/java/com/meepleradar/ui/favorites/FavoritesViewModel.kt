@@ -25,7 +25,7 @@ class FavoritesViewModel(
         _state.value = IncomingUiState.Loading
         viewModelScope.launch {
             _state.value = try {
-                val items = repo.favorites(today, emptySet())
+                val items = repo.favorites(today)
                 IncomingUiState.Content(items = items, favorites = items.map { it.key }.toSet())
             } catch (e: CancellationException) {
                 throw e
@@ -37,15 +37,27 @@ class FavoritesViewModel(
 
     fun toggleFavorite(item: IncomingItem) {
         viewModelScope.launch {
-            runCatching { repo.setAction(item.key, Action.FAVORITE) }
-            remove(item.key)
+            try {
+                repo.setAction(item.key, Action.UNFAVORITED)
+                remove(item.key)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
+            }
         }
     }
 
     fun ignore(item: IncomingItem) {
         viewModelScope.launch {
-            runCatching { repo.setAction(item.key, Action.IGNORED) }
-            remove(item.key)
+            try {
+                repo.setAction(item.key, Action.IGNORED)
+                remove(item.key)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
+            }
         }
     }
 

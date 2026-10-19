@@ -83,23 +83,39 @@ class IncomingViewModel(
 
 
     fun toggleFavorite(item: IncomingItem) {
+        val content = _state.value as? IncomingUiState.Content ?: return
+        val wasFavorite = item.key in content.favorites
+        val action = if (wasFavorite) Action.UNFAVORITED else Action.FAVORITE
+
         viewModelScope.launch {
-            runCatching { repo.setAction(item.key, Action.FAVORITE) }
-            val content = _state.value as? IncomingUiState.Content ?: return@launch
-            val favorites = if (item.key in content.favorites) {
-                content.favorites - item.key
-            } else {
-                content.favorites + item.key
+            try {
+                repo.setAction(item.key, action)
+                val current = _state.value as? IncomingUiState.Content ?: return@launch
+                val favorites = if (wasFavorite) {
+                    current.favorites - item.key
+                } else {
+                    current.favorites + item.key
+                }
+                _state.value = current.copy(favorites = favorites)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
             }
-            _state.value = content.copy(favorites = favorites)
         }
     }
 
     fun ignore(item: IncomingItem) {
         viewModelScope.launch {
-            runCatching { repo.setAction(item.key, Action.IGNORED) }
-            val content = _state.value as? IncomingUiState.Content ?: return@launch
-            _state.value = content.copy(items = content.items.filterNot { it.key == item.key })
+            try {
+                repo.setAction(item.key, Action.IGNORED)
+                val content = _state.value as? IncomingUiState.Content ?: return@launch
+                _state.value = content.copy(items = content.items.filterNot { it.key == item.key })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
+            }
         }
     }
 

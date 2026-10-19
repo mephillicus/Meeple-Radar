@@ -1,6 +1,9 @@
 package com.meepleradar
 
 import android.content.Context
+import com.meepleradar.data.local.SharedPreferencesFavoriteStore
+import com.meepleradar.data.remote.BoardGameGeekImageLookup
+import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.data.remote.OkHttpTransport
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.SupabaseRestApi
@@ -12,13 +15,19 @@ import okhttp3.OkHttpClient
 class AppContainer(context: Context) {
 
     private val json = Json { ignoreUnknownKeys = true }
+    private val transport = OkHttpTransport(OkHttpClient())
+
+    val boardGameImageLookup: BoardGameImageLookup = BoardGameGeekImageLookup(transport)
 
     private val api: SupabaseApi = SupabaseRestApi(
         baseUrl = BuildConfig.SUPABASE_URL,
         anonKey = BuildConfig.SUPABASE_ANON_KEY,
-        transport = OkHttpTransport(OkHttpClient()),
+        transport = transport,
         json = json,
     )
 
-    val repository: ListingRepository = DefaultListingRepository(api)
+    val repository: ListingRepository = DefaultListingRepository(
+        api = api,
+        favoriteStore = SharedPreferencesFavoriteStore(context.applicationContext),
+    )
 }

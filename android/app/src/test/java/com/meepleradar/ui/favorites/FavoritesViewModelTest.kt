@@ -42,10 +42,12 @@ class FavoritesViewModelTest {
         private val failure: Throwable? = null,
     ) : ListingRepository {
         val actions = mutableListOf<Pair<String, Action>>()
+        var requestedSourceIds: Set<String>? = emptySet()
 
         override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> = emptyList()
 
         override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> {
+            requestedSourceIds = sourceIds
             failure?.let { throw it }
             return favoriteItems
         }
@@ -69,7 +71,8 @@ class FavoritesViewModelTest {
 
     @Test
     fun `favorites mostra solo gli item preferiti`() = runTest(dispatcher) {
-        val viewModel = FavoritesViewModel(FakeRepo(listOf(item("game:5"))), today)
+        val repo = FakeRepo(listOf(item("game:5")))
+        val viewModel = FavoritesViewModel(repo, today)
 
         viewModel.refresh()
         assertEquals(IncomingUiState.Loading, viewModel.state.value)
@@ -81,6 +84,7 @@ class FavoritesViewModelTest {
         state as IncomingUiState.Content
         assertEquals(listOf("game:5"), state.items.map { it.key })
         assertEquals(setOf("game:5"), state.favorites)
+        assertEquals(null, repo.requestedSourceIds)
     }
 
     @Test
@@ -118,7 +122,7 @@ class FavoritesViewModelTest {
         viewModel.toggleFavorite(item("game:5"))
         advanceUntilIdle()
 
-        assertEquals(listOf("game:5" to Action.FAVORITE), repo.actions)
+        assertEquals(listOf("game:5" to Action.UNFAVORITED), repo.actions)
         assertTrue((viewModel.state.value as IncomingUiState.Content).items.isEmpty())
     }
 
