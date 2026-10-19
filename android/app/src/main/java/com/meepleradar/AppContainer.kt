@@ -4,6 +4,8 @@ import android.content.Context
 import com.meepleradar.data.local.SharedPreferencesFavoriteStore
 import com.meepleradar.data.remote.BoardGameGeekImageLookup
 import com.meepleradar.data.remote.BoardGameImageLookup
+import com.meepleradar.data.remote.GeekGroupApi
+import com.meepleradar.data.remote.GeekGroupRestApi
 import com.meepleradar.data.remote.OkHttpTransport
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.SupabaseRestApi
@@ -17,7 +19,12 @@ class AppContainer(context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
     private val transport = OkHttpTransport(OkHttpClient())
 
-    val boardGameImageLookup: BoardGameImageLookup = BoardGameGeekImageLookup(transport)
+    val geekGroupApi: GeekGroupApi = GeekGroupRestApi(transport, json)
+
+    val boardGameImageLookup: BoardGameImageLookup = BoardGameGeekImageLookup(
+        transport = transport,
+        geekGroupApi = geekGroupApi,
+    )
 
     private val api: SupabaseApi = SupabaseRestApi(
         baseUrl = BuildConfig.SUPABASE_URL,

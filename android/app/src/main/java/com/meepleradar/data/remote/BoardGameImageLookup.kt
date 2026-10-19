@@ -31,6 +31,7 @@ data class BoardGameDetails(
 
 class BoardGameGeekImageLookup(
     private val transport: HttpTransport,
+    private val geekGroupApi: GeekGroupApi? = null,
 ) : BoardGameImageLookup {
 
     private val cache = ConcurrentHashMap<String, String>()
