@@ -1,5 +1,7 @@
-// Provider LLM gratuiti a cascata: Gemini (primario) → Groq → OpenRouter.
-// Ogni provider viene usato solo se la sua chiave è presente; il prompt è identico per tutti.
+// Provider LLM a cascata: Gemini (primario) → Gemini di ripiego.
+// Ogni provider viene usato solo se GEMINI_API_KEY è presente; il prompt è identico per tutti.
+// Gemini NON cerca sul web: i dati gli arrivano già dal chiamante (per esempio dai titoli di
+// Google News). Così la fonte resta dentro il tier gratuito, che non ha quota per la ricerca.
 
 export type AiResult =
   | { ok: true; text: string }
@@ -8,7 +10,7 @@ export type AiResult =
 export type AiProvider = {
   id: string
   model: string
-  // Tentativi prima di cedere il turno: Gemini ha la priorità e ne ha uno in più.
+  // Tentativi prima di cedere il turno: il modello primario ne ha uno in più.
   attempts: number
   // Lancia solo per errori di rete/HTTP/timeout non ripristinabili: un contenuto mancante o
   // malformato è `ok: false`, così chi gestisce la cascata distingue "non ha risposto" da
@@ -29,30 +31,31 @@ type ResolvedOptions = Required<AiOptions>
 
 const defaultSleep: Sleep = (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-// Una richiesta appesa non deve bloccare il collector per sempre: dopo 5 minuti si annulla e si
-// passa al provider successivo.
-export const RESPONSE_TIMEOUT_MS = 5 * 60 * 1000
+// Con la ricerca web una risposta richiede da qualche secondo a un minuto. Una richiesta appesa
+// viene annullata dopo 3 minuti e conta come tentativo fallito (si riprova).
+export const RESPONSE_TIMEOUT_MS = 3 * 60 * 1000
 
-// Attesa tra i tentativi dello stesso provider: 2s, 4s, ...
-const BASE_DELAY_MS = 2000
+// Attesa tra i tentativi dello stesso provider: 5s, 10s, 20s, 40s, poi al massimo 60s.
+const BASE_DELAY_MS = 5000
+const MAX_DELAY_MS = 60_000
 
-// Tentativi: il provider primario insiste di più, i fallback devono solo fare da scorta.
-const GEMINI_ATTEMPTS = 3
-const FALLBACK_ATTEMPTS = 2
+// Tentativi: il modello primario insiste di più, quello di ripiego un po' meno.
+const GEMINI_ATTEMPTS = 5
+const FALLBACK_ATTEMPTS = 4
 
-// Modelli gratuiti come gpt-oss ragionano prima di rispondere: se il budget è stretto il
-// ragionamento lo consuma tutto e il contenuto visibile arriva vuoto. Anche il TPM di Groq
-// (8k/min) va rispettato, quindi un compromesso generoso ma non illimitato.
-const MAX_TOKENS = 6000
+// Budget di output per Gemini: con ricerca e ragionamento il default può essere stretto.
+const GEMINI_MAX_OUTPUT_TOKENS = 8192
 
-// 503 è "alta domanda": riprovare conviene. Un 429 con `retry-after` è un limite al minuto e si
-// sblocca in secondi; senza `retry-after` è quasi sempre un limite giornaliero, dove riprovare
-// non solo non aiuta ma brucia quota (su OpenRouter le richieste fallite contano comunque).
-function isRetryable(res: Response): boolean {
-  if (res.status === 503) return true
-  if (res.status !== 429) return false
-  const headers = res.headers as Headers | undefined
-  return typeof headers?.get === 'function' && headers.get('retry-after') !== null
+// Errori Gemini per cui riprovare conviene:
+// - 500/502/503/504: problemi o alta domanda lato server;
+// - 429: limite al minuto, che si sblocca in pochi secondi. Se però il messaggio parla di un
+//   limite giornaliero, riprovare non serve e si cede subito al modello successivo.
+//   Gemini scrive quel limite in modi diversi a seconda della quota ("free-model-requests-per-day",
+//   "'... requests per day'", "Daily quota"), quindi si cerca il concetto e non una stringa fissa.
+function isGeminiRetryable(status: number, body: string): boolean {
+  if ([500, 502, 503, 504].includes(status)) return true
+  if (status !== 429) return false
+  return !/(per[\s_/.-]?day|daily|giornalier)/i.test(body)
 }
 
 // Esito di un singolo tentativo, prima che diventi un AiResult.
@@ -61,10 +64,9 @@ type Attempt =
   | { status: 'soft'; reason: string }
   | { status: 'http'; message: string; retryable: boolean }
 
-async function errorDetail(res: Response): Promise<string> {
+async function readBody(res: Response): Promise<string> {
   try {
-    const body = (await res.text()).slice(0, 300)
-    return body ? ` ${body}` : ''
+    return (await res.text()).slice(0, 600)
   } catch {
     return ''
   }
@@ -90,7 +92,7 @@ async function runWithRetries(opts: {
     if (attempt >= opts.attempts - 1) break
 
     const motivo = outcome.status === 'http' ? outcome.message : outcome.reason
-    const delay = BASE_DELAY_MS * 2 ** attempt
+    const delay = Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS)
     console.error(`[llm] ${opts.id}: ${motivo} (tentativo ${attempt + 1}/${opts.attempts}), riprovo tra ${delay}ms`)
     await opts.sleep(delay)
   }
@@ -99,115 +101,81 @@ async function runWithRetries(opts: {
   return { ok: false, reason: last.status === 'soft' ? last.reason : 'risposta vuota' }
 }
 
+type GeminiResponse = {
+  candidates?: {
+    content?: { parts?: { text?: unknown; thought?: unknown }[] }
+    finishReason?: unknown
+  }[] | null
+  promptFeedback?: { blockReason?: unknown }
+} | null
+
 async function callGemini(
   model: string,
   apiKey: string,
   prompt: string,
   opts: ResolvedOptions,
   attempts: number,
+  id = 'gemini',
 ): Promise<AiResult> {
   return runWithRetries({
-    id: 'gemini',
+    id,
     attempts,
     sleep: opts.sleep,
     attemptOnce: async () => {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            // Grounding con Google Search: senza dati veri sul web i modelli inventano le uscite.
-            // Di conseguenza NON si impone il formato JSON via `responseMimeType`: storicamente la
-            // combinazione con i tool dava 400 e, peggio, per un periodo ha disattivato il
-            // grounding in silenzio. Il parser estrae il JSON anche da un testo misto.
-            tools: [{ google_search: {} }],
-          }),
-          signal: AbortSignal.timeout(opts.timeoutMs),
-        },
-      )
-      if (!res.ok) {
-        return { status: 'http', message: `Gemini API: ${res.status}${await errorDetail(res)}`, retryable: isRetryable(res) }
+      let res: Response
+      try {
+        res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            // La chiave va nell'header: nell'URL finirebbe nei log in caso di errore.
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              // Nessun tool: il JSON mode è disponibile solo senza grounding, e il prompt
+              // arriva già con i dati dentro.
+              generationConfig: {
+                maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+                responseMimeType: 'application/json',
+              },
+            }),
+            signal: AbortSignal.timeout(opts.timeoutMs),
+          },
+        )
+      } catch (err) {
+        // Timeout o errore di rete: sono transitori, si riprova.
+        const msg = err instanceof Error ? err.message : String(err)
+        return { status: 'http', message: `Gemini rete/timeout: ${msg}`, retryable: true }
       }
 
-      let data: unknown = null
+      if (!res.ok) {
+        const detail = await readBody(res)
+        return {
+          status: 'http',
+          message: `Gemini API: ${res.status}${detail ? ` ${detail}` : ''}`,
+          retryable: isGeminiRetryable(res.status, detail),
+        }
+      }
+
+      let data: GeminiResponse = null
       try {
-        data = await res.json()
+        data = (await res.json()) as GeminiResponse
       } catch {
         return { status: 'soft', reason: 'risposta non JSON' }
       }
-      const candidate = (data as { candidates?: Record<string, unknown>[] } | null)?.candidates?.[0]
-      const grounding = candidate?.groundingMetadata as { webSearchQueries?: unknown[] } | undefined
-      const query = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.length : 0
-      // Senza questa riga non c'è modo di accorgersi che il grounding non è partito.
-      console.error(`[llm] gemini: grounding ${grounding ? 'attivo' : 'assente'}${query > 0 ? ` (${query} query)` : ''}`)
 
-      const parts =
-        (
-          data as {
-            candidates?: { content?: { parts?: { text?: unknown; thought?: unknown }[] } }[] | null
-          } | null
-        )?.candidates?.[0]?.content?.parts ?? []
+      const candidate = data?.candidates?.[0]
+      // I modelli 3.x "pensano" per default: scarta le parti di ragionamento e tieni il testo.
+      const parts = candidate?.content?.parts ?? []
       const text = parts
         .filter((p) => p && p.thought !== true && typeof p.text === 'string')
         .map((p) => p.text as string)
         .join('')
-      if (text === '') return { status: 'soft', reason: 'risposta vuota' }
-      return { status: 'ok', text }
-    },
-  })
-}
 
-async function callOpenAiCompat(opts: {
-  label: string
-  baseUrl: string
-  model: string
-  apiKey: string
-  prompt: string
-  attempts: number
-  sleep: Sleep
-  timeoutMs: number
-  headers?: Record<string, string>
-}): Promise<AiResult> {
-  const { label, baseUrl, model, apiKey, prompt, attempts, sleep, timeoutMs, headers } = opts
-  return runWithRetries({
-    id: label.toLowerCase(),
-    attempts,
-    sleep,
-    attemptOnce: async () => {
-      const res = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          ...headers,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          max_tokens: MAX_TOKENS,
-        }),
-        signal: AbortSignal.timeout(timeoutMs),
-      })
-      if (!res.ok) {
-        return { status: 'http', message: `${label} API: ${res.status}${await errorDetail(res)}`, retryable: isRetryable(res) }
-      }
-
-      let data: {
-        choices?: { message?: { content?: unknown }; finish_reason?: unknown }[]
-      } | null = null
-      try {
-        data = await res.json()
-      } catch {
-        return { status: 'soft', reason: 'risposta non JSON' }
-      }
-      const choice = data?.choices?.[0]
-      const text = choice?.message?.content
-      if (typeof text !== 'string' || text === '') {
-        // `length` significa che il modello ha finito il budget mentre "pensava": utile saperlo.
-        const motivo = choice?.finish_reason === 'length' ? 'budget token esaurito' : 'risposta vuota'
+      if (text === '') {
+        const blocco = data?.promptFeedback?.blockReason
+        const fine = candidate?.finishReason
+        const motivo = blocco ? `bloccato (${String(blocco)})` : fine ? `risposta vuota (${String(fine)})` : 'risposta vuota'
         return { status: 'soft', reason: motivo }
       }
       return { status: 'ok', text }
@@ -219,7 +187,7 @@ export function buildProviders(
   env: NodeJS.ProcessEnv = process.env,
   options: AiOptions = {},
 ): AiProvider[] {
-  const opts = {
+  const opts: ResolvedOptions = {
     sleep: options.sleep ?? defaultSleep,
     timeoutMs: options.timeoutMs ?? RESPONSE_TIMEOUT_MS,
     geminiAttempts: options.geminiAttempts ?? GEMINI_ATTEMPTS,
@@ -228,64 +196,24 @@ export function buildProviders(
 
   const geminiKey = env.GEMINI_API_KEY
   if (geminiKey) {
-    const model = env.GEMINI_MODEL ?? 'gemini-3.6-flash'
+    const model = env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite'
     providers.push({
       id: 'gemini',
       model,
       attempts: opts.geminiAttempts,
       call: (prompt) => callGemini(model, geminiKey, prompt, opts, opts.geminiAttempts),
     })
-  }
 
-  const groqKey = env.GROQ_API_KEY
-  if (groqKey) {
-    const model = env.GROQ_MODEL ?? 'openai/gpt-oss-120b'
-    providers.push({
-      id: 'groq',
-      model,
-      attempts: FALLBACK_ATTEMPTS,
-      call: (prompt) =>
-        callOpenAiCompat({
-          label: 'Groq',
-          baseUrl: 'https://api.groq.com/openai/v1',
-          model,
-          apiKey: groqKey,
-          prompt,
-          attempts: FALLBACK_ATTEMPTS,
-          sleep: opts.sleep,
-          timeoutMs: opts.timeoutMs,
-        }),
-    })
-  }
-
-  const openrouterKey = env.OPENROUTER_API_KEY
-  if (openrouterKey) {
-    const model = env.OPENROUTER_MODEL ?? 'openrouter/free'
-    // Su OpenRouter solo i modelli `:free` (o il router openrouter/free) sono gratuiti: un modello
-    // a pagamento a cascata costerebbe soldi senza che nessuno lo abbia chiesto.
-    if (model !== 'openrouter/free' && !model.endsWith(':free')) {
-      console.error(`[llm] openrouter: modello "${model}" non free, provider saltato`)
-    } else {
+    // Secondo modello Gemini (stessa chiave): se il primo fallisce o non trova nulla si prova
+    // questo prima di arrendersi.
+    const fallbackModel = env.GEMINI_FALLBACK_MODEL ?? 'gemini-3.6-flash'
+    if (fallbackModel !== model) {
       providers.push({
-        id: 'openrouter',
-        model,
+        id: 'gemini-fallback',
+        model: fallbackModel,
         attempts: FALLBACK_ATTEMPTS,
         call: (prompt) =>
-          callOpenAiCompat({
-            label: 'OpenRouter',
-            baseUrl: 'https://openrouter.ai/api/v1',
-            model,
-            apiKey: openrouterKey,
-            prompt,
-            attempts: FALLBACK_ATTEMPTS,
-            sleep: opts.sleep,
-            timeoutMs: opts.timeoutMs,
-            // Identificativi richiesti (e cortesi) da OpenRouter.
-            headers: {
-              'HTTP-Referer': 'https://github.com/mephillicus/Meeple-Radar',
-              'X-Title': 'Meeple Radar',
-            },
-          }),
+          callGemini(fallbackModel, geminiKey, prompt, opts, FALLBACK_ATTEMPTS, 'gemini-fallback'),
       })
     }
   }

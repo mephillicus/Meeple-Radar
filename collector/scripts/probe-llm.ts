@@ -1,19 +1,21 @@
-// Prova dal vivo la cascata di provider LLM. Uso:
-//   $env:GROQ_API_KEY='...'      → solo Groq
-//   $env:OPENROUTER_API_KEY='...' → solo OpenRouter
-//   entrambe                       → cascata (nessun Gemini)
-// Le chiavi restano solo nell'ambiente del processo: non vengono scritte da nessuna parte.
+// Prova dal vivo la cascata Gemini. Uso:
+//   $env:GEMINI_API_KEY='...'
+// Opzionali:
+//   $env:GEMINI_MODEL='...'          → modello primario (default gemini-3.5-flash-lite)
+//   $env:GEMINI_FALLBACK_MODEL='...' → modello di ripiego (default gemini-3.6-flash)
+// La chiave resta solo nell'ambiente del processo: non viene scritta da nessuna parte.
 import { fetchGeminiProducts } from '../src/adapters/gemini.js'
+import { buildProviders } from '../src/adapters/ai-providers.js'
 import type { Source } from '../src/types.js'
 
 const source: Source = {
   id: 'gemini', name: 'Gemini', kind: 'gemini', baseUrl: 'https://e.com', enabled: true,
 }
 
-const chiavi = ['GEMINI', 'GROQ', 'OPENROUTER']
-  .filter((k) => process.env[`${k}_API_KEY`])
-  .join(' + ')
-console.log(`provider configurati: ${chiavi || 'nessuno'}`)
+const providers = buildProviders(process.env)
+console.log(
+  `cascata: ${providers.map((p) => `${p.id}=${p.model} (${p.attempts} tentativi)`).join(' → ') || 'nessuna'}`,
+)
 
 const t0 = Date.now()
 const products = await fetchGeminiProducts(source)

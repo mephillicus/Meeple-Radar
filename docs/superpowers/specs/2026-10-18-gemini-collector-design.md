@@ -16,16 +16,19 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 - Le foto della scatola vengono dai publisher (dati già nel DB), non dal modello.
 - L'app ha già il pulsante "ignora" che toglie un gioco dalla lista delle novità: è il meccanismo per "segnalarlo come vecchio".
 - Quando Gemini conosce il **codice articolo** del publisher, lo chiede e lo usa come chiave d'abbinamento (es. `BLAN01IT`).
-- Quando Gemini non va, la ricerca **cascata su altri due LLM gratuiti** — Groq e poi OpenRouter — con lo **stesso prompt**; Gemini resta il primario e ha la priorità.
-- Ogni chiamata ha un **timeout di 5 minuti**: se la risposta non arriva, la richiesta viene annullata e si passa al provider successivo.
-- Su OpenRouter si usano **solo i modelli free** (il router `openrouter/free`); un modello a pagamento non deve mai essere invocato per caso.
+- Quando Gemini non va, la ricerca **cascata su un secondo modello Gemini**, sulla stessa chiave, con lo **stesso prompt**: il primario è il modello veloce, il ripiego è il modello più capace.
+- Ogni chiamata ha un **timeout di 3 minuti**: se la risposta non arriva, la richiesta viene annullata e si passa al modello successivo.
+- **Una sola chiave**: non serve nessun altro fornitore. Le chiavi Groq e OpenRouter sono state tolte: un secondo vendor aggiunge quota da tenere d'occhio senza garantire nulla in più.
+- **Niente ricerca web da parte dell'LLM.** È stata tolta anche la grounding con Google Search: il tier gratuito non ha quota per la ricerca, e un modello lasciato a sé risponde o vuoto o inventando. Al suo posto i dati arrivano **dentro il prompt**, scaricati dal collector: prima dai feed RSS di Google News (fonte `google-news`), poi da Gemini che estrae dai titoli i giochi di cui si annuncia l'uscita.
+- La fonte `gemini` standalone è **disabilitata**: senza grounding non ha più nulla da dire. Il kind e l'adapter restano, così si può riabilitare se serve un estrattore senza input.
 
 ## 3. Decisioni mie (da verificare in builder-check)
 
-- **Modello**: `gemini-3.6-flash` (GA corrente, economico e veloce; sovrascrivibile con la env `GEMINI_MODEL`). Il vecchio `gemini-2.0-flash` è stato dismesso il 2026-06-01 e restituiva 404. La catena di fallback aggiunge `openai/gpt-oss-120b` su Groq e `openrouter/free` su OpenRouter (sovrascrivibili con `GROQ_MODEL` / `OPENROUTER_MODEL`).
-- **Grounding con Google Search**: la richiesta Gemini include `tools: [{ google_search: {} }]`. Senza dati veri dal web un LLM non saprebbe quali giochi escono fra due mesi e risponde o con lista vuota o con titoli inventati. Il grounding ha però un costo di formato: **non si impone `responseMimeType: application/json`**. Storicamente la combinazione dava 400 ("Controlled generation is not supported with google_search tool") e, per un periodo, ha **disattivato il grounding in silenzio** senza errore (cookbook#1274, risolto il 2026-10-05). Il parser estrae quindi il JSON anche da una risposta mista prosa+JSON. Il log `[llm] gemini: grounding attivo (N query)` rende visibile in CI se il grounding è partito davvero.
-- **Formato di risposta**: **oggetto** con una sola chiave `releases` (array), non un array nudo. Motivo pratico: la JSON mode di Groq/OpenRouter valida la risposta come *oggetto* e rifiuta un array di primo livello con `json_validate_failed`. Il parser accetta comunque entrambe le forme, quindi un array torna comunque interpretato.
-- **Timeout**: `AbortSignal.timeout(5 min)` su ogni chiamata. Senza, una richiesta appesa bloccherebbe l'intero collector.
+- **Due modelli, una chiave**: primario `gemini-3.5-flash-lite` (`GEMINI_MODEL`), ripiego `gemini-3.6-flash` (`GEMINI_FALLBACK_MODEL`). Il vecchio `gemini-2.0-flash` è stato dismesso il 2026-06-01 e restituiva 404. Se i due valori coincidono il ripiego non viene aggiunto. Se il primario non esiste (404) la cascata se ne accorge al primo tentativo e passa al ripiego: il costo di un modello sbagliato è una chiamata, non un run perso.
+- **Nessun tool, JSON mode attivo**: la richiesta non include `tools` e impone `responseMimeType: application/json`. Senza tool il JSON mode è disponibile e garantisce un output parseabile. La grounding con Google Search è stata tolta: storicamente non era combinabile col JSON mode (400, e per un periodo disattivava il grounding **in silenzio**, cookbook#1274) e, soprattutto, il free tier non ha quota per la ricerca. I dati al modello arrivano dal chiamante.
+- **Chiave nell'header**: `x-goog-api-key` invece del parametro `?key=` nell'URL, così in caso di errore la chiave non finisce nei log.
+- **Formato di risposta**: **oggetto** con una sola chiave `releases` (array), non un array nudo. Non è più un vincolo dei provider (ne restano solo uno, che non ha JSON mode), ma resta la forma chiesta al modello perché è più difficile che un generatore di prosa la infranga. Il parser accetta comunque entrambe le forme.
+- **Timeout**: `AbortSignal.timeout(3 min)` su ogni chiamata. Con la ricerca web una risposta richiede da qualche secondo a un minuto; senza timeout, una richiesta appesa bloccherebbe l'intero collector.
 - **Nessun nuovo workflow**: la fonte `gemini` è una source nel seed e gira con `npm run collect` (cron 5:00/17:00) come le altre; serve solo il segreto in più. Due chiamate al giorno sono idempotenti (upsert).
 - **Nuovo kind**: il set chiuso `SOURCE_KINDS` si estende con `'gemini'` (richiede aggiornamento della spec di sistema).
 - **Abbinamento**: per normalizzazione del titolo (minuscole, niente punteggiatura) con publisher come indizio. Il DB **non** ha i codici articolo (gli `external_id` slug), quindi il join è per titolo; il codice articolo è salvato come `external_id` della listing Gemini quando c'è, altrimenti uno slug del titolo. Se l'abbinamento è ambiguo, non abbina (restano i dati del modello).
@@ -58,7 +61,7 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 
 - Node 22 / TypeScript ESM (import con `.js`), vitest + `tsc --noEmit`.
 - Il collector gira in GitHub Actions su `ubuntu-latest` con Node 22.
-- Segreti solo come variabili d'ambiente (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`). Le ultime due sono **opzionali**: se mancano, quei provider vengono semplicemente saltati.
+- Segreti solo come variabili d'ambiente (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `JINA_API_KEY`). Basta `GEMINI_API_KEY` per far girare la fonte LLM.
 - Commenti in italiano solo dove i vicini ne hanno già.
 - Nessun push senza richiesta esplicita.
 - La spec di sistema va allineata (nuovo kind `gemini`, nuova fonte).
@@ -69,7 +72,7 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 - L'adapter ha bisogno del DB per il join: `buildRegistry(http?, gameFinder?)` riceve una funzione di lookup (il `run.ts` la costruisce dallo store). Gli altri adapter non cambiano.
 - Lo store guadagna un metodo `findListingsByTitle(...)` (o equivalente). **Il join gira sul titolo delle listing**, non sui nomi di gioco: la tabella `game` è vuota finché non arriva il match BGG (Piano 02 rimandato), quindi l'unica destinazione popolata è `listing`. Quando la listing trovata ha un `game_id`, lo copia.
 - `RawProduct`/`Listing` guadagnano `gameId` opzionale; `upsertListings` lo persiste nella colonna `game_id` (esiste già).
-- `config.ts` legge `GEMINI_API_KEY`; le chiavi dei provider di fallback (`GROQ_API_KEY`, `OPENROUTER_API_KEY`) le legge invece `buildProviders` in `src/adapters/ai-providers.ts`, perché servono solo a quel modulo.
+- `config.ts` legge `GEMINI_API_KEY`; i due nomi dei modelli e il flag `GEMINI_SEARCH` li legge invece `buildProviders` in `src/adapters/ai-providers.ts`, perché servono solo a quel modulo.
 - La entry in seed: `{ id: 'gemini', name: 'Gemini', kind: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', enabled: true }`.
 - Il prompt vive nel repo (`collector/prompts/...`) e viene letto dall'adapter.
 - Il parser: estrae l'oggetto JSON dalla risposta (tolle i fence ```json, accetta anche un array nudo e lo smonta se è avvolto in `{"releases": [...]}`), valida che ogni entry abbia un titolo non vuoto, normalizza i campi.
@@ -82,25 +85,41 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 - La gestione degli errori (API down, parse fallito, entry parziali).
 - I test (parser, join, seed) e l'allineamento della spec di sistema.
 
-## 10. Cascata di provider LLM (fallback gratuiti)
+## 10. Cascata di modelli Gemini
 
-Un solo LLM rende la fonte fragile: un 429/503 o un modello dismesso azzera le novità del giorno. La fonte quindi prova in sequenza più provider **gratuiti**, con lo **stesso prompt**.
+Un solo modello rende la fonte fragile: un 429/503, un modello dismesso o una ricerca che non parte azzera le novità del giorno. La fonte prova quindi in sequenza **due modelli Gemini sulla stessa chiave**, con lo **stesso prompt**.
 
-| Ordine | Provider | Endpoint | Default | Limite free (ott 2026) |
-|---|---|---|---|---|
-| 1 | Gemini | `generativelanguage.googleapis.com/v1beta/models` | `gemini-3.6-flash` (`GEMINI_MODEL`) | free tier AI Studio; grounding Google Search con quota giornaliera |
-| 2 | Groq | `api.groq.com/openai/v1` | `openai/gpt-oss-120b` (`GROQ_MODEL`) | 30 RPM / 1000 richieste al giorno, niente carta |
-| 3 | OpenRouter | `openrouter.ai/api/v1` | `openrouter/free` (`OPENROUTER_MODEL`) | 20 RPM / 50 richieste al giorno (1000 con 10$ una tantum) |
+| Ordine | id | Modello | Env | Tentativi | Perché |
+|---|---|---|---|---|---|
+| 1 | `gemini` | `gemini-3.5-flash-lite` | `GEMINI_MODEL` | 5 | economico e veloce, basta per una lista di uscite |
+| 2 | `gemini-fallback` | `gemini-3.6-flash` | `GEMINI_FALLBACK_MODEL` | 4 | più capace, fa da rete di sicurezza |
 
-**Perché questa coppia:** Groq offre il margine più ampio (1000 richieste al giorno) con JSON mode nativo e risposte in ~4 s; OpenRouter chiude la catena con il router `openrouter/free`, che a ogni chiamata sceglie tra ~20 modelli `:free` ed è quindi immune al 429/403 di un singolo provider. Entrambi parlano il formato OpenAI (`chat/completions`), quindi la chiamata è la stessa cambia solo `baseURL`, `model` e `Authorization`.
+**Perché solo Gemini:** aggiungere un secondo vendor (Groq, OpenRouter) significava tenere d'occhio tre quote giornaliere e tre formati di API per un'incognita che il grounding già risolve: senza ricerca web il modello inventa, con la ricerca web restituisce quello che trova. Una sola chiave da custodire, un solo formato di chiamata, un solo fornitore da cui aspettarsi un'interruzione. Se il grounding smette di bastare, il secondo modello è il posto dove provare prima di reintrodurre un vendor.
 
 **Regole della cascata** (`src/adapters/ai-providers.ts` + `src/adapters/gemini.ts`):
 
-- **Priorità a Gemini**: il primario insiste su **3 tentativi**, i fallback su 2. Finché Gemini risponde con un array non vuoto, nessun altro provider viene toccato.
-- Si passa al provider successivo quando: la chiamata fallisce (404/401/429/503, timeout di 5 minuti), la risposta non è JSON interpretabile, oppure l'array restituito è **vuoto**.
-- **Retry mirato, dentro al provider**: ogni tentativo ripete la chiamata con attesa esponenziale (2s, 4s). Si ripete su 503 e su 429 *con* `retry-after` (limite transitorio) **e** su una risposta ricevuta ma vuota o troncata, che è non deterministica. Un 429 *senza* `retry-after` è un limite giornaliero: riprovare sprecherebbe quota senza alcuna possibilità di successo, quindi si passa subito al provider successivo. Un 404/401 non viene ritentato affatto. Il retry vive nel provider (dove status HTTP e `retry-after` sono disponibili) e non nell'orchestrator della cascata, che altrimenti deciderebbe facendo regex sul testo dell'errore e moltiplicherebbe le attese.
-- Un array vuoto valido su **tutti** i provider restituisce `[]` senza errore (il run finisce in `zeroed`, che la monitoraggia già); se **nessun** provider risponde, la fonte fallisce con tutti gli errori in un unico messaggio.
-- Solo i provider con chiave impostata entrano in cascata: la fonte continua a funzionare anche con la sola `GEMINI_API_KEY`.
-- Su OpenRouter un modello che non è `openrouter/free` né suffisso `:free` viene **rifiutato** con un log, così una sovrascrittura per sbaglio non può mai invocare un modello a pagamento.
+- **Priorità al primario**: 5 tentativi contro 4. Finché il primo modello risponde con un array non vuoto, il secondo non viene toccato.
+- Si passa al modello successivo quando: la chiamata fallisce (404/401/429/503, timeout di 3 minuti), la risposta non è JSON interpretabile, oppure l'array restituito è **vuoto**.
+- **Retry mirato, dentro al modello**: attesa esponenziale 5s, 10s, 20s, 40s (massimo 60s). Si ripete su 500/502/503/504, su 429 *da limite al minuto*, e su una risposta ricevuta ma vuota o troncata, che è non deterministica. Un 429 il cui corpo parla di un limite **giornaliero** (`PerDay`) non viene ritentato: riprovare sprecherebbe quota senza alcuna possibilità di successo, e la distinzione si fa leggendo il corpo dell'errore, non un header. Un 404/401 non viene ritentato affatto. Il retry vive nel modello e non nell'orchestrator, che altrimenti deciderebbe senza vedere status e corpo.
+- Un array vuoto valido su **entrambi** i modelli restituisce `[]` senza errore (il run finisce in `zeroed`, che la monitoraggia già); se **nessuno** dei due risponde, la fonte fallisce con tutti gli errori in un unico messaggio.
+- Se `GEMINI_MODEL` e `GEMINI_FALLBACK_MODEL` coincidono, il ripiego non viene aggiunto: la cascata si riduce a un singolo modello.
+- Se il modello primario non esiste (404, es. un nome scritto male in env) il primo tentativo basta a capirlo e si passa al ripiego.
 
-**Limite noto:** la quota free di OpenRouter è 50 richieste al giorno (le richieste fallite contano lo stesso) e viene esaurita facilmente; è l'ultimo anello della catena, quindi il problema si manifesta solo se Gemini e Groq sono entrambi fuori. Con 10$ una tantum la quota sale a 1000/giorno.
+**Limite noto:** nessuna quota di ricerca da gestire, perché non c'è ricerca. Le due chiamate al giorno (cron 5:00/17:00) con qualche retry stanno nel free tier.
+
+## 11. Dove finiscono i dati: Google News → Gemini
+
+Il problema di fondo era che un LLM chiesto "cosa esce fra due mesi?" risponde o vuoto o inventando, perché non ha accesso a fatti recenti. La soluzione adottata non è dare la ricerca al modello, ma **darli dei fatti già raccolti**.
+
+`google-news.ts` fa due passi:
+
+1. **Scarica i titoli.** Da due tipi di fonte, tutte RSS 2.0 e tutte dentro la stessa finestra di 30 giorni: le cinque ricerche su **Google News** in italiano (`NEWS_QUERIES`, ognuna con l'operatore `when:` che limita l'età), e i **feed RSS dei siti** (`SITE_FEEDS`). I titoli più vecchi di 30 giorni vengono scartati, i doppioni eliminati (la stessa notizia compare in più ricerche e su più testate), si tiene al massimo 80 titoli, i più recenti.
+2. **Li passa a Gemini** con un prompt che chiede di estrarre **solo** i giochi nominati esplicitamente, senza completare editori, prezzi o date che nei titoli non ci sono. La cascata a due modelli è la stessa della fonte Gemini.
+
+I feed dei siti stanno in una classe separata dalle query perché **non si comportano come gli scraper**. `houseofgames.it`, per esempio, è un magazine senza prezzi: il suo pezzo `GIOCHI DA TAVOLO: TUTTE Le Nuove Uscite Di Ottobre` contiene venti giochi in un solo articolo, cosa che un estrattore HTML non sa spezzettare. Passandolo all'LLM invece il problema sparisce, perché quello legge il titolo e restituisce tante uscite quante ne nomina.
+
+I titoli restituiscono il **nome** del gioco, raramente prezzo o data: quei campi arrivano poi dal `gameFinder`, che cerca la stessa cosa nel DB popolato dagli scraper e ne copia prezzo, data e foto. Se il gioco non esiste ancora nel DB, resta con i soli dati del titolo e la provenienza visibile ("Google News").
+
+**Perché funziona dove il grounding non funzionava:** il filtro "solo giochi nominati nel titolo" è verificabile dall'input. Il modello non ha spazio per inventare, perché se un nome non c'è in un titolo la regola glielo vieta. Con il grounding la stessa regola non si poteva far rispettare, dato che i fatti li sceglieva il modello.
+
+**Limite noto:** il segnale è rumoroso. Su 128 titoli raccolti dal vivo, Google News restituisce molte serate di gioco, offerte e annunci di fiere, e il feed di House of Games è per due terzi recensioni di giochi **già usciti**. Le regole `NON videogiochi, film, fiere o eventi` e `di cui un titolo annuncia un'uscita... in arrivo` nel prompt servono a scartarli, ma una quota di rumore resta: è il prezzo di non lasciare a un modello la scelta delle fonti. I campi prezzo/data resteranno spesso vuoti, perché i titoli non li contengono: quei campi arrivano dal `gameFinder` sul DB popolato dagli scraper.

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const SOURCE_KINDS = ['shopify', 'woocommerce', 'wordpress', 'html', 'headless', 'gemini'] as const
+export const SOURCE_KINDS = ['shopify', 'woocommerce', 'wordpress', 'html', 'headless', 'gemini', 'news'] as const
 export type SourceKind = (typeof SOURCE_KINDS)[number]
 
 export const RawProductSchema = z.object({

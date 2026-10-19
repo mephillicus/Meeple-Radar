@@ -12,14 +12,21 @@ export async function buildUpcomingPrompt(): Promise<string> {
     'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
   ]
   const meseCorrente = mesi[now.getMonth()]
-  const prossimo = new Date(now)
-  prossimo.setMonth(now.getMonth() + 1)
+  // Si parte dal giorno 1 per evitare overflow (es. 31 gennaio + 1 mese = marzo).
+  const prossimo = new Date(now.getFullYear(), now.getMonth() + 1, 1)
   const meseSuccessivo = mesi[prossimo.getMonth()]
   const anno = prossimo.getFullYear()
+  const oggi = now.toLocaleDateString('it-IT', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Europe/Rome',
+  })
 
   const promptPath = new URL('../../prompts/upcoming-releases.txt', import.meta.url)
   const prompt = await readFile(promptPath, 'utf-8')
   return prompt
+    .replace(/\{OGGI\}/g, oggi)
     .replace(/\{MESE_CORRENTE\}/g, meseCorrente)
     .replace(/\{MESE_SUCCESSIVO\}/g, meseSuccessivo)
     .replace(/\{ANNO\}/g, String(anno))
@@ -30,37 +37,26 @@ export type ParsedUpcoming = {
   products: RawProduct[]
 }
 
-// Senza `responseMimeType` il modello può far precedere il JSON da una riga di prosa. Estrae il
-// primo blocco bilanciato, tenendo conto delle stringhe (altrimenti un titolo come
-// "Carcassonne [edizione]" sbilancia le parentesi).
-function extractJsonBlock(text: string): string | null {
-  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
-  const start = cleaned.search(/[[{]/)
-  if (start === -1) return null
-
-  const stack: string[] = []
-  let inString = false
-  let escaped = false
-  for (let i = start; i < cleaned.length; i++) {
-    const ch = cleaned[i]
-    if (inString) {
-      if (escaped) escaped = false
-      else if (ch === '\\') escaped = true
-      else if (ch === '"') inString = false
-      continue
-    }
-    if (ch === '"') {
-      inString = true
-      continue
-    }
-    if (ch === '{' || ch === '[') {
-      stack.push(ch)
-    } else if (ch === '}' || ch === ']') {
-      stack.pop()
-      if (stack.length === 0) return cleaned.slice(start, i + 1)
-    }
+// Con la ricerca web Gemini non può forzare il JSON: il testo può contenere frasi attorno o
+// blocchi ```json. Prima si prova il parse diretto, poi si ritaglia dal primo `{`/`[` all'ultimo
+// `}`/`]` corrispondente.
+function extractJson(text: string): unknown {
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim()
+  try {
+    return JSON.parse(cleaned)
+  } catch {
+    // continua con l'estrazione
   }
-  return null
+  const start = cleaned.search(/[{[]/)
+  if (start === -1) throw new Error('nessun JSON nel testo')
+  const close = cleaned[start] === '{' ? '}' : ']'
+  const end = cleaned.lastIndexOf(close)
+  if (end <= start) throw new Error('JSON incompleto')
+  return JSON.parse(cleaned.slice(start, end + 1))
 }
 
 // `ok` distingue "risposta non interpretabile" da "array valido (anche vuoto)": solo la prima
@@ -68,9 +64,7 @@ function extractJsonBlock(text: string): string | null {
 export async function parseUpcomingJson(text: string, gameFinder?: GameFinder): Promise<ParsedUpcoming> {
   let parsed: unknown
   try {
-    const blocco = extractJsonBlock(text)
-    if (blocco === null) return { ok: false, products: [] }
-    parsed = JSON.parse(blocco)
+    parsed = extractJson(text)
   } catch {
     return { ok: false, products: [] }
   }
@@ -138,8 +132,9 @@ export async function parseUpcomingJson(text: string, gameFinder?: GameFinder): 
   return { ok: true, products: out }
 }
 
-// Cascata di provider LLM gratuiti: Gemini → Groq → OpenRouter. Si passa al successivo quando la
-// chiamata fallisce (429/503/404), la risposta non è interpretabile o l'array è vuoto.
+// Cascata di provider LLM: Gemini (con ricerca web) → Gemini di ripiego. Si passa al
+// successivo quando la chiamata fallisce (429/503/404), la risposta non è interpretabile o
+// l'array è vuoto.
 export async function fetchGeminiProducts(
   _source: Source,
   gameFinder?: GameFinder,
@@ -147,7 +142,7 @@ export async function fetchGeminiProducts(
 ): Promise<RawProduct[]> {
   const providers = buildProviders(process.env, options)
   if (providers.length === 0) {
-    throw new Error('nessuna chiave LLM: imposta GEMINI_API_KEY, GROQ_API_KEY o OPENROUTER_API_KEY')
+    throw new Error('nessuna chiave LLM: imposta GEMINI_API_KEY')
   }
 
   const prompt = await buildUpcomingPrompt()
@@ -175,16 +170,15 @@ export async function fetchGeminiProducts(
     const { ok, products } = await parseUpcomingJson(result.text, gameFinder)
     if (!ok) {
       errors.push(`${provider.id}: risposta non interpretabile`)
-      console.error(`[llm] ${provider.id}: risposta non interpretabile`)
+      // Un'anteprima della risposta rende evidente se il modello ha scritto prosa invece di JSON.
+      console.error(`[llm] ${provider.id}: risposta non interpretabile: ${result.text.slice(0, 300)}`)
       continue
     }
     if (products.length === 0) {
-      console.error(`[llm] ${provider.id}: risposta vuota, provo il provider successivo`)
+      console.error(`[llm] ${provider.id}: nessuna uscita trovata, provo il provider successivo`)
       continue
     }
-    if (provider.id !== providers[0].id) {
-      console.error(`[llm] ${products.length} prodotti da ${provider.id}`)
-    }
+    console.error(`[llm] ${products.length} prodotti da ${provider.id}`)
     return products
   }
 

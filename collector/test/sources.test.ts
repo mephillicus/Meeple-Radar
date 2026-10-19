@@ -2,20 +2,22 @@ import { expect, test } from 'vitest'
 import { SOURCES } from '../src/sources.seed.js'
 import { buildRegistry } from '../src/adapters/registry.js'
 
-test('seeds all 18 sources with a known kind', () => {
-  expect(SOURCES).toHaveLength(18)
+const KINDS = ['shopify', 'woocommerce', 'wordpress', 'html', 'headless', 'gemini', 'news'] as const
+
+test('seeds all 19 sources with a known kind', () => {
+  expect(SOURCES).toHaveLength(19)
   const kinds = new Set(SOURCES.map(s => s.kind))
-  for (const k of kinds) expect(['shopify','woocommerce','wordpress','html','headless','gemini']).toContain(k)
+  for (const k of kinds) expect(KINDS).toContain(k)
 })
 
 test('registry provides an adapter for every kind', () => {
   const r = buildRegistry()
-  for (const k of ['shopify','woocommerce','wordpress','html','headless','gemini'] as const) {
+  for (const k of KINDS) {
     expect(typeof r[k]).toBe('function')
   }
 })
 
 test('only sources with a verified working adapter are enabled', () => {
   const enabled = SOURCES.filter(s => s.enabled).map(s => s.id).sort()
-  expect(enabled).toEqual(['asmodee', 'boardhouse', 'cranio', 'dungeondice', 'dvgiochi', 'gateongames', 'gemini', 'ghenos', 'giochiuniti', 'horribleguild', 'littlerocket', 'msedizioni', 'pendragon', 'philibert', 'supernova'])
+  expect(enabled).toEqual(['asmodee', 'boardhouse', 'cranio', 'dungeondice', 'dvgiochi', 'gateongames', 'ghenos', 'giochiuniti', 'google-news', 'horribleguild', 'littlerocket', 'msedizioni', 'pendragon', 'philibert', 'supernova'])
 })

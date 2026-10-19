@@ -3,6 +3,7 @@ import type { Adapter } from '../run.js'
 import { textFetcher, type HttpClient } from './http.js'
 import { fetchShopifyProducts } from './shopify.js'
 import { fetchGeminiProducts } from './gemini.js'
+import { fetchNewsProducts } from './google-news.js'
 import { fetchWooCommerceProducts } from './woocommerce.js'
 import { fetchWordPressProducts } from './wordpress.js'
 import { collectHtmlProducts } from './html/crawl.js'
@@ -26,5 +27,7 @@ export function buildRegistry(http?: HttpClient, gameFinder?: GameFinder): Recor
       return collectHtmlProducts({ spec, fetchText: getSharedFetcher() })
     },
     gemini: (source) => fetchGeminiProducts(source, gameFinder),
+    // Titoli da Google News RSS, poi estrazione dei giochi con Gemini senza ricerca web.
+    news: (source) => fetchNewsProducts(source, gameFinder),
   }
 }
