@@ -3,6 +3,7 @@ package com.meepleradar.data.remote
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.Listing
+import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -13,7 +14,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 
-data class UserActionRow(val gameId: Long?, val listingId: Long?, val action: Action)
+data class UserActionRow(val gameId: Long?, val listingId: Long?, val action: Action, val productId: Long? = null)
 
 interface SupabaseApi {
     suspend fun listings(): List<Listing>
@@ -21,6 +22,8 @@ interface SupabaseApi {
     suspend fun games(): List<Game>
 
     suspend fun sources(): List<Source>
+
+    suspend fun products(): List<Product> = emptyList()
 
     suspend fun userActions(): List<UserActionRow>
 
@@ -55,6 +58,10 @@ class SupabaseRestApi(
 
     override suspend fun sources(): List<Source> =
         json.decodeFromString<List<SourceDto>>(transport.get(selectUrl("source"), headers()))
+            .map { it.toDomain() }
+
+    override suspend fun products(): List<Product> =
+        json.decodeFromString<List<ProductDto>>(transport.get(selectUrl("product"), headers()))
             .map { it.toDomain() }
 
     override suspend fun userActions(): List<UserActionRow> =
@@ -124,6 +131,21 @@ private data class GameDto(
 }
 
 @Serializable
+private data class ProductDto(
+    val id: Long,
+    val title: String? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("release_date") val releaseDate: String? = null,
+) {
+    fun toDomain() = Product(
+        id = id,
+        title = title,
+        imageUrl = imageUrl,
+        releaseDate = releaseDate.asLocalDateOrNull(),
+    )
+}
+
+@Serializable
 private data class ListingDto(
     val id: Long,
     @SerialName("source_id") val sourceId: String,
@@ -136,6 +158,7 @@ private data class ListingDto(
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("game_id") val gameId: Long? = null,
     @SerialName("match_confidence") val matchConfidence: Double? = null,
+    @SerialName("product_id") val productId: Long? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -149,6 +172,7 @@ private data class ListingDto(
         imageUrl = imageUrl,
         gameId = gameId,
         matchConfidence = matchConfidence,
+        productId = productId,
     )
 }
 
@@ -156,21 +180,24 @@ private data class ListingDto(
 private data class UserActionDto(
     @SerialName("game_id") val gameId: Long? = null,
     @SerialName("listing_id") val listingId: Long? = null,
+    @SerialName("product_id") val productId: Long? = null,
     val action: String,
 ) {
-    fun toDomain() = UserActionRow(gameId, listingId, action.toAction())
+    fun toDomain() = UserActionRow(gameId, listingId, action.toAction(), productId)
 }
 
 @Serializable
 private data class ActionInsertDto(
     @SerialName("game_id") val gameId: Long?,
     @SerialName("listing_id") val listingId: Long?,
+    @SerialName("product_id") val productId: Long? = null,
     val action: String,
 ) {
     companion object {
         fun from(row: UserActionRow) = ActionInsertDto(
             gameId = row.gameId,
             listingId = row.listingId,
+            productId = row.productId,
             action = when (row.action) {
                 Action.FAVORITE -> "favorite"
                 Action.UNFAVORITED -> "unfavorite"

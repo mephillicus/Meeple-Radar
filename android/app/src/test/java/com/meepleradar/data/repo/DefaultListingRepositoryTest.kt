@@ -169,4 +169,13 @@ class DefaultListingRepositoryTest {
 
         assertEquals(listOf("listing:9"), items.map { it.key })
     }
+
+    @Test
+    fun `setAction con chiave product invia productId`() = runTest {
+        val api = FakeSupabaseApi()
+
+        DefaultListingRepository(api, FakeFavoriteStore()).setAction("product:12", Action.FAVORITE)
+
+        assertEquals(listOf(UserActionRow(gameId = null, listingId = null, action = Action.FAVORITE, productId = 12)), api.inserted)
+    }
 }

@@ -30,6 +30,14 @@ data class Listing(
     val imageUrl: String?,
     val gameId: Long?,
     val matchConfidence: Double?,
+    val productId: Long? = null,
+)
+
+data class Product(
+    val id: Long,
+    val title: String?,
+    val imageUrl: String?,
+    val releaseDate: LocalDate?,
 )
 
 data class Price(val amount: Double, val currency: String)

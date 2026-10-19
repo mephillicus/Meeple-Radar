@@ -184,4 +184,49 @@ class IncomingMapperTest {
         assertEquals(ItemKind.UPCOMING, items[0].kind)
         assertEquals(ItemKind.NEW_UNDATED, items[2].kind)
     }
+
+    @Test
+    fun `listing con productId confluiscono in una card con chiave product id e piu offerte`() {
+        val a = listing(id = 1, sourceId = "s1", price = 40.0, currency = "EUR").copy(productId = 10L)
+        val b = listing(id = 2, sourceId = "s2", price = 35.0, currency = "EUR").copy(productId = 10L)
+
+        val items = buildIncomingItems(
+            listings = listOf(a, b),
+            games = emptyMap(),
+            sources = sources("s1", "s2"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(10L to com.meepleradar.data.model.Product(10L, "Citadels", null, null)),
+        )
+
+        assertEquals(1, items.size)
+        assertEquals("product:10", items[0].key)
+        assertEquals("Citadels", items[0].title)
+        assertEquals(2, items[0].offers.size)
+        assertEquals(Price(35.0, "EUR"), bestEurPrice(items[0].offers))
+    }
+
+    @Test
+    fun `listing di un product e escluso se la chiave product o listing e in ignoredKeys`() {
+        val a = listing(id = 1, sourceId = "s1").copy(productId = 10L)
+        val b = listing(id = 2, sourceId = "s2").copy(productId = 10L)
+
+        val itemsIgnoredByProduct = buildIncomingItems(
+            listings = listOf(a, b),
+            games = emptyMap(),
+            sources = sources("s1", "s2"),
+            ignoredKeys = setOf("product:10"),
+            today = today,
+        )
+        assertTrue(itemsIgnoredByProduct.isEmpty())
+
+        val itemsIgnoredByListing = buildIncomingItems(
+            listings = listOf(a, b),
+            games = emptyMap(),
+            sources = sources("s1", "s2"),
+            ignoredKeys = setOf("listing:1"),
+            today = today,
+        )
+        assertTrue(itemsIgnoredByListing.isEmpty())
+    }
 }

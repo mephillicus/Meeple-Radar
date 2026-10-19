@@ -78,7 +78,7 @@ class SupabaseRestApiTest {
     fun `price numerica e price stringa vengono entrambe lette`() = runTest {
         val body = listingJson(
             """{"id":1,"source_id":"s1","title":"A","url":"https://a","price":39.9,"currency":"EUR",""" +
-                """"availability":null,"release_date":"2026-11-01","image_url":null,"game_id":5,"match_confidence":0.9}""",
+                """"availability":null,"release_date":"2026-11-01","image_url":null,"game_id":5,"match_confidence":0.9,"product_id":42}""",
             """{"id":2,"source_id":"s1","title":"B","url":"https://b","price":"12.50","currency":"EUR",""" +
                 """"availability":null,"release_date":null,"image_url":null,"game_id":null,"match_confidence":null}""",
         )
@@ -89,6 +89,25 @@ class SupabaseRestApiTest {
         assertEquals(39.9, listings[0].price!!, 1e-9)
         assertEquals(12.5, listings[1].price!!, 1e-9)
         assertEquals(0.9, listings[0].matchConfidence!!, 1e-9)
+        assertEquals(42L, listings[0].productId)
+        assertNull(listings[1].productId)
+    }
+
+    @Test
+    fun `products costruisce url select star con header apikey e bearer`() = runTest {
+        val body = listingJson(
+            """{"id":10,"title":"Citadels","image_url":"https://img","release_date":"2026-12-01"}""",
+        )
+        val transport = FakeTransport(mapOf("$base/rest/v1/product?select=*" to body))
+        val products = SupabaseRestApi(base, anon, transport, json).products()
+
+        val call = transport.calls.single()
+        assertEquals("GET", call.method)
+        assertEquals("$base/rest/v1/product?select=*", call.url)
+        assertEquals(1, products.size)
+        assertEquals(10L, products[0].id)
+        assertEquals("Citadels", products[0].title)
+        assertEquals(java.time.LocalDate.of(2026, 12, 1), products[0].releaseDate)
     }
 
     @Test

@@ -6,11 +6,15 @@ import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
+import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
 import java.time.LocalDate
 
-fun keyOf(listing: Listing): String =
-    if (listing.gameId != null) "game:${listing.gameId}" else "listing:${listing.id}"
+fun keyOf(listing: Listing): String = when {
+    listing.gameId != null -> "game:${listing.gameId}"
+    listing.productId != null -> "product:${listing.productId}"
+    else -> "listing:${listing.id}"
+}
 
 fun bestEurPrice(offers: List<Offer>): Price? =
     offers.mapNotNull { it.price }
@@ -25,16 +29,22 @@ fun buildIncomingItems(
     today: LocalDate,
     sourceIds: Set<String>? = null,
     includeUndated: Boolean = true,
+    products: Map<Long, Product> = emptyMap(),
 ): List<IncomingItem> =
     listings
         .filter { sourceIds == null || it.sourceId in sourceIds }
         .groupBy { keyOf(it) }
-        .filterKeys { it !in ignoredKeys }
+        .filter { (key, groupListings) ->
+            key !in ignoredKeys && groupListings.none { "listing:${it.id}" in ignoredKeys }
+        }
         .map { (key, groupListings) ->
             val game = groupListings.firstNotNullOfOrNull { listing ->
                 listing.gameId?.let { games[it] }
             }
-            val releaseDate = groupListings.mapNotNull { it.releaseDate }.minOrNull()
+            val product = groupListings.firstNotNullOfOrNull { listing ->
+                listing.productId?.let { products[it] }
+            }
+            val releaseDate = product?.releaseDate ?: groupListings.mapNotNull { it.releaseDate }.minOrNull()
             val offers = groupListings.map { listing ->
                 Offer(
                     sourceId = listing.sourceId,
@@ -50,8 +60,8 @@ fun buildIncomingItems(
             }
             IncomingItem(
                 key = key,
-                title = game?.name ?: groupListings.first().title,
-                imageUrl = game?.imageUrl ?: groupListings.firstNotNullOfOrNull { it.imageUrl },
+                title = game?.name ?: product?.title ?: groupListings.first().title,
+                imageUrl = game?.imageUrl ?: product?.imageUrl ?: groupListings.firstNotNullOfOrNull { it.imageUrl },
                 releaseDate = releaseDate,
                 kind = if (releaseDate != null) ItemKind.UPCOMING else ItemKind.NEW_UNDATED,
                 game = game,

@@ -71,6 +71,7 @@ class DefaultListingRepository(
             val row = when (kind) {
                 "game" -> UserActionRow(gameId = id, listingId = null, action = action)
                 "listing" -> UserActionRow(gameId = null, listingId = id, action = action)
+                "product" -> UserActionRow(gameId = null, listingId = null, action = action, productId = id)
                 else -> throw IllegalArgumentException("chiave non valida: $key")
             }
             api.insertAction(row)
@@ -82,8 +83,9 @@ class DefaultListingRepository(
         today: LocalDate,
         sourceIds: Set<String>?,
         includeUndated: Boolean,
-    ): List<IncomingItem> =
-        buildIncomingItems(
+    ): List<IncomingItem> {
+        val products = runCatching { api.products() }.getOrDefault(emptyList()).associateBy { it.id }
+        return buildIncomingItems(
             listings = api.listings(),
             games = api.games().associateBy { it.id },
             sources = api.sources().associateBy { it.id },
@@ -91,7 +93,9 @@ class DefaultListingRepository(
             today = today,
             sourceIds = sourceIds,
             includeUndated = includeUndated,
+            products = products,
         )
+    }
 
     private fun parseKey(key: String): Pair<String, Long> {
         val parts = key.split(':', limit = 2)
@@ -102,6 +106,7 @@ class DefaultListingRepository(
 
     private fun UserActionRow.keyOrNull(): String? = when {
         gameId != null -> "game:$gameId"
+        productId != null -> "product:$productId"
         listingId != null -> "listing:$listingId"
         else -> null
     }
