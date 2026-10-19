@@ -29,6 +29,7 @@ fun buildIncomingItems(
     today: LocalDate,
     sourceIds: Set<String>? = null,
     includeUndated: Boolean = true,
+    includePriceless: Boolean = true,
     products: Map<Long, Product> = emptyMap(),
 ): List<IncomingItem> =
     listings
@@ -71,7 +72,8 @@ fun buildIncomingItems(
         .filter {
             val isNotPast = it.releaseDate == null || !it.releaseDate.isBefore(today)
             val isUndatedAllowed = includeUndated || it.releaseDate != null
-            isNotPast && isUndatedAllowed
+            val isPricelessAllowed = includePriceless || it.offers.any { offer -> offer.price != null }
+            isNotPast && isUndatedAllowed && isPricelessAllowed
         }
         .sortedWith(
             compareBy<IncomingItem> { if (it.kind == ItemKind.UPCOMING) 0 else 1 }

@@ -13,12 +13,14 @@ interface ListingRepository {
         today: LocalDate,
         sourceIds: Set<String>? = null,
         includeUndated: Boolean = true,
+        includePriceless: Boolean = true,
     ): List<IncomingItem>
 
     suspend fun favorites(
         today: LocalDate,
         sourceIds: Set<String>? = null,
         includeUndated: Boolean = true,
+        includePriceless: Boolean = true,
     ): List<IncomingItem>
 
     suspend fun sources(): List<Source>
@@ -35,26 +37,28 @@ class DefaultListingRepository(
         today: LocalDate,
         sourceIds: Set<String>?,
         includeUndated: Boolean,
+        includePriceless: Boolean,
     ): List<IncomingItem> {
         val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
         val ignored = latestActionsByKey(userActions)
             .filterValues { it == Action.IGNORED }
             .keys
             .toSet()
-        return buildItems(ignored, today, sourceIds, includeUndated)
+        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless)
     }
 
     override suspend fun favorites(
         today: LocalDate,
         sourceIds: Set<String>?,
         includeUndated: Boolean,
+        includePriceless: Boolean,
     ): List<IncomingItem> {
         val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
         val actionsMap = latestActionsByKey(userActions)
         val ignored = actionsMap.filterValues { it == Action.IGNORED }.keys
         val remoteFavoriteKeys = actionsMap.filterValues { it == Action.FAVORITE }.keys
         val favoriteKeys = favoriteStore.keys() + remoteFavoriteKeys
-        return buildItems(ignored, today, sourceIds, includeUndated).filter { it.key in favoriteKeys }
+        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless).filter { it.key in favoriteKeys }
     }
 
     override suspend fun sources(): List<Source> = api.sources()
@@ -83,6 +87,7 @@ class DefaultListingRepository(
         today: LocalDate,
         sourceIds: Set<String>?,
         includeUndated: Boolean,
+        includePriceless: Boolean,
     ): List<IncomingItem> {
         val products = runCatching { api.products() }.getOrDefault(emptyList()).associateBy { it.id }
         return buildIncomingItems(
@@ -93,6 +98,7 @@ class DefaultListingRepository(
             today = today,
             sourceIds = sourceIds,
             includeUndated = includeUndated,
+            includePriceless = includePriceless,
             products = products,
         )
     }

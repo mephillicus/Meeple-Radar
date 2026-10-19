@@ -15,17 +15,17 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -66,6 +66,7 @@ fun IncomingScreen(
     val sources by vm.sources.collectAsStateWithLifecycle()
     val selectedSources by vm.selectedSources.collectAsStateWithLifecycle()
     val hideUndated by vm.hideUndated.collectAsStateWithLifecycle()
+    val hidePriceless by vm.hidePriceless.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -82,8 +83,9 @@ fun IncomingScreen(
                     sources = sources,
                     selectedSources = selectedSources,
                     hideUndated = hideUndated,
-                    onApply = { newSelectedSources, newHideUndated ->
-                        vm.applyFilters(newSelectedSources, newHideUndated)
+                    hidePriceless = hidePriceless,
+                    onApply = { newSelectedSources, newHideUndated, newHidePriceless ->
+                        vm.applyFilters(newSelectedSources, newHideUndated, newHidePriceless)
                         scope.launch { drawerState.close() }
                     },
                     onReset = {
@@ -105,7 +107,7 @@ fun IncomingScreen(
             Column(modifier = Modifier.fillMaxSize().padding(padding)) {
                 val selSources = selectedSources
                 IncomingTopBar(
-                    hasActiveFilters = hideUndated || (selSources != null && selSources.size < sources.size),
+                    hasActiveFilters = hideUndated || hidePriceless || (selSources != null && selSources.size < sources.size),
                     onOpenFilters = { scope.launch { drawerState.open() } },
                     onRefresh = { vm.refresh() },
                 )
@@ -210,11 +212,13 @@ private fun FilterDrawerContent(
     sources: List<Source>,
     selectedSources: Set<String>?,
     hideUndated: Boolean,
-    onApply: (Set<String>?, Boolean) -> Unit,
+    hidePriceless: Boolean,
+    onApply: (Set<String>?, Boolean, Boolean) -> Unit,
     onReset: () -> Unit,
     onClose: () -> Unit,
 ) {
     var localHideUndated by remember(hideUndated) { mutableStateOf(hideUndated) }
+    var localHidePriceless by remember(hidePriceless) { mutableStateOf(hidePriceless) }
     var localSelectedSources by remember(selectedSources, sources) {
         mutableStateOf(
             selectedSources?.toMutableSet() ?: sources.map { it.id }.toMutableSet(),
@@ -241,8 +245,63 @@ private fun FilterDrawerContent(
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item {
+                Text(
+                    text = "Opzioni di visualizzazione",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Nascondi senza data",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = "Solo giochi con data definita",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = localHideUndated,
+                        onCheckedChange = { localHideUndated = it },
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Nascondi senza prezzo",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = "Solo giochi con prezzo disponibile",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = localHidePriceless,
+                        onCheckedChange = { localHidePriceless = it },
+                    )
+                }
+            }
+
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            }
+
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -253,21 +312,23 @@ private fun FilterDrawerContent(
                         text = "Negozi (${localSelectedSources.size}/${sources.size})",
                         style = MaterialTheme.typography.titleMedium,
                     )
-                    OutlinedButton(
-                        onClick = {
-                            localSelectedSources = sources.map { it.id }.toMutableSet()
-                        },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    ) {
-                        Text("Tutti", style = MaterialTheme.typography.labelSmall)
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            localSelectedSources = mutableSetOf()
-                        },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    ) {
-                        Text("Nessuno", style = MaterialTheme.typography.labelSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                localSelectedSources = sources.map { it.id }.toMutableSet()
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Text("Tutti", style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                localSelectedSources = mutableSetOf()
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Text("Nessuno", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
@@ -277,7 +338,7 @@ private fun FilterDrawerContent(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 0.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     rowSources.forEach { source ->
                         val isChecked = localSelectedSources.contains(source.id)
@@ -301,7 +362,7 @@ private fun FilterDrawerContent(
                                     Icon(
                                         imageVector = Icons.Filled.Check,
                                         contentDescription = null,
-                                        modifier = Modifier.size(16.dp),
+                                        modifier = Modifier.size(14.dp),
                                     )
                                 }
                             } else {
@@ -313,38 +374,6 @@ private fun FilterDrawerContent(
                     if (rowSources.size == 1) {
                         Spacer(modifier = Modifier.weight(1f))
                     }
-                }
-            }
-
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            }
-
-            item {
-                Text(
-                    text = "Opzioni di visualizzazione",
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Nascondi senza data",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            text = "Mostra solo i giochi con data di uscita definita",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = localHideUndated,
-                        onCheckedChange = { localHideUndated = it },
-                    )
                 }
             }
         }
@@ -362,7 +391,7 @@ private fun FilterDrawerContent(
                 Text("Ripristina")
             }
             Button(
-                onClick = { onApply(localSelectedSources.toSet(), localHideUndated) },
+                onClick = { onApply(localSelectedSources.toSet(), localHideUndated, localHidePriceless) },
                 modifier = Modifier.weight(1f),
             ) {
                 Text("Applica")

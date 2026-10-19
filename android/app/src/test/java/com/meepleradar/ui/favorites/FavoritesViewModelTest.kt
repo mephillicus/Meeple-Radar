@@ -44,9 +44,9 @@ class FavoritesViewModelTest {
         val actions = mutableListOf<Pair<String, Action>>()
         var requestedSourceIds: Set<String>? = emptySet()
 
-        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> = emptyList()
+        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean): List<IncomingItem> = emptyList()
 
-        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean): List<IncomingItem> {
+        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean): List<IncomingItem> {
             requestedSourceIds = sourceIds
             failure?.let { throw it }
             return favoriteItems

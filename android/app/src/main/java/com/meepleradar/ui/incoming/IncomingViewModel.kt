@@ -38,19 +38,24 @@ class IncomingViewModel(
     private val _hideUndated = MutableStateFlow<Boolean>(false)
     val hideUndated: StateFlow<Boolean> = _hideUndated.asStateFlow()
 
+    private val _hidePriceless = MutableStateFlow<Boolean>(false)
+    val hidePriceless: StateFlow<Boolean> = _hidePriceless.asStateFlow()
+
     init {
         loadSources()
     }
 
-    fun applyFilters(sourceIds: Set<String>?, hideUndated: Boolean) {
+    fun applyFilters(sourceIds: Set<String>?, hideUndated: Boolean, hidePriceless: Boolean = false) {
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
+        _hidePriceless.value = hidePriceless
         refresh()
     }
 
     fun resetFilters() {
         _selectedSources.value = null
         _hideUndated.value = false
+        _hidePriceless.value = false
         refresh()
     }
 
@@ -59,8 +64,18 @@ class IncomingViewModel(
         viewModelScope.launch {
             _state.value = try {
                 IncomingUiState.Content(
-                    items = repo.incoming(today, _selectedSources.value, includeUndated = !_hideUndated.value),
-                    favorites = repo.favorites(today, _selectedSources.value, includeUndated = !_hideUndated.value).map { it.key }.toSet(),
+                    items = repo.incoming(
+                        today = today,
+                        sourceIds = _selectedSources.value,
+                        includeUndated = !_hideUndated.value,
+                        includePriceless = !_hidePriceless.value,
+                    ),
+                    favorites = repo.favorites(
+                        today = today,
+                        sourceIds = _selectedSources.value,
+                        includeUndated = !_hideUndated.value,
+                        includePriceless = !_hidePriceless.value,
+                    ).map { it.key }.toSet(),
                 )
             } catch (e: CancellationException) {
                 throw e

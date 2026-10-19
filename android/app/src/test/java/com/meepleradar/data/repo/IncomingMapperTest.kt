@@ -161,6 +161,23 @@ class IncomingMapperTest {
     }
 
     @Test
+    fun `includePriceless falso esclude gli item senza prezzo`() {
+        val priced = listing(id = 2, gameId = 2, price = 39.9, currency = "EUR")
+        val priceless = listing(id = 3, gameId = 3, price = null)
+
+        val items = buildIncomingItems(
+            listings = listOf(priced, priceless),
+            games = mapOf(2L to game(2, "PrezzoOk"), 3L to game(3, "SenzaPrezzo")),
+            sources = sources("s1"),
+            ignoredKeys = emptySet(),
+            today = today,
+            includePriceless = false,
+        )
+
+        assertEquals(listOf("game:2"), items.map { it.key })
+    }
+
+    @Test
     fun `ordinamento upcoming per data crescente poi undated per titolo`() {
         val later = listing(id = 1, gameId = 1, releaseDate = today.plusDays(10))
         val sooner = listing(id = 2, gameId = 2, releaseDate = today.plusDays(2))
