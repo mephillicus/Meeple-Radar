@@ -23,6 +23,7 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 ## 3. Decisioni mie (da verificare in builder-check)
 
 - **Modello**: `gemini-3.6-flash` (GA corrente, economico e veloce; sovrascrivibile con la env `GEMINI_MODEL`). Il vecchio `gemini-2.0-flash` è stato dismesso il 2026-06-01 e restituiva 404. La catena di fallback aggiunge `openai/gpt-oss-120b` su Groq e `openrouter/free` su OpenRouter (sovrascrivibili con `GROQ_MODEL` / `OPENROUTER_MODEL`).
+- **Grounding con Google Search**: la richiesta Gemini include `tools: [{ google_search: {} }]`. Senza dati veri dal web un LLM non saprebbe quali giochi escono fra due mesi e risponde o con lista vuota o con titoli inventati. Il grounding ha però un costo di formato: **non si impone `responseMimeType: application/json`**. Storicamente la combinazione dava 400 ("Controlled generation is not supported with google_search tool") e, per un periodo, ha **disattivato il grounding in silenzio** senza errore (cookbook#1274, risolto il 2026-10-05). Il parser estrae quindi il JSON anche da una risposta mista prosa+JSON. Il log `[llm] gemini: grounding attivo (N query)` rende visibile in CI se il grounding è partito davvero.
 - **Formato di risposta**: **oggetto** con una sola chiave `releases` (array), non un array nudo. Motivo pratico: la JSON mode di Groq/OpenRouter valida la risposta come *oggetto* e rifiuta un array di primo livello con `json_validate_failed`. Il parser accetta comunque entrambe le forme, quindi un array torna comunque interpretato.
 - **Timeout**: `AbortSignal.timeout(5 min)` su ogni chiamata. Senza, una richiesta appesa bloccherebbe l'intero collector.
 - **Nessun nuovo workflow**: la fonte `gemini` è una source nel seed e gira con `npm run collect` (cron 5:00/17:00) come le altre; serve solo il segreto in più. Due chiamate al giorno sono idempotenti (upsert).
@@ -87,7 +88,7 @@ Un solo LLM rende la fonte fragile: un 429/503 o un modello dismesso azzera le n
 
 | Ordine | Provider | Endpoint | Default | Limite free (ott 2026) |
 |---|---|---|---|---|
-| 1 | Gemini | `generativelanguage.googleapis.com/v1beta/models` | `gemini-3.6-flash` (`GEMINI_MODEL`) | free tier AI Studio |
+| 1 | Gemini | `generativelanguage.googleapis.com/v1beta/models` | `gemini-3.6-flash` (`GEMINI_MODEL`) | free tier AI Studio; grounding Google Search con quota giornaliera |
 | 2 | Groq | `api.groq.com/openai/v1` | `openai/gpt-oss-120b` (`GROQ_MODEL`) | 30 RPM / 1000 richieste al giorno, niente carta |
 | 3 | OpenRouter | `openrouter.ai/api/v1` | `openrouter/free` (`OPENROUTER_MODEL`) | 20 RPM / 50 richieste al giorno (1000 con 10$ una tantum) |
 

@@ -30,12 +30,47 @@ export type ParsedUpcoming = {
   products: RawProduct[]
 }
 
+// Senza `responseMimeType` il modello può far precedere il JSON da una riga di prosa. Estrae il
+// primo blocco bilanciato, tenendo conto delle stringhe (altrimenti un titolo come
+// "Carcassonne [edizione]" sbilancia le parentesi).
+function extractJsonBlock(text: string): string | null {
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+  const start = cleaned.search(/[[{]/)
+  if (start === -1) return null
+
+  const stack: string[] = []
+  let inString = false
+  let escaped = false
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') {
+      inString = true
+      continue
+    }
+    if (ch === '{' || ch === '[') {
+      stack.push(ch)
+    } else if (ch === '}' || ch === ']') {
+      stack.pop()
+      if (stack.length === 0) return cleaned.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
 // `ok` distingue "risposta non interpretabile" da "array valido (anche vuoto)": solo la prima
 // è un errore che merita di passare al provider successivo come fallimento tecnico.
 export async function parseUpcomingJson(text: string, gameFinder?: GameFinder): Promise<ParsedUpcoming> {
   let parsed: unknown
   try {
-    parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+    const blocco = extractJsonBlock(text)
+    if (blocco === null) return { ok: false, products: [] }
+    parsed = JSON.parse(blocco)
   } catch {
     return { ok: false, products: [] }
   }

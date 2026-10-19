@@ -57,7 +57,9 @@ test('POSTs the prompt to the Gemini API', async () => {
   expect(init.method).toBe('POST')
   expect(init.headers).toMatchObject({ 'Content-Type': 'application/json' })
   const body = JSON.parse(init.body as string)
-  expect(body.generationConfig).toMatchObject({ responseMimeType: 'application/json' })
+  // Il grounding richiede di non imporre il formato JSON: lo estrae invece il parser.
+  expect(body.tools).toEqual([{ google_search: {} }])
+  expect(body.generationConfig?.responseMimeType).toBeUndefined()
   expect(body.contents[0].parts[0].text).toContain('ottobre')
   expect(body.contents[0].parts[0].text).toContain('novembre')
   expect(body.contents[0].parts[0].text).toContain('2026')
@@ -444,6 +446,39 @@ test('scarta un array avvolto in un oggetto', async () => {
   const products = await fetchGeminiProducts(source, undefined, { sleep: noSleep })
   expect(products).toHaveLength(1)
   expect(products[0].title).toBe('Carcassonne')
+})
+
+test('estrae il JSON anche quando il modello aggiunge prosa attorno', async () => {
+  process.env.GEMINI_API_KEY = 'g'
+  geminiOk('Ho cercato sul web e questi sono i risultati.\n\n```json\n{"releases": [{"title": "Carcassonne"}]}\n```\n\nFonti: esempio.com')
+  const products = await fetchGeminiProducts(source, undefined, { sleep: noSleep })
+  expect(products).toHaveLength(1)
+  expect(products[0].title).toBe('Carcassonne')
+})
+
+test('parentesi quadre dentro una stringa non sbilanciano l’estrazione', async () => {
+  process.env.GEMINI_API_KEY = 'g'
+  geminiOk('{"releases": [{"title": "Carcassonne [edizione 2026]", "description": "con {tessere} extra"}]}')
+  const products = await fetchGeminiProducts(source, undefined, { sleep: noSleep })
+  expect(products).toHaveLength(1)
+  expect(products[0].title).toBe('Carcassonne [edizione 2026]')
+})
+
+test('segna se il grounding è partito, per accorgersi se viene disattivato', async () => {
+  process.env.GEMINI_API_KEY = 'g'
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  fetchMock.mockResolvedValue({
+    status: 200, ok: true,
+    json: async () => ({
+      candidates: [{
+        content: { parts: [{ text: '{"releases": []}' }] },
+        groundingMetadata: { webSearchQueries: ['giochi in uscita ottobre 2026'] },
+      }],
+    }),
+    text: async () => '',
+  } as any)
+  await fetchGeminiProducts(source, undefined, { sleep: noSleep })
+  expect(spy).toHaveBeenCalledWith(expect.stringContaining('grounding attivo (1 query)'))
 })
 
 test('con nessuna chiave lancia un errore chiaro', async () => {

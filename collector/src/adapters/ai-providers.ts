@@ -118,7 +118,11 @@ async function callGemini(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json' },
+            // Grounding con Google Search: senza dati veri sul web i modelli inventano le uscite.
+            // Di conseguenza NON si impone il formato JSON via `responseMimeType`: storicamente la
+            // combinazione con i tool dava 400 e, peggio, per un periodo ha disattivato il
+            // grounding in silenzio. Il parser estrae il JSON anche da un testo misto.
+            tools: [{ google_search: {} }],
           }),
           signal: AbortSignal.timeout(opts.timeoutMs),
         },
@@ -133,7 +137,12 @@ async function callGemini(
       } catch {
         return { status: 'soft', reason: 'risposta non JSON' }
       }
-      // I modelli 3.x "pensano" per default: scarta le parti di ragionamento e tieni il testo.
+      const candidate = (data as { candidates?: Record<string, unknown>[] } | null)?.candidates?.[0]
+      const grounding = candidate?.groundingMetadata as { webSearchQueries?: unknown[] } | undefined
+      const query = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries.length : 0
+      // Senza questa riga non c'è modo di accorgersi che il grounding non è partito.
+      console.error(`[llm] gemini: grounding ${grounding ? 'attivo' : 'assente'}${query > 0 ? ` (${query} query)` : ''}`)
+
       const parts =
         (
           data as {
