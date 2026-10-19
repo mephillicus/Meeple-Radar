@@ -1,11 +1,12 @@
 import { pathToFileURL } from 'node:url'
 import type { RawProduct, Source, SourceKind } from './types.js'
-import { normalizeListing } from './normalize.js'
+import { normalizeListing, normalizeTitle } from './normalize.js'
 import { createSupabaseClient, type ListingStore } from './db.js'
 import { loadConfig } from './config.js'
 import { buildRegistry } from './adapters/registry.js'
 import { createGameFinder } from './adapters/gemini.js'
 import { SOURCES } from './sources.seed.js'
+import type { Listing } from './types.js'
 
 export type Adapter = (source: Source) => Promise<RawProduct[]>
 
@@ -14,6 +15,49 @@ export type RunReport = {
   perSource: Record<string, number>
   failures: Record<string, string>
   zeroed: string[]
+}
+
+function releaseDatePrecision(iso: string | null): number {
+  if (!iso) return 0
+  const parts = iso.split('-')
+  if (parts.length === 3 && parts[2] && parts[2] !== '01') return 3
+  if (parts.length >= 2 && parts[1] && parts[1] !== '01') return 2
+  if (parts.length >= 1 && parts[0]) return 1
+  return 0
+}
+
+function chooseCanonicalField<T>(values: Array<T | null | undefined>, prefer: (v: T) => boolean = () => true): T | null {
+  const real = values.filter((v): v is T => v !== null && v !== undefined)
+  if (real.length === 0) return null
+  return real.find(prefer) ?? real[0]
+}
+
+function canonicalizeProduct(listings: Listing[]): Listing | null {
+  if (listings.length === 0) return null
+
+  const title = chooseCanonicalField(listings.map((l) => l.title)) ?? listings[0].title
+  const url = chooseCanonicalField(listings.map((l) => l.url), (v) => !!v) ?? listings[0].url
+  const price = chooseCanonicalField(listings.map((l) => l.price), (v) => v !== null && v !== undefined) ?? null
+  const currency = chooseCanonicalField(listings.map((l) => l.currency), (v) => !!v) ?? null
+  const releaseDate = listings
+    .map((l) => l.releaseDate)
+    .filter((v): v is string => !!v)
+    .sort((a, b) => releaseDatePrecision(b) - releaseDatePrecision(a))[0] ?? null
+  const imageUrl = chooseCanonicalField(listings.map((l) => l.imageUrl), (v) => !!v) ?? null
+  const gameId = chooseCanonicalField(listings.map((l) => l.gameId), (v) => v !== null && v !== undefined) ?? null
+
+  return {
+    sourceId: listings[0].sourceId,
+    externalId: listings[0].externalId,
+    title,
+    url,
+    price,
+    currency,
+    availability: chooseCanonicalField(listings.map((l) => l.availability), (v) => !!v) ?? null,
+    releaseDate,
+    imageUrl,
+    gameId,
+  }
 }
 
 export async function runCollector(args: {
@@ -33,6 +77,36 @@ export async function runCollector(args: {
       if (raw.length === 0) zeroed.push(source.id)
       const rows = raw.map((r) => normalizeListing(source.id, r))
       await store.upsertListings(rows)
+
+      for (const row of rows) {
+        const matches = await store.findListingsByTitle(normalizeTitle(row.title))
+        const related = matches
+          .map((m) => ({
+            sourceId: m.sourceId,
+            externalId: m.id.toString(),
+            title: m.title,
+            url: m.url,
+            price: m.price,
+            currency: m.currency,
+            availability: null,
+            releaseDate: m.releaseDate,
+            imageUrl: m.imageUrl,
+            gameId: m.gameId,
+          }))
+          .concat(row)
+
+        const canonical = canonicalizeProduct(related)
+        if (canonical) {
+          await store.upsertProducts([canonical])
+          const productMatches = await store.findListingsByTitle(normalizeTitle(canonical.title))
+          for (const listingRow of productMatches) {
+            if (listingRow.id) {
+              await store.linkListingToProduct(listingRow.id, Number(listingRow.id))
+            }
+          }
+        }
+      }
+
       await store.markSourceScanned(source.id)
       perSource[source.id] = raw.length
     } catch (err) {
