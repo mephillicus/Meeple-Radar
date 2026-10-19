@@ -295,7 +295,7 @@ class BoardGameGeekImageLookup(
         const val BGG_API = "https://boardgamegeek.com/xmlapi2"
         const val MAX_NAME_MATCHES = 3
         val GAME_TYPES = setOf("boardgame", "boardgameexpansion")
-        val XML_HEADERS = mapOf("Accept" to "application/xml")
-        val JSON_HEADERS = mapOf("Accept" to "application/json")
+        val XML_HEADERS = mapOf("Accept" to "application/xml", "User-Agent" to "MeepleRadar/1.0")
+        val JSON_HEADERS = mapOf("Accept" to "application/json", "User-Agent" to "MeepleRadar/1.0")
     }
 }
