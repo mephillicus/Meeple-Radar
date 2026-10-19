@@ -24,28 +24,31 @@ export function extractReleaseDate(text?: string): string | null {
   if (!text) return null
   const nowYear = new Date().getUTCFullYear()
 
-  // giorno/mese/anno o giorno-mese-anno o giorno.mese.anno (D M Y)
   const dmy = text.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)
   if (dmy) {
     const iso = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
     if (isValidIso(iso)) return iso
   }
 
-  // anno-mese (YYYY-MM) -> primo giorno del mese
+  // anno-mese-giorno: la data intera, non va degradata al primo del mese
+  const ymd = text.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/)
+  if (ymd) {
+    const iso = `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
+    if (isValidIso(iso)) return iso
+  }
+
   const ym = text.match(/(\d{4})-(\d{1,2})(?!\d)/)
   if (ym) {
     const iso = `${ym[1]}-${ym[2].padStart(2, '0')}-01`
     if (isValidIso(iso)) return iso
   }
 
-  // giorno/mese senza anno -> assumiamo anno corrente
   const dm = text.match(/(\d{1,2})[\/\-.](\d{1,2})(?![\/\-.]\d)/)
   if (dm) {
     const iso = `${nowYear}-${dm[2].padStart(2, '0')}-${dm[1].padStart(2, '0')}`
     if (isValidIso(iso)) return iso
   }
 
-  // mese (nome) con o senza giorno, in italiano o inglese
   const months: Record<string, number> = {
     gennaio: 1, gen: 1, january: 1, jan: 1,
     febbraio: 2, february: 2, febr: 2, feb: 2,
@@ -67,9 +70,13 @@ export function extractReleaseDate(text?: string): string | null {
   )
   const mn = text.match(monthNameRegex)
   if (mn) {
-    const dayPart = mn[1] ? mn[1].padStart(2, '0') : '01'
     const monthPart = String(months[mn[2].toLowerCase()]).padStart(2, '0')
-    const iso = `${nowYear}-${monthPart}-${dayPart}`
+    const after = text.slice((mn.index ?? 0) + mn[0].length)
+    // Il giorno può stare prima del nome del mese ("10 marzo") o dopo ("March 10").
+    const dayPart = (mn[1] ?? after.match(/^\s*(\d{1,2})\b/)?.[1] ?? '1').padStart(2, '0')
+    // L'anno può seguire il mese ("marzo 2027"): senza di quello corrente si perderebbe.
+    const year = Number(after.match(/\b(\d{4})\b/)?.[1] ?? nowYear)
+    const iso = `${year}-${monthPart}-${dayPart}`
     if (isValidIso(iso)) return iso
   }
 

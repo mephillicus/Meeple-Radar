@@ -9,7 +9,10 @@ export function releaseDatePrecision(iso: string | null): number {
   return 0
 }
 
-export function chooseCanonicalField<T>(values: Array<T | null | undefined>, prefer: (v: T) => boolean = () => true): T | null {
+export function chooseCanonicalField<T>(
+  values: Array<T | null | undefined>,
+  prefer: (v: T) => boolean = () => true,
+): T | null {
   const real = values.filter((v): v is T => v !== null && v !== undefined)
   if (real.length === 0) return null
   return real.find(prefer) ?? real[0]

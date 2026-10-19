@@ -22,7 +22,7 @@ export interface ListingStore {
   logRun(ok: boolean, details: unknown): Promise<void>
   findListingsByTitle(normalizedTitle: string): Promise<ListingRow[]>
   findSources(): Promise<{ id: string; name: string }[]>
-  upsertProducts(products: Listing[]): Promise<void>
+  upsertProducts(products: Listing[]): Promise<number[]>
   linkListingToProduct(listingId: number, productId: number): Promise<void>
 }
 
@@ -117,9 +117,8 @@ export function createSupabaseStore(
       }))
     },
 
-    async upsertProducts(products: Listing[]): Promise<void> {
-      if (products.length === 0) return
-      // products are canonical representations built from listings; normalized_title must be present
+    async upsertProducts(products: Listing[]): Promise<number[]> {
+      if (products.length === 0) return []
       const payload = products.map((p) => ({
         normalized_title: normalizeTitle(p.title),
         title: p.title,
@@ -132,8 +131,11 @@ export function createSupabaseStore(
         sources: JSON.stringify([]),
         updated_at: now(),
       }))
-      const { error } = await client.from('product').upsert(payload, { onConflict: 'normalized_title' })
+      const { data, error } = await client
+        .from('product')
+        .upsert(payload, { onConflict: 'normalized_title', returning: 'representation' })
       if (error) throw new Error(`upsert product: ${error.message}`)
+      return (data ?? []).map((row: Record<string, unknown>) => Number(row.id))
     },
 
     async linkListingToProduct(listingId: number, productId: number): Promise<void> {

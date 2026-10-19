@@ -25,21 +25,23 @@ test('includes game_id in the upsert payload', async () => {
 })
 
 test('findListingsByTitle fetches the listing columns including source_id and filters by normalizeTitle', async () => {
-  const select = vi.fn().mockResolvedValue({
-    data: [
-      { id: 1, title: 'Carcassonne', url: 'https://e.com/c', price: 19.99, currency: 'EUR', release_date: '2026-11-10', image_url: 'https://e.com/i.jpg', game_id: 7, source_id: 'ghenos' },
-      { id: 2, title: 'Carcassonne: Nuova Edizione', url: 'https://e.com/c2', price: 29.99, currency: 'EUR', release_date: null, image_url: null, game_id: null, source_id: 'cranio' },
-      { id: 3, title: 'Cascadia', url: 'https://e.com/ca', price: null, currency: null, release_date: null, image_url: null, game_id: null, source_id: 'asmodee' },
-    ],
-    error: null,
-  })
+  const all = [
+    { id: 1, title: 'Carcassonne', normalized_title: 'carcassonne', url: 'https://e.com/c', price: 19.99, currency: 'EUR', release_date: '2026-11-10', image_url: 'https://e.com/i.jpg', game_id: 7, source_id: 'ghenos', product_id: null },
+    { id: 2, title: 'Carcassonne: Nuova Edizione', normalized_title: 'carcassonne nuova edizione', url: 'https://e.com/c2', price: 29.99, currency: 'EUR', release_date: null, image_url: null, game_id: null, source_id: 'cranio', product_id: 4 },
+    { id: 3, title: 'Cascadia', normalized_title: 'cascadia', url: 'https://e.com/ca', price: null, currency: null, release_date: null, image_url: null, game_id: null, source_id: 'asmodee', product_id: null },
+  ]
+  // Il filtraggio lo fa il database: il fake deve farlo anch'esso, come fa PostgREST.
+  const eq = vi.fn((column: string, value: string) =>
+    Promise.resolve({ data: all.filter((r) => (r as Record<string, unknown>)[column] === value), error: null }))
+  const select = vi.fn(() => ({ eq }))
   const from = vi.fn(() => ({ select }))
   const store = createSupabaseStore({ from } as any)
   const rows = await store.findListingsByTitle('carcassonne')
   expect(from).toHaveBeenCalledWith('listing')
-  expect(select).toHaveBeenCalledWith('id, title, url, price, currency, release_date, image_url, game_id, source_id')
+  expect(select).toHaveBeenCalledWith('id, title, url, price, currency, release_date, image_url, game_id, source_id, product_id')
+  expect(eq).toHaveBeenCalledWith('normalized_title', 'carcassonne')
   expect(rows).toHaveLength(1)
-  expect(rows[0]).toMatchObject({ id: 1, title: 'Carcassonne', gameId: 7, sourceId: 'ghenos', price: 19.99, currency: 'EUR', releaseDate: '2026-11-10', imageUrl: 'https://e.com/i.jpg' })
+  expect(rows[0]).toMatchObject({ id: 1, title: 'Carcassonne', gameId: 7, sourceId: 'ghenos', price: 19.99, currency: 'EUR', releaseDate: '2026-11-10', imageUrl: 'https://e.com/i.jpg', productId: null })
 })
 
 test('findSources returns id/name rows from the source table', async () => {
