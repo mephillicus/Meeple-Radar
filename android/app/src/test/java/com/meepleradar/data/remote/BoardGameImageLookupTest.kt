@@ -24,24 +24,27 @@ class BoardGameImageLookupTest {
     @Test
     fun `cerca prima con ID BGG e riusa il risultato dalla cache`() = runTest {
         val transport = FakeTransport { url ->
-            if (url.contains("/thing?")) {
-                """<items><item id="13"><image>https://cf.geekdo-images.com/catan.jpg</image></item></items>"""
-            } else {
-                error("Non deve cercare per nome se l'ID restituisce una copertina")
+            when {
+                url.contains("api.geekdo.com") -> ""
+                url.contains("/thing?") ->
+                    """<items><item id="13"><image>https://cf.geekdo-images.com/catan.jpg</image></item></items>"""
+                else -> error("Non deve cercare per nome se l'ID restituisce una copertina: $url")
             }
         }
         val lookup = BoardGameGeekImageLookup(transport)
 
         assertEquals("https://cf.geekdo-images.com/catan.jpg", lookup.findImage("Catan", 13))
         assertEquals("https://cf.geekdo-images.com/catan.jpg", lookup.findImage("Catan", 13))
-        assertEquals(1, transport.urls.size)
-        assertTrue(transport.urls.single().contains("id=13"))
+        val xmlUrls = transport.urls.filter { it.contains("/thing?") }
+        assertEquals(1, xmlUrls.size)
+        assertTrue(xmlUrls.single().contains("id=13"))
     }
 
     @Test
     fun `cerca per nome solo una corrispondenza esatta e poi recupera la copertina`() = runTest {
         val transport = FakeTransport { url ->
             when {
+                url.contains("api.geekdo.com") -> ""
                 url.contains("/search?") -> """
                     <items>
                       <item type="boardgame" id="99"><name type="primary" value="Catan Junior"/></item>
@@ -57,9 +60,10 @@ class BoardGameImageLookupTest {
         val image = BoardGameGeekImageLookup(transport).findImage("Catan", null)
 
         assertEquals("https://cf.geekdo-images.com/catan.jpg", image)
-        assertEquals(2, transport.urls.size)
-        assertTrue(transport.urls[0].contains("query=Catan"))
-        assertTrue(transport.urls[1].contains("id=13"))
+        val nonApiUrls = transport.urls.filter { !it.contains("api.geekdo.com") }
+        assertEquals(2, nonApiUrls.size)
+        assertTrue(nonApiUrls[0].contains("query=Catan"))
+        assertTrue(nonApiUrls[1].contains("id=13"))
     }
 
     @Test
@@ -104,5 +108,41 @@ class BoardGameImageLookupTest {
         assertEquals(listOf("Klaus Teuber"), details?.designers)
         assertEquals(listOf("Negotiation"), details?.categories)
         assertEquals(listOf("Trading"), details?.mechanics)
+    }
+
+    @Test
+    fun `ricerca fuzzy con accenti e nomi alternativi trova il gioco corretto`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("/search?") -> """
+                    <items>
+                      <item type="boardgame" id="389407">
+                        <name type="primary" value="Aye, Dark Overlord! Red Box"/>
+                        <name type="alternate" value="Sì, Oscuro Signore! Set Rosso"/>
+                      </item>
+                    </items>
+                """.trimIndent()
+                url.contains("api.geekdo.com") || url.contains("/thing?") -> """
+                    {
+                      "item": {
+                        "id": 389407,
+                        "imageurl": "https://cf.geekdo-images.com/luxastra.jpg",
+                        "description": "Luxastra edition.",
+                        "yearpublished": 2023,
+                        "minplayers": 4,
+                        "maxplayers": 6
+                      }
+                    }
+                """.trimIndent()
+                else -> error("URL non previsto: $url")
+            }
+        }
+
+        val details = BoardGameGeekImageLookup(transport).findDetails("Sì, Oscuro Signore! – Set Rosso (Luxastra Edition)", null)
+
+        assertEquals(389407, details?.bggId)
+        assertEquals("https://cf.geekdo-images.com/luxastra.jpg", details?.imageUrl)
+        assertEquals(2023, details?.yearPublished)
+        assertEquals(4, details?.minPlayers)
     }
 }

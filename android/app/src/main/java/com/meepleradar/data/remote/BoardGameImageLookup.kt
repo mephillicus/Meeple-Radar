@@ -6,6 +6,12 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.xml.sax.InputSource
 
@@ -86,34 +92,142 @@ class BoardGameGeekImageLookup(
     }
 
     private suspend fun findIdsByName(title: String, excludedId: Int?): List<Int> {
-        if (title.isBlank()) return emptyList()
+        val clean = title.replace(Regex("\\(.*?\\)"), "").replace(Regex("[-–—].*"), "").trim()
+        val query = if (clean.isBlank()) title else clean
+        if (query.isBlank()) return emptyList()
+
+        var ids = searchBggIds(query, title, excludedId)
+        if (ids.isNotEmpty()) return ids
+
+        val words = query.split(Regex("\\s+")).filter { it.length > 2 }
+        if (words.size > 2) {
+            val shortQuery = words.take(3).joinToString(" ")
+            ids = searchBggIds(shortQuery, title, excludedId)
+            if (ids.isNotEmpty()) return ids
+        }
+
+        return emptyList()
+    }
+
+    private suspend fun searchBggIds(query: String, originalTitle: String, excludedId: Int?): List<Int> {
         val searchUrl = endpoint("search") {
-            addQueryParameter("query", title)
+            addQueryParameter("query", query)
             addQueryParameter("type", "boardgame,boardgameexpansion")
         }
-        val document = parseXml(transport.get(searchUrl, XML_HEADERS))
-        val expectedName = normalize(title)
-        return document.getElementsByTagName("item")
+        val xmlText = runCatching { transport.get(searchUrl, XML_HEADERS) }.getOrNull() ?: return emptyList()
+        val document = runCatching { parseXml(xmlText) }.getOrNull() ?: return emptyList()
+
+        val normOriginal = normalize(originalTitle)
+        val normQuery = normalize(query)
+        val items = document.getElementsByTagName("item")
             .let { nodes -> (0 until nodes.length).mapNotNull { nodes.item(it) } }
             .filter { it.attributes?.getNamedItem("type")?.nodeValue in GAME_TYPES }
-            .filter { item ->
-                val names = item.childNodes
-                (0 until names.length).mapNotNull { names.item(it) }
-                    .firstOrNull {
-                        it.nodeName == "name" &&
-                            it.attributes?.getNamedItem("type")?.nodeValue == "primary"
-                    }
-                    ?.attributes
-                    ?.getNamedItem("value")
-                    ?.nodeValue
-                    ?.let(::normalize) == expectedName
+
+        val candidates = mutableListOf<Pair<Int, Int>>()
+
+        for (item in items) {
+            val id = item.attributes?.getNamedItem("id")?.nodeValue?.toIntOrNull() ?: continue
+            if (id == excludedId) continue
+
+            val names = item.childNodes
+            val nameList = (0 until names.length).mapNotNull { names.item(it) }
+                .filter { it.nodeName == "name" }
+                .mapNotNull { it.attributes?.getNamedItem("value")?.nodeValue }
+
+            var bestScore = 0
+            for (name in nameList) {
+                val normName = normalize(name)
+                when {
+                    normName == normOriginal -> bestScore = maxOf(bestScore, 100)
+                    normName == normQuery -> bestScore = maxOf(bestScore, 90)
+                    normOriginal.isNotEmpty() && normName.isNotEmpty() && (normOriginal.contains(normName) || normName.contains(normOriginal)) -> bestScore = maxOf(bestScore, 80)
+                    normQuery.length >= 4 && normName.contains(normQuery) -> bestScore = maxOf(bestScore, 70)
+                    normQuery.length >= 4 && normQuery.contains(normName) -> bestScore = maxOf(bestScore, 60)
+                }
             }
-            .mapNotNull { it.attributes?.getNamedItem("id")?.nodeValue?.toIntOrNull() }
-            .filterNot { it == excludedId }
-            .distinct()
+
+            if (bestScore > 0) {
+                candidates.add(id to bestScore)
+            }
+        }
+
+        return candidates.sortedByDescending { it.second }.map { it.first }.distinct()
     }
 
     private suspend fun detailsFromThing(id: Int): BoardGameDetails? {
+        if (geekGroupApi != null) {
+            val ggDetails = runCatching { geekGroupApi?.getGameDetails(id) }.getOrNull()
+            if (ggDetails != null && !ggDetails.imageUrl.isNullOrBlank()) {
+                return ggDetails
+            }
+        }
+
+        val jsonUrl = "https://api.geekdo.com/api/geekitems?objectid=$id&objecttype=thing"
+        val parsed = runCatching {
+            val responseText = transport.get(jsonUrl, JSON_HEADERS)
+            if (responseText.isNotBlank()) {
+                parseGeekDoJson(id, responseText)
+            } else {
+                null
+            }
+        }.getOrNull()
+
+        if (parsed != null) return parsed
+
+        return runCatching { detailsFromXmlThing(id) }.getOrNull()
+    }
+
+    private fun parseGeekDoJson(id: Int, jsonText: String): BoardGameDetails? {
+        val root = runCatching { Json.parseToJsonElement(jsonText.trim()).jsonObject }.getOrNull() ?: return null
+        val item = root["item"]?.jsonObject ?: return null
+
+        val rawImage = item["imageurl"]?.jsonPrimitive?.contentOrNull
+        val imageUrl = rawImage?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+            ?.let { if (it.startsWith("http://")) "https://${it.removePrefix("http://")}" else it }
+
+        val description = item["description"]?.jsonPrimitive?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+
+        val yearPublished = item["yearpublished"]?.jsonPrimitive?.intOrNull
+        val minPlayers = item["minplayers"]?.jsonPrimitive?.intOrNull
+        val maxPlayers = item["maxplayers"]?.jsonPrimitive?.intOrNull
+        val playingTime = item["playingtime"]?.jsonPrimitive?.intOrNull
+            ?: item["maxplaytime"]?.jsonPrimitive?.intOrNull
+            ?: item["minplaytime"]?.jsonPrimitive?.intOrNull
+        val minAge = item["minage"]?.jsonPrimitive?.intOrNull
+
+        val links = item["links"]?.jsonObject
+        fun parseLinks(key: String): List<String> = runCatching {
+            links?.get(key)?.jsonArray
+                ?.mapNotNull { el ->
+                    when {
+                        el.jsonObject.containsKey("name") -> el.jsonObject["name"]?.jsonPrimitive?.contentOrNull
+                        else -> el.jsonPrimitive.contentOrNull
+                    }
+                }
+                ?.distinct()
+        }.getOrNull() ?: emptyList()
+
+        val designers = parseLinks("boardgamedesigner")
+        val categories = parseLinks("boardgamecategory")
+        val mechanics = parseLinks("boardgamemechanic")
+
+        return BoardGameDetails(
+            bggId = id,
+            imageUrl = imageUrl,
+            description = description,
+            yearPublished = yearPublished,
+            minPlayers = minPlayers,
+            maxPlayers = maxPlayers,
+            playingTime = playingTime,
+            minAge = minAge,
+            designers = designers,
+            categories = categories,
+            mechanics = mechanics,
+        )
+    }
+
+    private suspend fun detailsFromXmlThing(id: Int): BoardGameDetails? {
         val url = endpoint("thing") {
             addQueryParameter("id", id.toString())
             addQueryParameter("type", "boardgame,boardgameexpansion")
@@ -171,13 +285,17 @@ class BoardGameGeekImageLookup(
         newDocumentBuilder().parse(InputSource(StringReader(xml)))
     }
 
-    private fun normalize(value: String): String =
-        value.lowercase(Locale.ROOT).filter(Char::isLetterOrDigit)
+    private fun normalize(value: String): String {
+        val unaccented = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
+        return unaccented.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
+    }
 
     private companion object {
         const val BGG_API = "https://boardgamegeek.com/xmlapi2"
         const val MAX_NAME_MATCHES = 3
         val GAME_TYPES = setOf("boardgame", "boardgameexpansion")
         val XML_HEADERS = mapOf("Accept" to "application/xml")
+        val JSON_HEADERS = mapOf("Accept" to "application/json")
     }
 }
