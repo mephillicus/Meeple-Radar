@@ -35,13 +35,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.Offer
@@ -55,6 +60,7 @@ import com.meepleradar.ui.components.RatingBadge
 import com.meepleradar.ui.components.ScreenContentInsets
 import com.meepleradar.ui.incoming.dateLabel
 import com.meepleradar.ui.incoming.priceLabel
+import java.util.Locale
 
 @Composable
 fun DetailScreen(
@@ -153,128 +159,12 @@ private fun DetailContent(content: DetailUiState.Content, imageLookup: BoardGame
 }
 
 @Composable
-private fun BoardGameSpecs(content: DetailUiState.Content) {
-    val uriHandler = LocalUriHandler.current
-    val details = content.boardGameDetails
-    val game = content.item.game
-
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text("Specifiche", style = MaterialTheme.typography.titleLarge)
-                (details?.bggId ?: game?.bggId)?.let { id ->
-                    Text(
-                        text = "BoardGameGeek",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                uriHandler.openUri("https://boardgamegeek.com/boardgame/$id")
-                            }
-                            .padding(6.dp),
-                    )
-                }
-            }
-
-            if (content.isLoadingDetails) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text(
-                        "Recupero dettagli da BoardGameGeek…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else if (content.detailsError != null) {
-                Text(
-                    content.detailsError,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else if (details == null) {
-                Text(
-                    "Specifiche non disponibili per questo gioco.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                GameSpecificationRows(details)
-                details.description?.let { description ->
-                    val plainText = Html.fromHtml(description, Html.FROM_HTML_MODE_COMPACT)
-                        .toString()
-                        .trim()
-                    if (plainText.isNotBlank()) {
-                        HorizontalDivider()
-                        Text(
-                            plainText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun GameSpecificationRows(details: BoardGameDetails) {
-    val values = buildList {
-        details.yearPublished?.let { add("Anno" to it.toString()) }
-        val players = when {
-            details.minPlayers != null && details.maxPlayers != null ->
-                if (details.minPlayers == details.maxPlayers) "${details.minPlayers}" else "${details.minPlayers}–${details.maxPlayers}"
-            details.minPlayers != null -> "da ${details.minPlayers}"
-            details.maxPlayers != null -> "fino a ${details.maxPlayers}"
-            else -> null
-        }
-        players?.let { add("Giocatori" to it) }
-        details.playingTime?.let { add("Durata" to "$it min") }
-        details.minAge?.let { add("Età" to "$it+") }
-    }
-
-    values.forEachIndexed { index, (label, value) ->
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-        }
-        if (index < values.lastIndex) HorizontalDivider()
-    }
-
-    listOf(
-        "Autori" to details.designers,
-        "Categorie" to details.categories,
-        "Meccaniche" to details.mechanics,
-    ).filter { it.second.isNotEmpty() }.forEach { (label, entries) ->
-        HorizontalDivider()
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            Text(
-                entries.joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
 private fun DetailHeader(content: DetailUiState.Content, imageLookup: BoardGameImageLookup) {
+    val uriHandler = LocalUriHandler.current
+    val game = content.item.game
+    val details = content.boardGameDetails
+    val bggId = details?.bggId ?: game?.bggId
+
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -286,10 +176,10 @@ private fun DetailHeader(content: DetailUiState.Content, imageLookup: BoardGameI
                 GameCover(
                     imageUrl = content.item.imageUrl,
                     title = content.item.title,
-                    bggId = content.item.game?.bggId,
+                    bggId = bggId,
                     imageLookup = imageLookup,
                     modifier = Modifier
-                        .size(104.dp)
+                        .size(108.dp)
                         .clip(RoundedCornerShape(20.dp)),
                 )
 
@@ -297,7 +187,7 @@ private fun DetailHeader(content: DetailUiState.Content, imageLookup: BoardGameI
 
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
                         text = content.item.title,
@@ -320,9 +210,229 @@ private fun DetailHeader(content: DetailUiState.Content, imageLookup: BoardGameI
                         )
                     }
 
-                    content.item.game?.bggRating?.let { RatingBadge(it) }
+                    // Rating and Rank
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        game?.bggRating?.let { RatingBadge(it) }
+
+                        game?.bggRank?.let { rank ->
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                            ) {
+                                Text(
+                                    text = "Rank #$rank",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    bggId?.let { id ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.clickable {
+                                uriHandler.openUri("https://boardgamegeek.com/boardgame/$id")
+                            },
+                        ) {
+                            Text(
+                                text = "🆔 BGG #$id",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun BoardGameSpecs(content: DetailUiState.Content) {
+    val uriHandler = LocalUriHandler.current
+    val details = content.boardGameDetails
+    val game = content.item.game
+    var showFullDescription by remember { mutableStateOf(false) }
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Scheda BoardGameGeek", style = MaterialTheme.typography.titleLarge)
+                (details?.bggId ?: game?.bggId)?.let { id ->
+                    TextButton(
+                        onClick = { uriHandler.openUri("https://boardgamegeek.com/boardgame/$id") },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text("Apri su BGG ↗", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+
+            if (content.isLoadingDetails) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        "Caricamento dettagli BGG…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (details == null && game?.bggRating == null) {
+                Text(
+                    "Specifiche BGG non trovate per questo gioco.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                // Quick Spec Stat Badges
+                SpecQuickGrid(game = game, details = details)
+
+                if (details != null) {
+                    GameSpecificationRows(details)
+
+                    details.description?.let { description ->
+                        val plainText = Html.fromHtml(description, Html.FROM_HTML_MODE_COMPACT)
+                            .toString()
+                            .trim()
+                        if (plainText.isNotBlank()) {
+                            HorizontalDivider()
+                            Text(
+                                text = "Descrizione",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                text = plainText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = if (showFullDescription) Int.MAX_VALUE else 4,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (plainText.length > 180) {
+                                TextButton(
+                                    onClick = { showFullDescription = !showFullDescription },
+                                    contentPadding = PaddingValues(0.dp),
+                                ) {
+                                    Text(
+                                        text = if (showFullDescription) "Mostra meno" else "Leggi tutto...",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpecQuickGrid(game: com.meepleradar.data.model.Game?, details: BoardGameDetails?) {
+    val bggId = details?.bggId ?: game?.bggId
+    val rating = game?.bggRating
+    val rank = game?.bggRank
+    val year = details?.yearPublished
+    val players = when {
+        details?.minPlayers != null && details.maxPlayers != null ->
+            if (details.minPlayers == details.maxPlayers) "${details.minPlayers}" else "${details.minPlayers}–${details.maxPlayers}"
+        details?.minPlayers != null -> "da ${details.minPlayers}"
+        details?.maxPlayers != null -> "fino a ${details.maxPlayers}"
+        else -> null
+    }
+    val time = details?.playingTime?.let { "$it min" }
+    val age = details?.minAge?.let { "$it+ anni" }
+
+    val chips = buildList {
+        bggId?.let { add("ID BGG" to "#$it") }
+        rating?.let { add("Voto" to "⭐ %.1f".format(Locale.US, it)) }
+        rank?.let { add("Classifica" to "🏆 #$it") }
+        players?.let { add("Giocatori" to "👥 $it") }
+        time?.let { add("Durata" to "⏱️ $it") }
+        age?.let { add("Età" to "🔞 $it") }
+        year?.let { add("Anno" to "📅 $it") }
+    }
+
+    if (chips.isNotEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            chips.chunked(3).forEach { rowChips ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    rowChips.forEach { (label, value) ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = value,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                    if (rowChips.size < 3) {
+                        repeat(3 - rowChips.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+}
+
+@Composable
+private fun GameSpecificationRows(details: BoardGameDetails) {
+    listOf(
+        "Autori" to details.designers,
+        "Categorie" to details.categories,
+        "Meccaniche" to details.mechanics,
+    ).filter { it.second.isNotEmpty() }.forEach { (label, entries) ->
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(
+                entries.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
