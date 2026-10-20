@@ -10,7 +10,7 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 
 ## 2. Decisioni (dall'utente)
 
-- La ricerca gira **ogni giorno**, come se fosse uno scraper: nel collector, in GitHub Actions, con `GEMINI_API_KEY` come segreto (l'utente ha già la chiave).
+- La ricerca gira **una volta a settimana**, come se fosse uno scraper: nel collector, in GitHub Actions, con `GEMINI_API_KEY` come segreto (l'utente ha già la chiave).
 - Gemini produce la **lista strutturata**; i dati mancanti si prendono dal database esistente.
 - I giochi che solo Gemini conosce **restano** comunque, con i dati del modello.
 - Le foto della scatola vengono dai publisher (dati già nel DB), non dal modello.
@@ -29,17 +29,17 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 - **Chiave nell'header**: `x-goog-api-key` invece del parametro `?key=` nell'URL, così in caso di errore la chiave non finisce nei log.
 - **Formato di risposta**: **oggetto** con una sola chiave `releases` (array), non un array nudo. Non è più un vincolo dei provider (ne restano solo uno, che non ha JSON mode), ma resta la forma chiesta al modello perché è più difficile che un generatore di prosa la infranga. Il parser accetta comunque entrambe le forme.
 - **Timeout**: `AbortSignal.timeout(3 min)` su ogni chiamata. Con la ricerca web una risposta richiede da qualche secondo a un minuto; senza timeout, una richiesta appesa bloccherebbe l'intero collector.
-- **Nessun nuovo workflow**: la fonte `gemini` è una source nel seed e gira con `npm run collect` (cron 5:00/17:00) come le altre; serve solo il segreto in più. Due chiamate al giorno sono idempotenti (upsert).
+- **Nessun nuovo workflow**: la fonte `gemini` è una source nel seed e gira con `npm run collect` (cron `0 6 * * 6`, sabato mattina) come le altre; serve solo il segreto in più. Un giro a settimana è idempotente (upsert).
 - **Nuovo kind**: il set chiuso `SOURCE_KINDS` si estende con `'gemini'` (richiede aggiornamento della spec di sistema).
 - **Abbinamento**: per normalizzazione del titolo (minuscole, niente punteggiatura) con publisher come indizio. Il DB **non** ha i codici articolo (gli `external_id` slug), quindi il join è per titolo; il codice articolo è salvato come `external_id` della listing Gemini quando c'è, altrimenti uno slug del titolo. Se l'abbinamento è ambiguo, non abbina (restano i dati del modello).
 - **url sintetica**: le listing Gemini non hanno un vero URL (la colonna è NOT NULL e lo schema richiede un url valido). Si usa un link di ricerca DuckDuckGo costruito dal titolo: cliccabile e onesto.
-- **Mai cancellare**: il job Gemini fa solo upsert (update in place), mai delete. Così la chiave `listing:<id>` resta stabile e gli "ignora" dell'app persistono.
+- **Mai cancellare nel job**: il job Gemini continua a fare solo upsert (update in place), mai delete, così la chiave `listing:<id>` resta stabile. Le cancellazioni sono una regola del collector, presa in apertura del giro, descritta in `docs/superpowers/specs/2026-10-20-collector-lifecycle-design.md`.
 - **game_id**: quando una listing Gemini si abbina a un gioco del DB, si setta `game_id` — l'app raggruppa per chiave gioco e merge le offerte, quindi un gioco compare una sola volta (la listing Gemini si fonde nella scheda del gioco, con il suo prezzo indicativo accanto a quello vero). Serve a estendere il tipo `Listing` con `gameId` opzionale e a persisterlo nell'upsert.
 - **Provenienza visibile**: la source si chiama "Gemini"; l'app mostra il nome della fonte accanto al prezzo, quindi l'utente vede quali dati sono indicativi. Questo copre l'anti-obiettivo "prezzi sbagliati" in modo onesto, senza nuove colonne.
 
 ## 4. Obiettivi
 
-- Ogni giorno, automaticamente, produrre la lista strutturata delle uscite dei prossimi due mesi.
+- Una volta a settimana, automaticamente, produrre la lista strutturata delle uscite dei prossimi due mesi.
 - Ogni entry: titolo, publisher, codice articolo (se noto), prezzo, data di uscita, breve descrizione (modalità/contesto).
 - Arricchire ogni entry con i dati veri del DB quando il gioco esiste già.
 - L'app la legge senza alcun cambiamento.
@@ -55,7 +55,7 @@ La sezione novità dell'app conosce solo ciò che vedono i 13 scraper: un gioco 
 
 - **Dati del modello mostrati come veri**: mitigato dalla provenienza visibile (nome fonte) e dal join che sostituisce i dati indicativi con quelli veri quando disponibili.
 - **Giochi inventati (allucinazioni)**: mitigato dal pulsante "ignora". Un gioco **con** data scade da solo (la lista novità mostra solo uscite future); un gioco **senza** data restano finché l'utente non lo ignora, o finché una run successiva non gli assegna una data.
-- **"Ignora" che si perde**: mitigato dal non cancellare mai le listing Gemini (solo upsert).
+- **"Ignora" che si perde**: il job Gemini non cancella mai le proprie listing (solo upsert); le uniche cancellazioni arrivano dalla retention per invecchiamento del collector, descritta in `docs/superpowers/specs/2026-10-20-collector-lifecycle-design.md`.
 
 ## 7. Vincoli
 
@@ -105,7 +105,7 @@ Un solo modello rende la fonte fragile: un 429/503, un modello dismesso o una ri
 - Se `GEMINI_MODEL` e `GEMINI_FALLBACK_MODEL` coincidono, il ripiego non viene aggiunto: la cascata si riduce a un singolo modello.
 - Se il modello primario non esiste (404, es. un nome scritto male in env) il primo tentativo basta a capirlo e si passa al ripiego.
 
-**Limite noto:** nessuna quota di ricerca da gestire, perché non c'è ricerca. Le due chiamate al giorno (cron 5:00/17:00) con qualche retry stanno nel free tier.
+**Limite noto:** nessuna quota di ricerca da gestire, perché non c'è ricerca. Un giro a settimana (cron `0 6 * * 6`) con qualche retry sta nel free tier.
 
 ## 11. Dove finiscono i dati: Google News → Gemini
 
