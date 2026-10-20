@@ -12,6 +12,8 @@ import com.meepleradar.data.repo.ListingRepository
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -60,6 +62,8 @@ class DetailViewModelTest {
         override fun lastDbModifiedTimestamp(): Long = 0L
 
         override fun newlyAddedCount(): Int = 0
+
+        override fun newlyAddedCountFlow(): StateFlow<Int> = MutableStateFlow(0)
 
         override suspend fun newsItems(today: LocalDate): List<IncomingItem> = emptyList()
     }

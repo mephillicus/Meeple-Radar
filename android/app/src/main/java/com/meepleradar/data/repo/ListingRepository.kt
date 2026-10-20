@@ -11,6 +11,9 @@ import com.meepleradar.data.model.Source
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 interface ListingRepository {
     suspend fun incoming(
@@ -40,6 +43,8 @@ interface ListingRepository {
     fun lastDbModifiedTimestamp(): Long
 
     fun newlyAddedCount(): Int
+
+    fun newlyAddedCountFlow(): StateFlow<Int>
 }
 
 class DefaultListingRepository(
@@ -48,11 +53,14 @@ class DefaultListingRepository(
     private val localCacheStore: LocalCacheStore? = null,
 ) : ListingRepository {
 
+    private val _newlyAddedCount = MutableStateFlow(localCacheStore?.load()?.newlyAddedCount ?: 0)
+
     override fun lastDbModifiedTimestamp(): Long =
         localCacheStore?.load()?.lastModifiedTimestamp ?: 0L
 
-    override fun newlyAddedCount(): Int =
-        localCacheStore?.load()?.newlyAddedCount ?: 0
+    override fun newlyAddedCount(): Int = _newlyAddedCount.value
+
+    override fun newlyAddedCountFlow(): StateFlow<Int> = _newlyAddedCount.asStateFlow()
 
     override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
         val cached = localCacheStore?.load() ?: return emptyList()
@@ -171,6 +179,7 @@ class DefaultListingRepository(
                     newProducts = remoteProducts,
                 )
                 cached = updatedDb
+                _newlyAddedCount.value = updatedDb.newlyAddedCount
             }
         } else {
             remoteListings = cached.listings

@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -72,7 +73,7 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         icon = { Icon(Icons.Filled.Home, contentDescription = null) },
                         label = { Text("In arrivo") },
                     )
-                    val newlyAddedCount = container.repository.newlyAddedCount()
+                    val newlyAddedCount by container.repository.newlyAddedCountFlow().collectAsStateWithLifecycle(initialValue = container.repository.newlyAddedCount())
                     NavigationBarItem(
                         selected = currentRoute == ROUTE_NEWS,
                         onClick = { navController.switchTab(ROUTE_NEWS) },
