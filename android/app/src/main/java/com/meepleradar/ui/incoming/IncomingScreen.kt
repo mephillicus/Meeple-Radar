@@ -1,5 +1,6 @@
 package com.meepleradar.ui.incoming
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -59,10 +61,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Source
 import com.meepleradar.data.remote.BoardGameImageLookup
+import com.meepleradar.ui.components.AlphabetFastScroller
 import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.components.ErrorView
 import com.meepleradar.ui.components.ListingCard
 import com.meepleradar.ui.components.LoadingView
+import com.meepleradar.ui.components.MeepleVector
 import com.meepleradar.ui.components.ScreenContentInsets
 import com.meepleradar.ui.components.ScreenHeader
 import kotlinx.coroutines.launch
@@ -127,6 +131,43 @@ fun IncomingScreen(
                     title = "In arrivo",
                     onRefresh = { vm.refresh() },
                     timestampText = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
+                    titleContent = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = "In arrivo",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
+                            if (vm.newlyAddedCount > 0) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = MeepleVector,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        )
+                                        Text(
+                                            text = "+${vm.newlyAddedCount}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
                     trailingContent = {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -142,8 +183,8 @@ fun IncomingScreen(
                                 placeholder = { Text("Cerca...", style = MaterialTheme.typography.bodySmall) },
                                 singleLine = true,
                                 modifier = Modifier
-                                    .width(130.dp)
-                                    .height(44.dp),
+                                    .width(110.dp)
+                                    .height(40.dp),
                                 textStyle = MaterialTheme.typography.bodySmall,
                                 shape = RoundedCornerShape(12.dp),
                                 leadingIcon = {
@@ -156,7 +197,7 @@ fun IncomingScreen(
                                                 searchQuery = ""
                                                 vm.setSearchQuery("")
                                             },
-                                            modifier = Modifier.size(20.dp),
+                                            modifier = Modifier.size(18.dp),
                                         ) {
                                             Icon(Icons.Filled.Close, contentDescription = "Cancella", modifier = Modifier.size(12.dp))
                                         }
@@ -166,27 +207,49 @@ fun IncomingScreen(
                                 },
                             )
 
-                            Button(
-                                onClick = { scope.launch { drawerState.open() } },
-                                colors = if (hasActiveFilters) {
-                                    ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                                    )
-                                } else {
-                                    ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    )
-                                },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            // Overlapping / grouped Refresh and Filters buttons
+                            Row(
+                                modifier = Modifier
+                                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+                                    .padding(2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Settings,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
-                                )
-                                Text("Filtri", style = MaterialTheme.typography.labelSmall)
+                                IconButton(
+                                    onClick = { vm.refresh() },
+                                    modifier = Modifier.size(32.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Refresh,
+                                        contentDescription = "Aggiorna",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+
+                                Button(
+                                    onClick = { scope.launch { drawerState.open() } },
+                                    colors = if (hasActiveFilters) {
+                                        ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                                        )
+                                    } else {
+                                        ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        )
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(30.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(12.dp).padding(end = 2.dp),
+                                    )
+                                    Text("Filtri", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     },
@@ -228,7 +291,7 @@ fun IncomingScreen(
                                 }
                             }
 
-                            com.meepleradar.ui.components.AlphabetFastScroller(
+                            AlphabetFastScroller(
                                 items = current.items,
                                 lazyListState = lazyListState,
                                 modifier = Modifier.fillMaxSize(),

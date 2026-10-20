@@ -57,6 +57,8 @@ class IncomingViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    val newlyAddedCount: Int get() = repo.newlyAddedCount()
+
     private var rawItems: List<IncomingItem> = emptyList()
     private var rawFavorites: Set<String> = emptySet()
 

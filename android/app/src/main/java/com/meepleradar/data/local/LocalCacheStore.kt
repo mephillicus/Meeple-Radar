@@ -17,6 +17,8 @@ data class CachedDatabase(
     val sources: List<Source> = emptyList(),
     val products: List<Product> = emptyList(),
     val lastModifiedTimestamp: Long = 0L,
+    val newlyAddedCount: Int = 0,
+    val newlyAddedListingIds: Set<Long> = emptySet(),
 )
 
 interface LocalCacheStore {
@@ -42,6 +44,9 @@ class SharedPreferencesLocalCacheStore(
         val sourcesJson = preferences.getString(KEY_SOURCES, null) ?: "[]"
         val productsJson = preferences.getString(KEY_PRODUCTS, null) ?: "[]"
         val timestamp = preferences.getLong(KEY_TIMESTAMP, 0L)
+        val addedCount = preferences.getInt(KEY_NEWLY_ADDED_COUNT, 0)
+        val addedIdsString = preferences.getString(KEY_NEWLY_ADDED_IDS, "") ?: ""
+        val addedIds = if (addedIdsString.isBlank()) emptySet() else addedIdsString.split(',').mapNotNull { it.toLongOrNull() }.toSet()
 
         return try {
             val cachedListings = json.decodeFromString<List<CachedListing>>(listingsJson).map { it.toDomain() }
@@ -55,6 +60,8 @@ class SharedPreferencesLocalCacheStore(
                 sources = cachedSources,
                 products = cachedProducts,
                 lastModifiedTimestamp = timestamp,
+                newlyAddedCount = addedCount,
+                newlyAddedListingIds = addedIds,
             )
         } catch (e: Exception) {
             null
@@ -88,6 +95,11 @@ class SharedPreferencesLocalCacheStore(
 
         val timestamp = if (hasChanges) System.currentTimeMillis() else (current?.lastModifiedTimestamp ?: System.currentTimeMillis())
 
+        val previousListingIds = current?.listings?.map { it.id }?.toSet() ?: emptySet()
+        val addedListings = if (current == null) emptyList() else sortedNewListings.filter { it.id !in previousListingIds }
+        val newlyAddedCount = if (hasChanges) addedListings.size else (current?.newlyAddedCount ?: 0)
+        val newlyAddedIds = if (hasChanges) addedListings.map { it.id }.toSet() else (current?.newlyAddedListingIds ?: emptySet())
+
         if (hasChanges) {
             val dtoListings = sortedNewListings.map { CachedListing.from(it) }
             val dtoGames = sortedNewGames.map { CachedGame.from(it) }
@@ -100,6 +112,8 @@ class SharedPreferencesLocalCacheStore(
                 .putString(KEY_SOURCES, json.encodeToString(dtoSources))
                 .putString(KEY_PRODUCTS, json.encodeToString(dtoProducts))
                 .putLong(KEY_TIMESTAMP, timestamp)
+                .putInt(KEY_NEWLY_ADDED_COUNT, newlyAddedCount)
+                .putString(KEY_NEWLY_ADDED_IDS, newlyAddedIds.joinToString(","))
                 .apply()
         }
 
@@ -109,6 +123,8 @@ class SharedPreferencesLocalCacheStore(
             sources = sortedNewSources,
             products = sortedNewProducts,
             lastModifiedTimestamp = timestamp,
+            newlyAddedCount = newlyAddedCount,
+            newlyAddedListingIds = newlyAddedIds,
         )
 
         return Pair(updatedDb, hasChanges)
@@ -121,6 +137,8 @@ class SharedPreferencesLocalCacheStore(
         const val KEY_SOURCES = "cached_sources"
         const val KEY_PRODUCTS = "cached_products"
         const val KEY_TIMESTAMP = "last_modified_timestamp"
+        const val KEY_NEWLY_ADDED_COUNT = "newly_added_count"
+        const val KEY_NEWLY_ADDED_IDS = "newly_added_ids"
     }
 }
 

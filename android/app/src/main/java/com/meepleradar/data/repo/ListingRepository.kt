@@ -31,11 +31,15 @@ interface ListingRepository {
         onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem>
 
+    suspend fun newsItems(today: LocalDate): List<IncomingItem>
+
     suspend fun sources(): List<Source>
 
     suspend fun setAction(key: String, action: Action)
 
     fun lastDbModifiedTimestamp(): Long
+
+    fun newlyAddedCount(): Int
 }
 
 class DefaultListingRepository(
@@ -46,6 +50,32 @@ class DefaultListingRepository(
 
     override fun lastDbModifiedTimestamp(): Long =
         localCacheStore?.load()?.lastModifiedTimestamp ?: 0L
+
+    override fun newlyAddedCount(): Int =
+        localCacheStore?.load()?.newlyAddedCount ?: 0
+
+    override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
+        val cached = localCacheStore?.load() ?: return emptyList()
+        val addedIds = cached.newlyAddedListingIds
+        if (addedIds.isEmpty()) return emptyList()
+
+        val newsListings = cached.listings.filter { it.id in addedIds }
+        val games = cached.games.associateBy { it.id }
+        val sources = cached.sources.associateBy { it.id }
+        val products = cached.products.associateBy { it.id }
+
+        return buildIncomingItems(
+            listings = newsListings,
+            games = games,
+            sources = sources,
+            ignoredKeys = emptySet(),
+            today = today,
+            sourceIds = null,
+            includeUndated = true,
+            includePriceless = true,
+            products = products,
+        )
+    }
 
     override suspend fun incoming(
         today: LocalDate,

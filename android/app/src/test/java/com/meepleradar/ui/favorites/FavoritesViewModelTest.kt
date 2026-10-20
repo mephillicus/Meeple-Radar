@@ -59,6 +59,10 @@ class FavoritesViewModelTest {
         }
 
         override fun lastDbModifiedTimestamp(): Long = 0L
+
+        override fun newlyAddedCount(): Int = 0
+
+        override suspend fun newsItems(today: LocalDate): List<IncomingItem> = emptyList()
     }
 
     private fun item(key: String) = IncomingItem(

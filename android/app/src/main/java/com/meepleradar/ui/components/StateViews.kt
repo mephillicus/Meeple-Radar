@@ -26,16 +26,55 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+
+val MeepleVector: ImageVector = ImageVector.Builder(
+    name = "Meeple",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).run {
+    path(
+        fill = SolidColor(Color.Unspecified),
+        stroke = SolidColor(Color.White),
+        strokeLineWidth = 1.5f,
+    ) {
+        moveTo(12.0f, 2.0f)
+        arcTo(2.5f, 2.5f, 0.0f, false, false, 9.5f, 4.5f)
+        arcTo(2.5f, 2.5f, 0.0f, false, false, 12.0f, 7.0f)
+        arcTo(2.5f, 2.5f, 0.0f, false, false, 14.5f, 4.5f)
+        arcTo(2.5f, 2.5f, 0.0f, false, false, 12.0f, 2.0f)
+        moveTo(12.0f, 8.0f)
+        curveTo(9.0f, 8.0f, 4.0f, 9.5f, 4.0f, 13.0f)
+        lineTo(4.0f, 16.0f)
+        lineTo(6.5f, 16.0f)
+        lineTo(6.5f, 21.0f)
+        lineTo(9.5f, 21.0f)
+        lineTo(9.5f, 17.0f)
+        lineTo(14.5f, 17.0f)
+        lineTo(14.5f, 21.0f)
+        lineTo(17.5f, 21.0f)
+        lineTo(17.5f, 16.0f)
+        lineTo(20.0f, 16.0f)
+        lineTo(20.0f, 13.0f)
+        curveTo(20.0f, 9.5f, 15.0f, 8.0f, 12.0f, 8.0f)
+        close()
+    }
+    build()
+}
 
 val ScreenContentInsets: WindowInsets
     @Composable get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
@@ -173,6 +212,7 @@ fun ScreenHeader(
     onRefresh: () -> Unit,
     subtitle: String = "MEEPLE RADAR",
     timestampText: String? = null,
+    titleContent: @Composable (() -> Unit)? = null,
     trailingContent: @Composable (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -193,11 +233,15 @@ fun ScreenHeader(
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,
             )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
+            if (titleContent != null) {
+                titleContent()
+            } else {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
             if (timestampText != null) {
                 Text(
                     text = timestampText,
@@ -211,22 +255,6 @@ fun ScreenHeader(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onRefresh) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = "Aggiorna",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-            }
             trailingContent?.invoke()
         }
     }

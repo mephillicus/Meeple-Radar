@@ -58,6 +58,10 @@ class DetailViewModelTest {
         override suspend fun setAction(key: String, action: Action) = Unit
 
         override fun lastDbModifiedTimestamp(): Long = 0L
+
+        override fun newlyAddedCount(): Int = 0
+
+        override suspend fun newsItems(today: LocalDate): List<IncomingItem> = emptyList()
     }
 
     private class FakeImageLookup(

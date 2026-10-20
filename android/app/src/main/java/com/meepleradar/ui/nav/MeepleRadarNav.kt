@@ -27,14 +27,18 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.meepleradar.AppContainer
+import com.meepleradar.ui.components.MeepleVector
 import com.meepleradar.ui.detail.DetailScreen
 import com.meepleradar.ui.detail.DetailViewModel
 import com.meepleradar.ui.favorites.FavoritesScreen
 import com.meepleradar.ui.favorites.FavoritesViewModel
 import com.meepleradar.ui.incoming.IncomingScreen
 import com.meepleradar.ui.incoming.IncomingViewModel
+import com.meepleradar.ui.news.NewsScreen
+import com.meepleradar.ui.news.NewsViewModel
 
 const val ROUTE_INCOMING = "incoming"
+const val ROUTE_NEWS = "news"
 const val ROUTE_FAVORITES = "favorites"
 const val ROUTE_DETAIL = "detail/{key}"
 
@@ -59,6 +63,12 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         label = { Text("In arrivo") },
                     )
                     NavigationBarItem(
+                        selected = currentRoute == ROUTE_NEWS,
+                        onClick = { navController.switchTab(ROUTE_NEWS) },
+                        icon = { Icon(MeepleVector, contentDescription = null) },
+                        label = { Text("Novità") },
+                    )
+                    NavigationBarItem(
                         selected = currentRoute == ROUTE_FAVORITES,
                         onClick = { navController.switchTab(ROUTE_FAVORITES) },
                         icon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
@@ -81,6 +91,19 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                     },
                 )
                 IncomingScreen(
+                    vm = vm,
+                    onOpen = { item -> navController.navigate(detailRoute(item.key)) },
+                    imageLookup = container.boardGameImageLookup,
+                )
+            }
+
+            composable(ROUTE_NEWS) {
+                val vm: NewsViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer { NewsViewModel(container.repository) }
+                    },
+                )
+                NewsScreen(
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
                     imageLookup = container.boardGameImageLookup,
