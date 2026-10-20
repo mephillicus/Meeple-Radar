@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +60,7 @@ import com.meepleradar.ui.components.ErrorView
 import com.meepleradar.ui.components.ListingCard
 import com.meepleradar.ui.components.LoadingView
 import com.meepleradar.ui.components.ScreenContentInsets
+import com.meepleradar.ui.components.ScreenHeader
 import kotlinx.coroutines.launch
 
 @Composable
@@ -116,11 +116,35 @@ fun IncomingScreen(
         ) { padding ->
             Column(modifier = Modifier.fillMaxSize().padding(padding)) {
                 val selSources = selectedSources
-                IncomingTopBar(
-                    lastModifiedTimestamp = lastModifiedTimestamp,
-                    hasActiveFilters = hideUndated || hidePriceless || (selSources != null && selSources.size < sources.size),
-                    onOpenFilters = { scope.launch { drawerState.open() } },
+                val hasActiveFilters = hideUndated || hidePriceless || (selSources != null && selSources.size < sources.size)
+
+                ScreenHeader(
+                    title = "In arrivo",
                     onRefresh = { vm.refresh() },
+                    timestampText = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
+                    trailingContent = {
+                        Button(
+                            onClick = { scope.launch { drawerState.open() } },
+                            colors = if (hasActiveFilters) {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            } else {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp).padding(end = 4.dp),
+                            )
+                            Text(if (hasActiveFilters) "Filtri attivi" else "Filtri")
+                        }
+                    },
                 )
 
                 if (syncProgress is SyncProgressState.Progress) {
@@ -218,73 +242,6 @@ private fun formatTimestamp(timestamp: Long): String {
     val localDateTime = java.time.LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
     val formatter = java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm", java.util.Locale.ITALIAN)
     return localDateTime.format(formatter)
-}
-
-@Composable
-private fun IncomingTopBar(
-    lastModifiedTimestamp: Long,
-    hasActiveFilters: Boolean,
-    onOpenFilters: () -> Unit,
-    onRefresh: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = "MEEPLE RADAR",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text("In arrivo", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                text = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onRefresh) {
-                Icon(
-                    imageVector = Icons.Filled.Refresh,
-                    contentDescription = "Aggiorna",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Button(
-                onClick = onOpenFilters,
-                colors = if (hasActiveFilters) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                },
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Settings,
-                    contentDescription = null,
-                    modifier = Modifier.padding(end = 4.dp),
-                )
-                Text(if (hasActiveFilters) "Filtri attivi" else "Filtri")
-            }
-        }
-    }
 }
 
 @Composable
