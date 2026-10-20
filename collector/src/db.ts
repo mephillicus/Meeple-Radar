@@ -29,6 +29,8 @@ export interface ListingStore {
 
 type SupabaseLike = { from(table: string): any }
 
+const PURGE_PAGE_SIZE = 1000
+
 export function createSupabaseStore(
   client: SupabaseLike,
   now: () => string = () => new Date().toISOString(),
@@ -149,48 +151,54 @@ export function createSupabaseStore(
     },
 
     async purgeStale(before: string): Promise<{ listings: number; products: number }> {
-      const dated = await client
-        .from('listing')
-        .select('id')
-        .not('release_date', 'is', null)
-        .lt('release_date', before)
-      if (dated.error) throw new Error(`purgeStale: ${dated.error.message}`)
-      const undated = await client
-        .from('listing')
-        .select('id')
-        .is('release_date', null)
-        .lt('last_seen_at', before)
-      if (undated.error) throw new Error(`purgeStale: ${undated.error.message}`)
-      const stale = [...(dated.data ?? []), ...(undated.data ?? [])]
-        .map((row: Record<string, unknown>) => Number(row.id))
+      const fetchAll = async (
+        run: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
+      ): Promise<Record<string, unknown>[]> => {
+        const rows: Record<string, unknown>[] = []
+        let from = 0
+        for (;;) {
+          const { data, error } = await run(from, from + PURGE_PAGE_SIZE - 1)
+          if (error) throw new Error(`purgeStale: ${error.message}`)
+          const page = (data ?? []) as Record<string, unknown>[]
+          if (page.length === 0) break
+          rows.push(...page)
+          from += page.length
+        }
+        return rows
+      }
 
-      const favorites = await client
-        .from('user_action')
-        .select('listing_id')
-        .eq('action', 'favorite')
-        .not('listing_id', 'is', null)
-      if (favorites.error) throw new Error(`purgeStale: ${favorites.error.message}`)
-      const favoriteIds = (favorites.data ?? [])
-        .map((row: Record<string, unknown>) => Number(row.listing_id))
+      const dated = await fetchAll((from, to) =>
+        client.from('listing').select('id')
+          .not('release_date', 'is', null).lt('release_date', before).range(from, to))
+      const undated = await fetchAll((from, to) =>
+        client.from('listing').select('id')
+          .is('release_date', null).lt('last_seen_at', before).range(from, to))
+      const stale = [...dated, ...undated].map((row) => Number(row.id))
+
+      const favoriteListings = await fetchAll((from, to) =>
+        client.from('user_action').select('listing_id')
+          .eq('action', 'favorite').not('listing_id', 'is', null).range(from, to))
+      const favoriteIds = favoriteListings.map((row) => Number(row.listing_id))
 
       const toDelete = stale.filter((id) => !favoriteIds.includes(id))
       const deletedListings = await client.from('listing').delete().in('id', toDelete)
       if (deletedListings.error) throw new Error(`purgeStale: ${deletedListings.error.message}`)
 
-      const staleProducts = await client.from('product').select('id').lt('release_date', before)
-      if (staleProducts.error) throw new Error(`purgeStale: ${staleProducts.error.message}`)
-      const staleProductIds: number[] = (staleProducts.data ?? [])
-        .map((row: Record<string, unknown>) => Number(row.id))
+      const staleProducts = await fetchAll((from, to) =>
+        client.from('product').select('id').lt('release_date', before).range(from, to))
+      const staleProductIds = staleProducts.map((row) => Number(row.id))
 
-      const referenced = await client
-        .from('listing')
-        .select('product_id')
-        .not('product_id', 'is', null)
-      if (referenced.error) throw new Error(`purgeStale: ${referenced.error.message}`)
-      const referencedIds = new Set((referenced.data ?? [])
-        .map((row: Record<string, unknown>) => Number(row.product_id)))
+      const favoriteProducts = await fetchAll((from, to) =>
+        client.from('user_action').select('product_id')
+          .eq('action', 'favorite').not('product_id', 'is', null).range(from, to))
+      const favoriteProductIds = new Set(favoriteProducts.map((row) => Number(row.product_id)))
 
-      const orphan = staleProductIds.filter((id) => !referencedIds.has(id))
+      const referenced = await fetchAll((from, to) =>
+        client.from('listing').select('product_id')
+          .not('product_id', 'is', null).range(from, to))
+      const referencedIds = new Set(referenced.map((row) => Number(row.product_id)))
+
+      const orphan = staleProductIds.filter((id) => !referencedIds.has(id) && !favoriteProductIds.has(id))
       const deletedProducts = await client.from('product').delete().in('id', orphan)
       if (deletedProducts.error) throw new Error(`purgeStale: ${deletedProducts.error.message}`)
 
