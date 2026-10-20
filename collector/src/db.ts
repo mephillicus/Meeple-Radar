@@ -133,7 +133,8 @@ export function createSupabaseStore(
       }))
       const { data, error } = await client
         .from('product')
-        .upsert(payload, { onConflict: 'normalized_title', returning: 'representation' })
+        .upsert(payload, { onConflict: 'normalized_title' })
+        .select('id')
       if (error) throw new Error(`upsert product: ${error.message}`)
       return (data ?? []).map((row: Record<string, unknown>) => Number(row.id))
     },

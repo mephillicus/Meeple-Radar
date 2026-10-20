@@ -49,4 +49,5 @@ export type Source = {
   kind: SourceKind
   baseUrl: string
   enabled: boolean
+  collection?: string
 }

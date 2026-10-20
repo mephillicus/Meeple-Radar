@@ -38,3 +38,24 @@ test('reads the phrasings Italian headlines actually use', () => {
   expect(extractReleaseDate('in libreria il 3 marzo')).toBe(`${year}-03-03`)
   expect(extractReleaseDate('uscita il 15 novembre')).toBe(`${year}-11-15`)
 })
+
+test('scarta gli anni che arrivano dal testo descrittivo', () => {
+  expect(extractReleaseDate('05/03/1943')).toBeNull()
+  expect(extractReleaseDate('1943-09-01')).toBeNull()
+  expect(extractReleaseDate('uscita il 5 marzo 1943')).toBeNull()
+  expect(extractReleaseDate('riedito per la collezione, 1979-09')).toBeNull()
+})
+
+test('accetta la finestra plausibile: un anno indietro e tre avanti', () => {
+  const year = new Date().getUTCFullYear()
+  expect(extractReleaseDate(`${year - 1}-06-30`)).toBe(`${year - 1}-06-30`)
+  expect(extractReleaseDate(`${year}-06-30`)).toBe(`${year}-06-30`)
+  expect(extractReleaseDate(`${year + 3}-06-30`)).toBe(`${year + 3}-06-30`)
+})
+
+test('scarta le date fuori dalla finestra plausibile', () => {
+  const year = new Date().getUTCFullYear()
+  expect(extractReleaseDate(`${year - 2}-06-30`)).toBeNull()
+  expect(extractReleaseDate(`${year + 4}-06-30`)).toBeNull()
+  expect(extractReleaseDate('uscita prevista per marzo 8230')).toBeNull()
+})

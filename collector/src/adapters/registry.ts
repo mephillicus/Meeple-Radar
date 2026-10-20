@@ -13,7 +13,7 @@ import { getSharedFetcher } from './headless/fetch.js'
 
 export function buildRegistry(http?: HttpClient, gameFinder?: GameFinder): Record<SourceKind, Adapter> {
   return {
-    shopify: (source) => fetchShopifyProducts(source.baseUrl, http),
+    shopify: (source) => fetchShopifyProducts(source.baseUrl, http, source.collection),
     woocommerce: (source) => fetchWooCommerceProducts(source.baseUrl, 'EUR', http),
     wordpress: (source) => fetchWordPressProducts(source.baseUrl, http),
     html: async (source) => {

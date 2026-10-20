@@ -3,7 +3,10 @@ export type HttpClient = (url: string, headers?: Record<string, string>) => Prom
 
 export const USER_AGENT = 'MeepleRadar/0.1 (+https://github.com/mephillicus/Meeple-Radar)'
 
-export const defaultFetch: HttpClient = (url, headers) => fetch(url, { headers })
+export const FETCH_TIMEOUT_MS = 20_000
+
+export const defaultFetch: HttpClient = (url, headers) =>
+  fetch(url, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
 
 export type TextFetcher = (url: string) => Promise<string | null>
 

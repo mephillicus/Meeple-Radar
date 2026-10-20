@@ -57,3 +57,38 @@ test('carries a listing release date onto the discovered product', async () => {
   expect(out).toHaveLength(1)
   expect(out[0].releaseDateRaw).toBe('2026-11-13')
 })
+
+async function runInParallel(urls: string[], concurrency?: number): Promise<number> {
+  let vivi = 0
+  let maxVivi = 0
+  const fetchText = async () => {
+    vivi++
+    maxVivi = Math.max(maxVivi, vivi)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    vivi--
+    return P1
+  }
+  const args: Parameters<typeof collectHtmlProducts>[0] = {
+    spec: { discover: async () => urls.map((url) => ({ url })) },
+    fetchText,
+    delayMs: 0,
+  }
+  if (concurrency !== undefined) args.concurrency = concurrency
+  await collectHtmlProducts(args)
+  return maxVivi
+}
+
+test('scarica le pagine prodotto in parallelo di default', async () => {
+  const urls = ['a', 'b', 'c', 'd', 'e', 'f'].map((x) => `https://s/${x}`)
+  expect(await runInParallel(urls)).toBeGreaterThan(1)
+})
+
+test('con concurrency 1 le richieste restano seriali', async () => {
+  const urls = ['a', 'b', 'c', 'd'].map((x) => `https://s/${x}`)
+  expect(await runInParallel(urls, 1)).toBe(1)
+})
+
+test('non supera mai il numero di richieste concorrenti richiesto', async () => {
+  const urls = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((x) => `https://s/${x}`)
+  expect(await runInParallel(urls, 3)).toBeLessThanOrEqual(3)
+})

@@ -16,11 +16,15 @@ const PAGE_SIZE = 250
 export async function fetchShopifyProducts(
   baseUrl: string,
   http: HttpClient = defaultFetch,
+  collection?: string,
 ): Promise<RawProduct[]> {
   const base = baseUrl.replace(/\/+$/, '')
+  const path = collection
+    ? `/collections/${encodeURIComponent(collection)}/products.json`
+    : '/products.json'
   const out: RawProduct[] = []
   for (let page = 1; ; page++) {
-    const res = await http(`${base}/products.json?limit=${PAGE_SIZE}&page=${page}`, {
+    const res = await http(`${base}${path}?limit=${PAGE_SIZE}&page=${page}`, {
       'User-Agent': USER_AGENT,
     })
     if (res.status !== 200) break

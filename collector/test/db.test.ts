@@ -76,3 +76,30 @@ test('upserts sources on the id conflict target', async () => {
     id: 'cranio', base_url: 'https://craniocreations.it', adapter: 'shopify', enabled: true,
   })
 })
+
+const listing = (title: string) => ({
+  sourceId: 'cranio', externalId: '1', title, url: 'https://e.com/x',
+  price: 1, currency: 'EUR', availability: null, releaseDate: null, imageUrl: null, gameId: null,
+})
+
+// supabase-js v2 ignora { returning: 'representation' } e restituisce data: null.
+// Gli id si ottengono solo con .select('id') concatenato: senza quello il collector
+// scrive i prodotti ma non sa mai quale id assegnare alle listing.
+test('upsertProducts restituisce gli id restituendo .select("id")', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [{ id: 11 }, { id: 12 }], error: null })
+  const upsert = vi.fn().mockReturnValue({ select })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-17T00:00:00Z')
+  const ids = await store.upsertProducts([listing('A'), listing('B')])
+  expect(select).toHaveBeenCalledWith('id')
+  expect(ids).toEqual([11, 12])
+})
+
+test('upsertProducts non passa il returning v1', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [{ id: 1 }], error: null })
+  const upsert = vi.fn().mockReturnValue({ select })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-17T00:00:00Z')
+  await store.upsertProducts([listing('A')])
+  expect(upsert.mock.calls[0][1]).not.toHaveProperty('returning')
+})

@@ -21,3 +21,23 @@ test('returns [] on an unexpected payload', async () => {
   const bad = async () => ({ status: 200, json: async () => ({ nope: true }), text: async () => '' })
   expect(await fetchShopifyProducts('https://shop.example', bad)).toEqual([])
 })
+
+test('legge tutti i prodotti quando non è indicata una collection', async () => {
+  const urls: string[] = []
+  const http = async (url: string) => {
+    urls.push(url)
+    return { status: 200, json: async () => ({ products: [] }), text: async () => '' }
+  }
+  await fetchShopifyProducts('https://shop.example', http)
+  expect(urls[0]).toBe('https://shop.example/products.json?limit=250&page=1')
+})
+
+test('legge solo la collection quando indicata', async () => {
+  const urls: string[] = []
+  const http = async (url: string) => {
+    urls.push(url)
+    return { status: 200, json: async () => ({ products: [] }), text: async () => '' }
+  }
+  await fetchShopifyProducts('https://shop.example', http, 'preordini')
+  expect(urls[0]).toBe('https://shop.example/collections/preordini/products.json?limit=250&page=1')
+})
