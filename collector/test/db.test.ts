@@ -24,6 +24,37 @@ test('includes game_id in the upsert payload', async () => {
   expect(upsert.mock.calls[0][0][0]).toMatchObject({ game_id: 42 })
 })
 
+test('upsertListings omette i campi nulli per non azzerare i valori esistenti', async () => {
+  const upsert = vi.fn().mockResolvedValue({ error: null })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-20T00:00:00Z')
+  await store.upsertListings([
+    { sourceId: 'cranio', externalId: '1', title: 'X', url: 'https://e.com/x',
+      price: null, currency: null, availability: null, releaseDate: null, imageUrl: null, gameId: null },
+  ])
+  const payload = upsert.mock.calls[0][0][0]
+  expect(payload).not.toHaveProperty('price')
+  expect(payload).not.toHaveProperty('currency')
+  expect(payload).not.toHaveProperty('availability')
+  expect(payload).not.toHaveProperty('release_date')
+  expect(payload).not.toHaveProperty('image_url')
+  expect(payload).not.toHaveProperty('game_id')
+  expect(payload).toMatchObject({ title: 'X', source_id: 'cranio', external_id: '1', url: 'https://e.com/x' })
+})
+
+test('upsertListings scrive i campi valorizzati, così un prezzo aggiornato prevale', async () => {
+  const upsert = vi.fn().mockResolvedValue({ error: null })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-20T00:00:00Z')
+  await store.upsertListings([
+    { sourceId: 'cranio', externalId: '1', title: 'X', url: 'https://e.com/x',
+      price: 25, currency: 'EUR', availability: 'Disponibile', releaseDate: '2027-01-01', imageUrl: null, gameId: 42 },
+  ])
+  const payload = upsert.mock.calls[0][0][0]
+  expect(payload).toMatchObject({ price: 25, currency: 'EUR', availability: 'Disponibile', release_date: '2027-01-01', game_id: 42 })
+  expect(payload).not.toHaveProperty('image_url')
+})
+
 test('findListingsByTitle fetches the listing columns including source_id and filters by normalizeTitle', async () => {
   const all = [
     { id: 1, title: 'Carcassonne', normalized_title: 'carcassonne', url: 'https://e.com/c', price: 19.99, currency: 'EUR', release_date: '2026-11-10', image_url: 'https://e.com/i.jpg', game_id: 7, source_id: 'ghenos', product_id: null },
@@ -102,6 +133,21 @@ test('upsertProducts non passa il returning v1', async () => {
   const store = createSupabaseStore({ from } as any, () => '2026-10-17T00:00:00Z')
   await store.upsertProducts([listing('A')])
   expect(upsert.mock.calls[0][1]).not.toHaveProperty('returning')
+})
+
+test('upsertProducts omette i campi nulli allo stesso modo', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [], error: null })
+  const upsert = vi.fn().mockReturnValue({ select })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-20T00:00:00Z')
+  await store.upsertProducts([
+    { sourceId: 's', externalId: '1', title: 'X', url: 'https://e.com/x',
+      price: null, currency: null, availability: null, releaseDate: null, imageUrl: null, gameId: null },
+  ])
+  const payload = upsert.mock.calls[0][0][0]
+  expect(payload).not.toHaveProperty('price')
+  expect(payload).not.toHaveProperty('release_date')
+  expect(payload).toMatchObject({ title: 'X', normalized_title: 'x' })
 })
 
 // PostgREST serve al massimo `max-rows` righe per richiesta: il fake deve

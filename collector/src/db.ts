@@ -59,12 +59,12 @@ export function createSupabaseStore(
         title: r.title,
         normalized_title: normalizeTitle(r.title),
         url: r.url,
-        price: r.price,
-        currency: r.currency,
-        availability: r.availability,
-        release_date: r.releaseDate,
-        image_url: r.imageUrl,
-        game_id: r.gameId ?? null,
+        ...(r.price != null && { price: r.price }),
+        ...(r.currency != null && { currency: r.currency }),
+        ...(r.availability != null && { availability: r.availability }),
+        ...(r.releaseDate != null && { release_date: r.releaseDate }),
+        ...(r.imageUrl != null && { image_url: r.imageUrl }),
+        ...(r.gameId != null && { game_id: r.gameId }),
         last_seen_at: seen,
       }))
       const { error } = await client
@@ -124,13 +124,13 @@ export function createSupabaseStore(
       if (products.length === 0) return []
       const payload = products.map((p) => ({
         normalized_title: normalizeTitle(p.title),
-        title: p.title,
+        ...(p.title != null && { title: p.title }),
         url: p.url,
-        price: p.price,
-        currency: p.currency,
-        release_date: p.releaseDate,
-        image_url: p.imageUrl,
-        game_id: p.gameId ?? null,
+        ...(p.price != null && { price: p.price }),
+        ...(p.currency != null && { currency: p.currency }),
+        ...(p.releaseDate != null && { release_date: p.releaseDate }),
+        ...(p.imageUrl != null && { image_url: p.imageUrl }),
+        ...(p.gameId != null && { game_id: p.gameId }),
         sources: JSON.stringify([]),
         updated_at: now(),
       }))
