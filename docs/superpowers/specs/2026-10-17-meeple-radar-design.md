@@ -107,7 +107,7 @@ La raccolta non avviene sul telefono: 17 siti eterogenei, blocchi anti-bot e par
 
 1. **Collector — job Node.js su GitHub Actions**
    - Linguaggio: **Node.js / TypeScript**.
-   - Esecuzione: **workflow programmati** (es. più volte al giorno per gli store, giornaliero per gli editori). 2.000 min/mese gratuiti; la run è dominata dal catalogo della fonte abilitata più grande.
+   - Esecuzione: **workflow programmati** (un giro a settimana, sabato mattina, per tutte le fonti). 2.000 min/mese gratuiti; la run è dominata dal catalogo della fonte abilitata più grande.
    - **Fetcher dedicato per le fonti protette**: il kind `headless` usa un fetcher a due livelli (`src/adapters/headless/fetch.ts`): prima **`curl`** in sottoprocesso (supera Cloudflare da IP residenziale, senza terze parti), poi il **reader Jina AI** (`src/adapters/relay.ts`) quando `curl` fallisce o riceve una challenge — così le fonti Cloudflare (DungeonDice; uplay e Ravensburger quando c'è `JINA_API_KEY`) sono raccolte **anche dagli IP datacenter dei runner di Actions**. Magic Merchant resta irraggiungibile (managed challenge). Nessun browser (Playwright è stato rimosso: bloccato dalle stesse challenge).
    - Adattatori per fonte isolati tra loro: Shopify, WooCommerce, WordPress, Sitemap+HTML, HTML-crawl, fetcher protetto (`curl` + reader Jina AI), LLM (`gemini`).
    - Normalizzazione, deduplica, abbinamento a BGG, calcolo delle novità, invio push.

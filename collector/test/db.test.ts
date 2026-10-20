@@ -225,7 +225,7 @@ test('purgeStale non cancella le preferite e non cancella un prodotto referenzia
   expect(purged.listings).toBe(1)
   expect(deleteIn).toHaveBeenCalledWith('id', [1])
   expect(purged.products).toBe(0)
-  expect(productDeleteIn).toHaveBeenCalledWith('id', [])
+  expect(productDeleteIn).not.toHaveBeenCalled()
 })
 
 test('purgeStale restituisce zeri senza cancellare nulla quando non c\'e niente di vecchio', async () => {
@@ -265,7 +265,7 @@ test('purgeStale non cancella un prodotto segnato come preferito', async () => {
   const store = createSupabaseStore({ from } as any)
   const purged = await store.purgeStale('2025-10-20')
   expect(purged).toEqual({ listings: 0, products: 0 })
-  expect(productDeleteIn).toHaveBeenCalledWith('id', [])
+  expect(productDeleteIn).not.toHaveBeenCalled()
 })
 
 test('purgeStale pagine le select e raccoglie tutte le righe oltre il cap del server', async () => {
@@ -292,4 +292,51 @@ test('purgeStale pagine le select e raccoglie tutte le righe oltre il cap del se
   expect(purged.listings).toBe(5)
   expect(datedBody.range).toHaveBeenCalledTimes(4)
   expect(deleteIn).toHaveBeenCalledWith('id', many.map((r) => r.id))
+})
+
+test('purgeStale spezza i delete in batch da PURGE_DELETE_BATCH_SIZE id', async () => {
+  const many = Array.from({ length: 1201 }, (_, i) => ({ id: i + 1 }))
+  const datedBody = paged(many)
+  const notFn = vi.fn((column: string) => (column === 'release_date' ? datedBody : paged([])))
+  const isFn = vi.fn(() => paged([]))
+  const deleteIn = vi.fn().mockResolvedValue({ error: null })
+  const listingFrom = vi.fn(() => ({
+    select: vi.fn(() => ({ not: notFn, is: isFn })),
+    delete: () => ({ in: deleteIn }),
+  }))
+  const userFrom = vi.fn(() => ({
+    select: vi.fn(() => ({ eq: vi.fn(() => ({ not: vi.fn(() => paged([])) })) })),
+  }))
+  const productFrom = vi.fn(() => ({
+    select: vi.fn(() => ({ lt: vi.fn(() => paged([])) })),
+    delete: () => ({ in: vi.fn().mockResolvedValue({ error: null }) }),
+  }))
+  const from = vi.fn((table: string) =>
+    table === 'product' ? productFrom() : table === 'user_action' ? userFrom() : listingFrom())
+  const store = createSupabaseStore({ from } as any)
+  const purged = await store.purgeStale('2025-10-20')
+  expect(purged.listings).toBe(1201)
+  expect(deleteIn).toHaveBeenCalledTimes(3)
+  for (const [, ids] of deleteIn.mock.calls) {
+    expect(ids.length).toBeLessThanOrEqual(500)
+  }
+  const deleted = deleteIn.mock.calls.flatMap(([, ids]) => ids)
+  expect(deleted).toEqual(many.map((r) => r.id))
+})
+
+test('purgeStale non emette nessun delete quando la lista e vuota', async () => {
+  const body = paged([])
+  const notFn = vi.fn(() => body)
+  const isFn = vi.fn(() => body)
+  const eqFn = vi.fn(() => ({ not: vi.fn(() => body) }))
+  const ltFn = vi.fn(() => body)
+  const deleteIn = vi.fn().mockResolvedValue({ error: null })
+  const from = vi.fn(() => ({
+    select: vi.fn(() => ({ not: notFn, is: isFn, lt: ltFn, eq: eqFn })),
+    delete: () => ({ in: deleteIn }),
+  }))
+  const store = createSupabaseStore({ from } as any)
+  const purged = await store.purgeStale('2025-10-20')
+  expect(purged).toEqual({ listings: 0, products: 0 })
+  expect(deleteIn).not.toHaveBeenCalled()
 })

@@ -30,6 +30,7 @@ export interface ListingStore {
 type SupabaseLike = { from(table: string): any }
 
 const PURGE_PAGE_SIZE = 1000
+const PURGE_DELETE_BATCH_SIZE = 500
 
 export function createSupabaseStore(
   client: SupabaseLike,
@@ -167,6 +168,16 @@ export function createSupabaseStore(
         return rows
       }
 
+      // PostgREST mette gli id nella query string: troppi id in una chiamata
+      // sola superano il limite di Kong e la richiesta fallisce con 414.
+      const deleteInBatches = async (table: string, ids: number[]): Promise<void> => {
+        for (let i = 0; i < ids.length; i += PURGE_DELETE_BATCH_SIZE) {
+          const batch = ids.slice(i, i + PURGE_DELETE_BATCH_SIZE)
+          const { error } = await client.from(table).delete().in('id', batch)
+          if (error) throw new Error(`purgeStale: ${error.message}`)
+        }
+      }
+
       const dated = await fetchAll((from, to) =>
         client.from('listing').select('id')
           .not('release_date', 'is', null).lt('release_date', before).range(from, to))
@@ -178,11 +189,9 @@ export function createSupabaseStore(
       const favoriteListings = await fetchAll((from, to) =>
         client.from('user_action').select('listing_id')
           .eq('action', 'favorite').not('listing_id', 'is', null).range(from, to))
-      const favoriteIds = favoriteListings.map((row) => Number(row.listing_id))
-
-      const toDelete = stale.filter((id) => !favoriteIds.includes(id))
-      const deletedListings = await client.from('listing').delete().in('id', toDelete)
-      if (deletedListings.error) throw new Error(`purgeStale: ${deletedListings.error.message}`)
+      const favoriteIds = new Set(favoriteListings.map((row) => Number(row.listing_id)))
+      const toDelete = stale.filter((id) => !favoriteIds.has(id))
+      await deleteInBatches('listing', toDelete)
 
       const staleProducts = await fetchAll((from, to) =>
         client.from('product').select('id').lt('release_date', before).range(from, to))
@@ -199,8 +208,7 @@ export function createSupabaseStore(
       const referencedIds = new Set(referenced.map((row) => Number(row.product_id)))
 
       const orphan = staleProductIds.filter((id) => !referencedIds.has(id) && !favoriteProductIds.has(id))
-      const deletedProducts = await client.from('product').delete().in('id', orphan)
-      if (deletedProducts.error) throw new Error(`purgeStale: ${deletedProducts.error.message}`)
+      await deleteInBatches('product', orphan)
 
       return { listings: toDelete.length, products: orphan.length }
     },

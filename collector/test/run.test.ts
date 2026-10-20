@@ -81,3 +81,32 @@ test('una fonte a zero non rende il report non ok', async () => {
   expect(report.zeroed).toEqual(['s1'])
   expect(report.ok).toBe(true)
 })
+
+test('un fallimento di purgeStale non ferma la raccolta ma rende il report non ok', async () => {
+  const store = {
+    upsertListings: vi.fn().mockResolvedValue(undefined),
+    findListingsByTitle: vi.fn().mockResolvedValue([]),
+    upsertProducts: vi.fn().mockResolvedValue([]),
+    linkListingToProduct: vi.fn().mockResolvedValue(undefined),
+    markSourceScanned: vi.fn(),
+    logRun: vi.fn(),
+    purgeStale: vi.fn().mockRejectedValue(new Error('purge boom')),
+  } as any
+  const adapters = {
+    shopify: async () => [{ externalId: '1', title: 'A', url: 'https://e.com/a' }],
+    woocommerce: async () => [], wordpress: async () => [], html: async () => [],
+    headless: async () => [],
+  } as any
+  const report = await runCollector({
+    sources: [src('s1', 'shopify')], adapters, store,
+    now: () => new Date('2026-10-20T00:00:00Z'),
+  })
+  expect(report.failures['purgeStale']).toBe('purge boom')
+  expect(report.ok).toBe(false)
+  // La raccolta prosegue nonostante la purge fallita.
+  expect(report.perSource['s1']).toBe(1)
+  expect(store.upsertListings).toHaveBeenCalledTimes(1)
+  expect(store.markSourceScanned).toHaveBeenCalledWith('s1')
+  // Il report finisce in run_log anche quando la purge fallisce.
+  expect(store.logRun).toHaveBeenCalledWith(false, report)
+})

@@ -30,7 +30,14 @@ export async function runCollector(args: {
   const failures: Record<string, string> = {}
   const zeroed: string[] = []
   const cutoff = retentionCutoff(nowFn())
-  const purged = await store.purgeStale(cutoff)
+  let purged: RunReport['purged']
+  try {
+    purged = await store.purgeStale(cutoff)
+  } catch (err) {
+    // Una purge fallita non deve fermare la raccolta, ma deve fallire il giro
+    // e finire nel report come un fallimento di fonte.
+    failures['purgeStale'] = err instanceof Error ? err.message : String(err)
+  }
 
   for (const source of sources) {
     if (!source.enabled) continue
