@@ -15,6 +15,7 @@ interface ListingRepository {
         sourceIds: Set<String>? = null,
         includeUndated: Boolean = true,
         includePriceless: Boolean = true,
+        onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem>
 
     suspend fun favorites(
@@ -22,6 +23,7 @@ interface ListingRepository {
         sourceIds: Set<String>? = null,
         includeUndated: Boolean = true,
         includePriceless: Boolean = true,
+        onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem>
 
     suspend fun sources(): List<Source>
@@ -45,13 +47,15 @@ class DefaultListingRepository(
         sourceIds: Set<String>?,
         includeUndated: Boolean,
         includePriceless: Boolean,
+        onProgress: ((percent: Int, message: String) -> Unit)?,
     ): List<IncomingItem> {
+        onProgress?.invoke(10, "Connessione a Supabase…")
         val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
         val ignored = latestActionsByKey(userActions)
             .filterValues { it == Action.IGNORED }
             .keys
             .toSet()
-        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless)
+        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless, onProgress)
     }
 
     override suspend fun favorites(
@@ -59,13 +63,15 @@ class DefaultListingRepository(
         sourceIds: Set<String>?,
         includeUndated: Boolean,
         includePriceless: Boolean,
+        onProgress: ((percent: Int, message: String) -> Unit)?,
     ): List<IncomingItem> {
+        onProgress?.invoke(10, "Connessione a Supabase…")
         val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
         val actionsMap = latestActionsByKey(userActions)
         val ignored = actionsMap.filterValues { it == Action.IGNORED }.keys
         val remoteFavoriteKeys = actionsMap.filterValues { it == Action.FAVORITE }.keys
         val favoriteKeys = favoriteStore.keys() + remoteFavoriteKeys
-        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless).filter { it.key in favoriteKeys }
+        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless, onProgress).filter { it.key in favoriteKeys }
     }
 
     override suspend fun sources(): List<Source> {
@@ -101,14 +107,22 @@ class DefaultListingRepository(
         sourceIds: Set<String>?,
         includeUndated: Boolean,
         includePriceless: Boolean,
+        onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem> {
+        onProgress?.invoke(25, "Caricamento database locale…")
         var cached = localCacheStore?.load()
 
-        val remoteListings = runCatching { api.listings() }.getOrDefault(cached?.listings.orEmpty())
-        val remoteGames = runCatching { api.games() }.getOrDefault(cached?.games.orEmpty())
+        onProgress?.invoke(40, "Verifica lista e-commerce…")
         val remoteSources = runCatching { api.sources() }.getOrDefault(cached?.sources.orEmpty())
+
+        onProgress?.invoke(55, "Download novità in arrivo…")
+        val remoteListings = runCatching { api.listings() }.getOrDefault(cached?.listings.orEmpty())
+
+        onProgress?.invoke(70, "Download giochi e cataloghi…")
+        val remoteGames = runCatching { api.games() }.getOrDefault(cached?.games.orEmpty())
         val remoteProducts = runCatching { api.products() }.getOrDefault(cached?.products.orEmpty())
 
+        onProgress?.invoke(85, "Analisi modifiche e differenze…")
         if (localCacheStore != null && remoteListings.isNotEmpty()) {
             val (updatedDb, _) = localCacheStore.saveIfChanged(
                 newListings = remoteListings,
@@ -119,12 +133,14 @@ class DefaultListingRepository(
             cached = updatedDb
         }
 
+        onProgress?.invoke(95, "Elaborazione preferiti e filtri…")
+
         val listings = cached?.listings?.takeIf { it.isNotEmpty() } ?: remoteListings
         val games = (cached?.games?.takeIf { it.isNotEmpty() } ?: remoteGames).associateBy { it.id }
         val sources = (cached?.sources?.takeIf { it.isNotEmpty() } ?: remoteSources).associateBy { it.id }
         val products = (cached?.products?.takeIf { it.isNotEmpty() } ?: remoteProducts).associateBy { it.id }
 
-        return buildIncomingItems(
+        val result = buildIncomingItems(
             listings = listings,
             games = games,
             sources = sources,
@@ -135,6 +151,9 @@ class DefaultListingRepository(
             includePriceless = includePriceless,
             products = products,
         )
+
+        onProgress?.invoke(100, "Sincronizzazione completata!")
+        return result
     }
 
     private fun parseKey(key: String): Pair<String, Long> {

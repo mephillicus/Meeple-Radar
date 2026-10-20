@@ -21,6 +21,12 @@ sealed interface IncomingUiState {
     data class Content(val items: List<IncomingItem>, val favorites: Set<String>) : IncomingUiState
 }
 
+sealed interface SyncProgressState {
+    object Idle : SyncProgressState
+    data class Progress(val percent: Int, val message: String) : SyncProgressState
+    object Finished : SyncProgressState
+}
+
 class IncomingViewModel(
     private val repo: ListingRepository,
     private val today: LocalDate = LocalDate.now(),
@@ -44,6 +50,9 @@ class IncomingViewModel(
     private val _lastModifiedTimestamp = MutableStateFlow<Long>(repo.lastDbModifiedTimestamp())
     val lastModifiedTimestamp: StateFlow<Long> = _lastModifiedTimestamp.asStateFlow()
 
+    private val _syncProgress = MutableStateFlow<SyncProgressState>(SyncProgressState.Idle)
+    val syncProgress: StateFlow<SyncProgressState> = _syncProgress.asStateFlow()
+
     init {
         loadSources()
     }
@@ -64,6 +73,7 @@ class IncomingViewModel(
 
     fun refresh() {
         _state.value = IncomingUiState.Loading
+        _syncProgress.value = SyncProgressState.Progress(0, "Avvio sincronizzazione…")
         viewModelScope.launch {
             _state.value = try {
                 val items = repo.incoming(
@@ -71,6 +81,9 @@ class IncomingViewModel(
                     sourceIds = _selectedSources.value,
                     includeUndated = !_hideUndated.value,
                     includePriceless = !_hidePriceless.value,
+                    onProgress = { percent, message ->
+                        _syncProgress.value = SyncProgressState.Progress(percent, message)
+                    },
                 )
                 val favorites = repo.favorites(
                     today = today,
@@ -78,11 +91,15 @@ class IncomingViewModel(
                     includeUndated = !_hideUndated.value,
                     includePriceless = !_hidePriceless.value,
                 ).map { it.key }.toSet()
+
                 _lastModifiedTimestamp.value = repo.lastDbModifiedTimestamp()
+                _syncProgress.value = SyncProgressState.Finished
                 IncomingUiState.Content(items = items, favorites = favorites)
             } catch (e: CancellationException) {
+                _syncProgress.value = SyncProgressState.Idle
                 throw e
             } catch (e: Exception) {
+                _syncProgress.value = SyncProgressState.Idle
                 IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
             }
         }
@@ -97,8 +114,6 @@ class IncomingViewModel(
             }
         }
     }
-
-
 
     fun toggleFavorite(item: IncomingItem) {
         val content = _state.value as? IncomingUiState.Content ?: return
