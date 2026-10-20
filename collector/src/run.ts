@@ -7,6 +7,7 @@ import { buildRegistry } from './adapters/registry.js'
 import { createGameFinder } from './adapters/gemini.js'
 import { SOURCES } from './sources.seed.js'
 import { canonicalizeProduct } from './merge.js'
+import { retentionCutoff } from './retention.js'
 
 export type Adapter = (source: Source) => Promise<RawProduct[]>
 
@@ -21,8 +22,9 @@ export async function runCollector(args: {
   sources: Source[]
   adapters: Record<SourceKind, Adapter>
   store: ListingStore
+  now?: () => Date
 }): Promise<RunReport> {
-  const { sources, adapters, store } = args
+  const { sources, adapters, store, now: nowFn = () => new Date() } = args
   const perSource: Record<string, number> = {}
   const failures: Record<string, string> = {}
   const zeroed: string[] = []
@@ -32,7 +34,10 @@ export async function runCollector(args: {
     try {
       const raw = await adapters[source.kind](source)
       if (raw.length === 0) zeroed.push(source.id)
-      const rows = raw.map((r) => normalizeListing(source.id, r))
+      const cutoff = retentionCutoff(nowFn())
+      const rows = raw
+        .map((r) => normalizeListing(source.id, r))
+        .filter((row) => row.releaseDate === null || row.releaseDate >= cutoff)
       await store.upsertListings(rows)
 
       for (const row of rows) {
@@ -89,7 +94,7 @@ export async function main(): Promise<number> {
     store,
   })
   console.log(JSON.stringify(report, null, 2))
-  return report.ok && report.zeroed.length === 0 ? 0 : 1
+  return report.ok ? 0 : 1
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

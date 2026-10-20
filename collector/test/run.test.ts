@@ -29,3 +29,52 @@ test('collects enabled sources and isolates a failing one', async () => {
   expect(store.upsertProducts).toHaveBeenCalledTimes(1)
   expect(store.linkListingToProduct).toHaveBeenCalledWith(12, 7)
 })
+
+test('scarta in ingresso i prodotti datati oltre la finestra', async () => {
+  const store = {
+    upsertListings: vi.fn().mockResolvedValue(undefined),
+    findListingsByTitle: vi.fn().mockResolvedValue([]),
+    upsertProducts: vi.fn().mockResolvedValue([1]),
+    linkListingToProduct: vi.fn().mockResolvedValue(undefined),
+    markSourceScanned: vi.fn(),
+    logRun: vi.fn(),
+  } as any
+  const adapters = {
+    shopify: async () => [
+      { externalId: '1', title: 'Vecchio', url: 'https://e.com/1', releaseDateRaw: '2025-01-15' },
+      { externalId: '2', title: 'Fresco', url: 'https://e.com/2', releaseDateRaw: '2027-03-01' },
+    ],
+    woocommerce: async () => [], wordpress: async () => [], html: async () => [],
+    headless: async () => [],
+  } as any
+  await runCollector({
+    sources: [src('s1', 'shopify')],
+    adapters,
+    store,
+    now: () => new Date('2026-10-20T00:00:00Z'),
+  })
+  const written = store.upsertListings.mock.calls[0][0]
+  expect(written).toHaveLength(1)
+  expect(written[0].title).toBe('Fresco')
+})
+
+test('una fonte a zero non rende il report non ok', async () => {
+  const store = {
+    upsertListings: vi.fn().mockResolvedValue(undefined),
+    findListingsByTitle: vi.fn().mockResolvedValue([]),
+    upsertProducts: vi.fn().mockResolvedValue([]),
+    linkListingToProduct: vi.fn().mockResolvedValue(undefined),
+    markSourceScanned: vi.fn(),
+    logRun: vi.fn(),
+  } as any
+  const adapters = {
+    shopify: async () => [], woocommerce: async () => [], wordpress: async () => [],
+    html: async () => [], headless: async () => [],
+  } as any
+  const report = await runCollector({
+    sources: [src('s1', 'shopify')], adapters, store,
+    now: () => new Date('2026-10-20T00:00:00Z'),
+  })
+  expect(report.zeroed).toEqual(['s1'])
+  expect(report.ok).toBe(true)
+})
