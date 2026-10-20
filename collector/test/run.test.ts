@@ -108,5 +108,34 @@ test('un fallimento di purgeStale non ferma la raccolta ma rende il report non o
   expect(store.upsertListings).toHaveBeenCalledTimes(1)
   expect(store.markSourceScanned).toHaveBeenCalledWith('s1')
   // Il report finisce in run_log anche quando la purge fallisce.
-  expect(store.logRun).toHaveBeenCalledWith(false, report)
+  expect(store.logRun).toHaveBeenCalledWith(
+    false,
+    report,
+    new Date('2026-10-20T00:00:00Z'),
+  )
+})
+
+test('passa a logRun l istante in cui la run e iniziata', async () => {
+  const store = {
+    upsertListings: vi.fn().mockResolvedValue(undefined),
+    findListingsByTitle: vi.fn().mockResolvedValue([]),
+    upsertProducts: vi.fn().mockResolvedValue([]),
+    linkListingToProduct: vi.fn().mockResolvedValue(undefined),
+    markSourceScanned: vi.fn(),
+    logRun: vi.fn(),
+    purgeStale: vi.fn().mockResolvedValue({ listings: 0, products: 0 }),
+  } as any
+  const adapters = {
+    shopify: async () => [{ externalId: '1', title: 'A', url: 'https://e.com/a' }],
+    woocommerce: async () => [], wordpress: async () => [], html: async () => [],
+    headless: async () => [],
+  } as any
+  const avvio = new Date('2026-10-20T00:00:00Z')
+  const report = await runCollector({
+    sources: [src('s1', 'shopify')], adapters, store,
+    now: () => avvio,
+  })
+  // Il database usa default now() su started_at, che e il timestamp della transazione,
+  // quindi senza un istante esplicito la colonna registra la FINE della run.
+  expect(store.logRun).toHaveBeenCalledWith(true, report, avvio)
 })

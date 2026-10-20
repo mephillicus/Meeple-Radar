@@ -340,3 +340,15 @@ test('purgeStale non emette nessun delete quando la lista e vuota', async () => 
   expect(purged).toEqual({ listings: 0, products: 0 })
   expect(deleteIn).not.toHaveBeenCalled()
 })
+
+test('logRun scrive started_at con l istante di avvio della run', async () => {
+  const insert = vi.fn().mockResolvedValue({ error: null })
+  const from = vi.fn(() => ({ insert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-21T00:00:00Z')
+  const avvio = new Date('2026-10-21T09:30:00Z')
+  await store.logRun(true, { ok: true }, avvio)
+  expect(from).toHaveBeenCalledWith('run_log')
+  // Senza un valore esplicito la colonna cade su default now(), che e il timestamp
+  // della transazione di INSERT: quindi started_at finirebbe per indicare la FINE run.
+  expect(insert.mock.calls[0][0].started_at).toBe('2026-10-21T09:30:00.000Z')
+})

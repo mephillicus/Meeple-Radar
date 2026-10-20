@@ -19,7 +19,7 @@ export interface ListingStore {
   upsertSources(sources: Source[]): Promise<void>
   upsertListings(rows: Listing[]): Promise<void>
   markSourceScanned(sourceId: string): Promise<void>
-  logRun(ok: boolean, details: unknown): Promise<void>
+  logRun(ok: boolean, details: unknown, startedAt: Date): Promise<void>
   findListingsByTitle(normalizedTitle: string): Promise<ListingRow[]>
   findSources(): Promise<{ id: string; name: string }[]>
   upsertProducts(products: Listing[]): Promise<number[]>
@@ -82,10 +82,15 @@ export function createSupabaseStore(
       if (error) throw new Error(`markSourceScanned(${sourceId}): ${error.message}`)
     },
 
-    async logRun(ok: boolean, details: unknown): Promise<void> {
+    async logRun(ok: boolean, details: unknown, startedAt: Date): Promise<void> {
       const { error } = await client
         .from('run_log')
-        .insert({ ok, details, finished_at: now() })
+        .insert({
+          ok,
+          details,
+          started_at: startedAt.toISOString(),
+          finished_at: now(),
+        })
       if (error) throw new Error(`logRun: ${error.message}`)
     },
 

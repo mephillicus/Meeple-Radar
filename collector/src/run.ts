@@ -29,7 +29,8 @@ export async function runCollector(args: {
   const perSource: Record<string, number> = {}
   const failures: Record<string, string> = {}
   const zeroed: string[] = []
-  const cutoff = retentionCutoff(nowFn())
+  const startedAt = nowFn()
+  const cutoff = retentionCutoff(startedAt)
   let purged: RunReport['purged']
   try {
     purged = await store.purgeStale(cutoff)
@@ -89,7 +90,7 @@ export async function runCollector(args: {
 
   const ok = Object.keys(failures).length === 0
   const report: RunReport = { ok, perSource, failures, zeroed, purged }
-  await store.logRun(ok, report)
+  await store.logRun(ok, report, startedAt)
   return report
 }
 
