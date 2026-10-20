@@ -1,9 +1,10 @@
 package com.meepleradar.data.repo
 
+import com.meepleradar.data.local.FavoriteStore
+import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Source
-import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
@@ -26,12 +27,18 @@ interface ListingRepository {
     suspend fun sources(): List<Source>
 
     suspend fun setAction(key: String, action: Action)
+
+    fun lastDbModifiedTimestamp(): Long
 }
 
 class DefaultListingRepository(
     private val api: SupabaseApi,
     private val favoriteStore: FavoriteStore,
+    private val localCacheStore: LocalCacheStore? = null,
 ) : ListingRepository {
+
+    override fun lastDbModifiedTimestamp(): Long =
+        localCacheStore?.load()?.lastModifiedTimestamp ?: 0L
 
     override suspend fun incoming(
         today: LocalDate,
@@ -61,7 +68,13 @@ class DefaultListingRepository(
         return buildItems(ignored, today, sourceIds, includeUndated, includePriceless).filter { it.key in favoriteKeys }
     }
 
-    override suspend fun sources(): List<Source> = api.sources()
+    override suspend fun sources(): List<Source> {
+        val cached = localCacheStore?.load()
+        if (cached != null && cached.sources.isNotEmpty()) {
+            return cached.sources
+        }
+        return api.sources()
+    }
 
     override suspend fun setAction(key: String, action: Action) {
         val (kind, id) = parseKey(key)
@@ -89,11 +102,32 @@ class DefaultListingRepository(
         includeUndated: Boolean,
         includePriceless: Boolean,
     ): List<IncomingItem> {
-        val products = runCatching { api.products() }.getOrDefault(emptyList()).associateBy { it.id }
+        var cached = localCacheStore?.load()
+
+        val remoteListings = runCatching { api.listings() }.getOrDefault(cached?.listings.orEmpty())
+        val remoteGames = runCatching { api.games() }.getOrDefault(cached?.games.orEmpty())
+        val remoteSources = runCatching { api.sources() }.getOrDefault(cached?.sources.orEmpty())
+        val remoteProducts = runCatching { api.products() }.getOrDefault(cached?.products.orEmpty())
+
+        if (localCacheStore != null && remoteListings.isNotEmpty()) {
+            val (updatedDb, _) = localCacheStore.saveIfChanged(
+                newListings = remoteListings,
+                newGames = remoteGames,
+                newSources = remoteSources,
+                newProducts = remoteProducts,
+            )
+            cached = updatedDb
+        }
+
+        val listings = cached?.listings?.takeIf { it.isNotEmpty() } ?: remoteListings
+        val games = (cached?.games?.takeIf { it.isNotEmpty() } ?: remoteGames).associateBy { it.id }
+        val sources = (cached?.sources?.takeIf { it.isNotEmpty() } ?: remoteSources).associateBy { it.id }
+        val products = (cached?.products?.takeIf { it.isNotEmpty() } ?: remoteProducts).associateBy { it.id }
+
         return buildIncomingItems(
-            listings = api.listings(),
-            games = api.games().associateBy { it.id },
-            sources = api.sources().associateBy { it.id },
+            listings = listings,
+            games = games,
+            sources = sources,
             ignoredKeys = ignoredKeys,
             today = today,
             sourceIds = sourceIds,

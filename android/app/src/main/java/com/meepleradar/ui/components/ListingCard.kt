@@ -119,6 +119,31 @@ fun ListingCard(
                     )
                 }
 
+                // Source Store Badge
+                val sourceText = androidx.compose.runtime.remember(item.offers) {
+                    val names = item.offers.map { it.sourceName }.distinct()
+                    when {
+                        names.isEmpty() -> "N/D"
+                        names.size == 1 -> names.first()
+                        names.size == 2 -> "${names[0]} · ${names[1]}"
+                        else -> "${names[0]} +${names.size - 1}"
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Text(
+                        text = "Fonte: $sourceText",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+
                 // Price and Store Count Badges
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

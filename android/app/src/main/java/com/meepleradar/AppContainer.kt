@@ -2,6 +2,7 @@ package com.meepleradar
 
 import android.content.Context
 import com.meepleradar.data.local.SharedPreferencesFavoriteStore
+import com.meepleradar.data.local.SharedPreferencesLocalCacheStore
 import com.meepleradar.data.remote.BoardGameGeekImageLookup
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.data.remote.GeekGroupApi
@@ -36,5 +37,6 @@ class AppContainer(context: Context) {
     val repository: ListingRepository = DefaultListingRepository(
         api = api,
         favoriteStore = SharedPreferencesFavoriteStore(context.applicationContext),
+        localCacheStore = SharedPreferencesLocalCacheStore(context.applicationContext, json),
     )
 }

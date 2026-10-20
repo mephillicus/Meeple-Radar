@@ -60,6 +60,8 @@ class IncomingViewModelTest {
             actionFailure?.let { throw it }
             actions += key to action
         }
+
+        override fun lastDbModifiedTimestamp(): Long = 0L
     }
 
     private fun item(key: String, title: String) = IncomingItem(

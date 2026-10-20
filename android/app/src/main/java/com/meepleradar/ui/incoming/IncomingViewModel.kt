@@ -41,6 +41,9 @@ class IncomingViewModel(
     private val _hidePriceless = MutableStateFlow<Boolean>(false)
     val hidePriceless: StateFlow<Boolean> = _hidePriceless.asStateFlow()
 
+    private val _lastModifiedTimestamp = MutableStateFlow<Long>(repo.lastDbModifiedTimestamp())
+    val lastModifiedTimestamp: StateFlow<Long> = _lastModifiedTimestamp.asStateFlow()
+
     init {
         loadSources()
     }
@@ -63,20 +66,20 @@ class IncomingViewModel(
         _state.value = IncomingUiState.Loading
         viewModelScope.launch {
             _state.value = try {
-                IncomingUiState.Content(
-                    items = repo.incoming(
-                        today = today,
-                        sourceIds = _selectedSources.value,
-                        includeUndated = !_hideUndated.value,
-                        includePriceless = !_hidePriceless.value,
-                    ),
-                    favorites = repo.favorites(
-                        today = today,
-                        sourceIds = _selectedSources.value,
-                        includeUndated = !_hideUndated.value,
-                        includePriceless = !_hidePriceless.value,
-                    ).map { it.key }.toSet(),
+                val items = repo.incoming(
+                    today = today,
+                    sourceIds = _selectedSources.value,
+                    includeUndated = !_hideUndated.value,
+                    includePriceless = !_hidePriceless.value,
                 )
+                val favorites = repo.favorites(
+                    today = today,
+                    sourceIds = _selectedSources.value,
+                    includeUndated = !_hideUndated.value,
+                    includePriceless = !_hidePriceless.value,
+                ).map { it.key }.toSet()
+                _lastModifiedTimestamp.value = repo.lastDbModifiedTimestamp()
+                IncomingUiState.Content(items = items, favorites = favorites)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

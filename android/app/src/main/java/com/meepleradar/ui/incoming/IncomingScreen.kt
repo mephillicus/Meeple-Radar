@@ -67,6 +67,7 @@ fun IncomingScreen(
     val selectedSources by vm.selectedSources.collectAsStateWithLifecycle()
     val hideUndated by vm.hideUndated.collectAsStateWithLifecycle()
     val hidePriceless by vm.hidePriceless.collectAsStateWithLifecycle()
+    val lastModifiedTimestamp by vm.lastModifiedTimestamp.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -107,6 +108,7 @@ fun IncomingScreen(
             Column(modifier = Modifier.fillMaxSize().padding(padding)) {
                 val selSources = selectedSources
                 IncomingTopBar(
+                    lastModifiedTimestamp = lastModifiedTimestamp,
                     hasActiveFilters = hideUndated || hidePriceless || (selSources != null && selSources.size < sources.size),
                     onOpenFilters = { scope.launch { drawerState.open() } },
                     onRefresh = { vm.refresh() },
@@ -146,8 +148,17 @@ fun IncomingScreen(
     }
 }
 
+private fun formatTimestamp(timestamp: Long): String {
+    if (timestamp <= 0L) return "in attesa..."
+    val instant = java.time.Instant.ofEpochMilli(timestamp)
+    val localDateTime = java.time.LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm", java.util.Locale.ITALIAN)
+    return localDateTime.format(formatter)
+}
+
 @Composable
 private fun IncomingTopBar(
+    lastModifiedTimestamp: Long,
     hasActiveFilters: Boolean,
     onOpenFilters: () -> Unit,
     onRefresh: () -> Unit,
@@ -169,6 +180,11 @@ private fun IncomingTopBar(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text("In arrivo", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         Row(
