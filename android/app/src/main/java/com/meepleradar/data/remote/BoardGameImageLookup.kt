@@ -71,13 +71,32 @@ class BoardGameGeekImageLookup(
             }
 
             val ids = findIdsByName(title, bggId).take(MAX_NAME_MATCHES)
+            var bestDetails: BoardGameDetails? = null
+            var bestScore = -1
+
             for (id in ids.distinct()) {
-                detailsCache[id]?.let { return@withPermit it }
-                val details = detailsFromThing(id)
+                val details = detailsCache[id] ?: detailsFromThing(id)
                 detailsCache[id] = details
-                if (details != null) return@withPermit details
+                if (details != null) {
+                    val desc = details.description.orEmpty()
+                    val normDesc = normalize(desc)
+                    var score = 100
+
+                    val titleWords = title.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 4 }
+                    for (word in titleWords) {
+                        val normWord = normalize(word)
+                        if (normWord !in COMMON_WORDS && normDesc.contains(normWord)) {
+                            score += 200
+                        }
+                    }
+
+                    if (score > bestScore) {
+                        bestScore = score
+                        bestDetails = details
+                    }
+                }
             }
-            null
+            bestDetails
         }
     }
 
@@ -92,26 +111,54 @@ class BoardGameGeekImageLookup(
     }
 
     private suspend fun findIdsByName(title: String, excludedId: Int?): List<Int> {
-        val clean = title.replace(Regex("\\(.*?\\)"), "").replace(Regex("[-–—].*"), "").trim()
+        if (title.isBlank()) return emptyList()
+
+        val clean = title.replace(Regex("\\(.*?\\)"), "").trim()
         val query = if (clean.isBlank()) title else clean
-        if (query.isBlank()) return emptyList()
 
-        var ids = searchBggIds(query, title, excludedId)
-        if (ids.isNotEmpty()) return ids
+        var htmlIds = searchBggHtmlIds(query, excludedId)
+        if (htmlIds.isNotEmpty()) return htmlIds
 
-        val words = query.split(Regex("\\s+")).filter { it.length > 2 }
-        if (words.size > 2) {
+        val withoutHyphen = query.replace(Regex("[-–—].*"), "").trim()
+        if (withoutHyphen != query && withoutHyphen.isNotBlank()) {
+            htmlIds = searchBggHtmlIds(withoutHyphen, excludedId)
+            if (htmlIds.isNotEmpty()) return htmlIds
+        }
+
+        val words = query.replace(Regex("[-–—].*"), "").replace(Regex("[^\\p{L}\\p{N}\\s]"), " ").split(Regex("\\s+")).filter { it.length > 2 }
+        if (words.isNotEmpty()) {
             val shortQuery = words.take(3).joinToString(" ")
-            ids = searchBggIds(shortQuery, title, excludedId)
+            val ids = searchBggIds(shortQuery, title, excludedId)
             if (ids.isNotEmpty()) return ids
         }
+
+        val ids = searchBggIds(query, title, excludedId)
+        if (ids.isNotEmpty()) return ids
 
         return emptyList()
     }
 
+    private suspend fun searchBggHtmlIds(query: String, excludedId: Int?): List<Int> {
+        val cleanQuery = query.replace(Regex("[^\\p{L}\\p{N}\\s]"), " ").trim().replace(Regex("\\s+"), " ")
+        if (cleanQuery.isBlank()) return emptyList()
+
+        val searchUrl = "https://boardgamegeek.com/search/boardgame?q=${java.net.URLEncoder.encode(cleanQuery, "UTF-8")}"
+        val htmlText = runCatching { transport.get(searchUrl, XML_HEADERS) }.getOrNull() ?: return emptyList()
+
+        val regex = Regex("""/boardgame/(\d+)/""")
+        return regex.findAll(htmlText)
+            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .filterNot { it == excludedId }
+            .distinct()
+            .toList()
+    }
+
     private suspend fun searchBggIds(query: String, originalTitle: String, excludedId: Int?): List<Int> {
+        val cleanQuery = query.replace(Regex("[^\\p{L}\\p{N}\\s]"), " ").trim().replace(Regex("\\s+"), " ")
+        if (cleanQuery.isBlank()) return emptyList()
+
         val searchUrl = endpoint("search") {
-            addQueryParameter("query", query)
+            addQueryParameter("query", cleanQuery)
             addQueryParameter("type", "boardgame,boardgameexpansion")
         }
         val xmlText = runCatching { transport.get(searchUrl, XML_HEADERS) }.getOrNull() ?: return emptyList()
@@ -137,13 +184,16 @@ class BoardGameGeekImageLookup(
             var bestScore = 0
             for (name in nameList) {
                 val normName = normalize(name)
-                when {
-                    normName == normOriginal -> bestScore = maxOf(bestScore, 100)
-                    normName == normQuery -> bestScore = maxOf(bestScore, 90)
-                    normOriginal.isNotEmpty() && normName.isNotEmpty() && (normOriginal.contains(normName) || normName.contains(normOriginal)) -> bestScore = maxOf(bestScore, 80)
-                    normQuery.length >= 4 && normName.contains(normQuery) -> bestScore = maxOf(bestScore, 70)
-                    normQuery.length >= 4 && normQuery.contains(normName) -> bestScore = maxOf(bestScore, 60)
+                val score = when {
+                    normName == normOriginal -> 1000
+                    normName == normQuery -> 900
+                    normOriginal.isNotEmpty() && normName.isNotEmpty() && normOriginal.contains(normName) -> 500 + normName.length
+                    normOriginal.isNotEmpty() && normName.isNotEmpty() && normName.contains(normOriginal) -> 400 + normOriginal.length
+                    normQuery.length >= 4 && normName.contains(normQuery) -> 300 + normName.length
+                    normQuery.length >= 4 && normQuery.contains(normName) -> 200 + normName.length
+                    else -> 0
                 }
+                bestScore = maxOf(bestScore, score)
             }
 
             if (bestScore > 0) {
@@ -151,7 +201,12 @@ class BoardGameGeekImageLookup(
             }
         }
 
-        return candidates.sortedByDescending { it.second }.map { it.first }.distinct()
+        val matched = candidates.sortedByDescending { it.second }.map { it.first }.distinct()
+        if (matched.isNotEmpty()) return matched
+
+        return items.mapNotNull { it.attributes?.getNamedItem("id")?.nodeValue?.toIntOrNull() }
+            .filterNot { it == excludedId }
+            .distinct()
     }
 
     private suspend fun detailsFromThing(id: Int): BoardGameDetails? {
@@ -299,5 +354,6 @@ class BoardGameGeekImageLookup(
         val GAME_TYPES = setOf("boardgame", "boardgameexpansion")
         val XML_HEADERS = mapOf("Accept" to "application/xml", "User-Agent" to "MeepleRadar/1.0")
         val JSON_HEADERS = mapOf("Accept" to "application/json", "User-Agent" to "MeepleRadar/1.0")
+        val COMMON_WORDS = setOf("game", "edition", "set", "gioco", "rosso", "verde", "blu", "box", "boardgame", "expansion", "oscuro", "signore")
     }
 }

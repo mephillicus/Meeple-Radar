@@ -60,7 +60,7 @@ class BoardGameImageLookupTest {
         val image = BoardGameGeekImageLookup(transport).findImage("Catan", null)
 
         assertEquals("https://cf.geekdo-images.com/catan.jpg", image)
-        val nonApiUrls = transport.urls.filter { !it.contains("api.geekdo.com") }
+        val nonApiUrls = transport.urls.filter { !it.contains("api.geekdo.com") && !it.contains("search/boardgame") }
         assertEquals(2, nonApiUrls.size)
         assertTrue(nonApiUrls[0].contains("query=Catan"))
         assertTrue(nonApiUrls[1].contains("id=13"))
@@ -144,5 +144,25 @@ class BoardGameImageLookupTest {
         assertEquals("https://cf.geekdo-images.com/luxastra.jpg", details?.imageUrl)
         assertEquals(2023, details?.yearPublished)
         assertEquals(4, details?.minPlayers)
+    }
+
+    @Test
+    fun `prova reale live BGG per item 389407`() = runTest {
+        val transport = OkHttpTransport(okhttp3.OkHttpClient())
+        val lookup = BoardGameGeekImageLookup(transport)
+
+        val details = lookup.findDetails("Sì, Oscuro Signore!", 389407)
+        println("LIVE BGG DETAILS: $details")
+        println("DESCRIPTION: ${details?.description}")
+    }
+
+    @Test
+    fun `prova reale live BGG senza ID per Si Oscuro Signore Luxastra`() = runTest {
+        val transport = OkHttpTransport(okhttp3.OkHttpClient())
+        val lookup = BoardGameGeekImageLookup(transport)
+
+        val details = lookup.findDetails("Sì, Oscuro Signore! – Set Rosso (Luxastra Edition)", null)
+        println("LIVE SEARCH WITHOUT ID DETAILS: $details")
+        println("DESCRIPTION: ${details?.description}")
     }
 }
