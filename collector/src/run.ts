@@ -28,13 +28,13 @@ export async function runCollector(args: {
   const perSource: Record<string, number> = {}
   const failures: Record<string, string> = {}
   const zeroed: string[] = []
+  const cutoff = retentionCutoff(nowFn())
 
   for (const source of sources) {
     if (!source.enabled) continue
     try {
       const raw = await adapters[source.kind](source)
       if (raw.length === 0) zeroed.push(source.id)
-      const cutoff = retentionCutoff(nowFn())
       const rows = raw
         .map((r) => normalizeListing(source.id, r))
         .filter((row) => row.releaseDate === null || row.releaseDate >= cutoff)
