@@ -7,6 +7,7 @@ import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Source
 import com.meepleradar.data.repo.ListingRepository
 import java.time.LocalDate
+import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,12 +54,20 @@ class IncomingViewModel(
     private val _syncProgress = MutableStateFlow<SyncProgressState>(SyncProgressState.Idle)
     val syncProgress: StateFlow<SyncProgressState> = _syncProgress.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
     private var rawItems: List<IncomingItem> = emptyList()
     private var rawFavorites: Set<String> = emptySet()
 
     init {
         loadSources()
         refresh() // Load database immediately on start
+    }
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+        updateFilteredState()
     }
 
     fun applyFilters(sourceIds: Set<String>?, hideUndated: Boolean, hidePriceless: Boolean = false) {
@@ -72,6 +81,7 @@ class IncomingViewModel(
         _selectedSources.value = null
         _hideUndated.value = false
         _hidePriceless.value = false
+        _searchQuery.value = ""
         updateFilteredState()
     }
 
@@ -113,12 +123,27 @@ class IncomingViewModel(
         val sourceIds = _selectedSources.value
         val hideUndated = _hideUndated.value
         val hidePriceless = _hidePriceless.value
+        val query = _searchQuery.value.trim()
+
+        val queryWords = if (query.length >= 3) {
+            query.lowercase(Locale.ROOT).split(Regex("\\s+")).filter { it.isNotBlank() }
+        } else {
+            emptyList()
+        }
 
         val filtered = rawItems.filter { item ->
             val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
             val dateMatch = !hideUndated || item.releaseDate != null
             val priceMatch = !hidePriceless || item.offers.any { it.price != null }
-            sourceMatch && dateMatch && priceMatch
+
+            val searchMatch = if (queryWords.isEmpty()) {
+                true
+            } else {
+                val titleLower = item.title.lowercase(Locale.ROOT)
+                queryWords.all { word -> titleLower.contains(word) }
+            }
+
+            sourceMatch && dateMatch && priceMatch && searchMatch
         }
 
         _state.value = IncomingUiState.Content(items = filtered, favorites = rawFavorites)

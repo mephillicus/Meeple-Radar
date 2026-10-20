@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -78,6 +80,7 @@ fun IncomingScreen(
     val hidePriceless by vm.hidePriceless.collectAsStateWithLifecycle()
     val lastModifiedTimestamp by vm.lastModifiedTimestamp.collectAsStateWithLifecycle()
     val syncProgress by vm.syncProgress.collectAsStateWithLifecycle()
+    val searchQueryState by vm.searchQuery.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -124,26 +127,66 @@ fun IncomingScreen(
                     onRefresh = { vm.refresh() },
                     timestampText = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
                     trailingContent = {
-                        Button(
-                            onClick = { scope.launch { drawerState.open() } },
-                            colors = if (hasActiveFilters) {
-                                ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                                )
-                            } else {
-                                ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                )
-                            },
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.Settings,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp).padding(end = 4.dp),
+                            var searchQuery by remember(searchQueryState) { mutableStateOf(searchQueryState) }
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = {
+                                    searchQuery = it
+                                    vm.setSearchQuery(it)
+                                },
+                                placeholder = { Text("Cerca...", style = MaterialTheme.typography.bodySmall) },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .width(130.dp)
+                                    .height(44.dp),
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                shape = RoundedCornerShape(12.dp),
+                                leadingIcon = {
+                                    Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(14.dp))
+                                },
+                                trailingIcon = if (searchQuery.isNotEmpty()) {
+                                    {
+                                        IconButton(
+                                            onClick = {
+                                                searchQuery = ""
+                                                vm.setSearchQuery("")
+                                            },
+                                            modifier = Modifier.size(20.dp),
+                                        ) {
+                                            Icon(Icons.Filled.Close, contentDescription = "Cancella", modifier = Modifier.size(12.dp))
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
                             )
-                            Text(if (hasActiveFilters) "Filtri attivi" else "Filtri")
+
+                            Button(
+                                onClick = { scope.launch { drawerState.open() } },
+                                colors = if (hasActiveFilters) {
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                                    )
+                                } else {
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Settings,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
+                                )
+                                Text("Filtri", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     },
                 )
