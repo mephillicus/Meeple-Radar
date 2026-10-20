@@ -155,15 +155,8 @@ class BoardGameGeekImageLookup(
     }
 
     private suspend fun detailsFromThing(id: Int): BoardGameDetails? {
-        if (geekGroupApi != null) {
-            val ggDetails = runCatching { geekGroupApi?.getGameDetails(id) }.getOrNull()
-            if (ggDetails != null && !ggDetails.imageUrl.isNullOrBlank()) {
-                return ggDetails
-            }
-        }
-
         val jsonUrl = "https://api.geekdo.com/api/geekitems?objectid=$id&objecttype=thing"
-        val parsed = runCatching {
+        val bggDetails = runCatching {
             val responseText = transport.get(jsonUrl, JSON_HEADERS)
             if (responseText.isNotBlank()) {
                 parseGeekDoJson(id, responseText)
@@ -172,7 +165,16 @@ class BoardGameGeekImageLookup(
             }
         }.getOrNull()
 
-        if (parsed != null) return parsed
+        if (bggDetails != null && (!bggDetails.description.isNullOrBlank() || !bggDetails.imageUrl.isNullOrBlank())) {
+            return bggDetails
+        }
+
+        if (geekGroupApi != null) {
+            val ggDetails = runCatching { geekGroupApi?.getGameDetails(id) }.getOrNull()
+            if (ggDetails != null) {
+                return ggDetails
+            }
+        }
 
         return runCatching { detailsFromXmlThing(id) }.getOrNull()
     }
