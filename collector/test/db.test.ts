@@ -103,3 +103,68 @@ test('upsertProducts non passa il returning v1', async () => {
   await store.upsertProducts([listing('A')])
   expect(upsert.mock.calls[0][1]).not.toHaveProperty('returning')
 })
+
+test('purgeStale scarta solo le righe datate oltre before, o senza data e non viste da before', async () => {
+  const rows = [{ id: 1 }, { id: 3 }]
+  const notFn = vi.fn().mockReturnValue({ lt: vi.fn().mockResolvedValue({ data: [{ id: 1 }], error: null }) })
+  const isFn = vi.fn().mockReturnValue({ lt: vi.fn().mockResolvedValue({ data: [{ id: 3 }], error: null }) })
+  const select = vi.fn(() => ({ not: notFn, is: isFn }))
+  const deleteIn = vi.fn().mockResolvedValue({ error: null })
+  const productSelect = vi.fn().mockReturnValue({ lt: vi.fn().mockResolvedValue({ data: [], error: null }) })
+  const productFrom = vi.fn(() => ({ select: productSelect, delete: () => ({ in: deleteIn }) }))
+  const listingFrom = vi.fn(() => ({ select, delete: () => ({ in: deleteIn }) }))
+  const userFrom = vi.fn(() => ({
+    select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ not: vi.fn().mockResolvedValue({ data: [], error: null }) }) }),
+  }))
+  const from = vi.fn((table: string) =>
+    table === 'product' ? productFrom() : table === 'user_action' ? userFrom() : listingFrom())
+  const store = createSupabaseStore({ from } as any)
+  const purged = await store.purgeStale('2025-10-20')
+  expect(notFn).toHaveBeenCalledWith('release_date', 'is', null)
+  expect(isFn).toHaveBeenCalledWith('release_date', null)
+  expect(purged.listings).toBe(2)
+  expect(deleteIn).toHaveBeenCalledWith('id', rows.map((r) => r.id))
+})
+
+test('purgeStale non cancella le preferite e non cancella un prodotto referenziato', async () => {
+  const favorite = [{ listing_id: 9 }]
+  const staleListings = [{ id: 1 }, { id: 9 }]
+  const notRelease = vi.fn().mockReturnValue({ lt: vi.fn().mockResolvedValue({ data: staleListings, error: null }) })
+  const notProduct = vi.fn().mockResolvedValue({ data: [{ product_id: 50 }], error: null })
+  const isFn = vi.fn().mockReturnValue({ lt: vi.fn().mockResolvedValue({ data: [], error: null }) })
+  const selectListing = vi.fn(() => ({
+    not: (column: string) => (column === 'release_date' ? notRelease() : notProduct()),
+    is: isFn,
+  }))
+  const deleteIn = vi.fn().mockResolvedValue({ error: null })
+  const listingFrom = vi.fn(() => ({ select: selectListing, delete: () => ({ in: deleteIn }) }))
+  const userActionSelect = vi.fn().mockReturnValue({
+    eq: vi.fn().mockReturnValue({ not: vi.fn().mockResolvedValue({ data: favorite, error: null }) }),
+  })
+  const userFrom = vi.fn(() => ({ select: userActionSelect }))
+  const productSelect = vi.fn().mockReturnValue({
+    lt: vi.fn().mockResolvedValue({ data: [{ id: 50 }], error: null }),
+  })
+  const productFrom = vi.fn(() => ({
+    select: productSelect,
+    delete: () => ({ in: vi.fn().mockResolvedValue({ error: null }) }),
+  }))
+  const from = vi.fn((table: string) =>
+    table === 'product' ? productFrom() : table === 'user_action' ? userFrom() : listingFrom())
+  const store = createSupabaseStore({ from } as any)
+  const purged = await store.purgeStale('2025-10-20')
+  expect(purged.listings).toBe(1)
+  expect(deleteIn).toHaveBeenCalledWith('id', [1])
+  expect(purged.products).toBe(0)
+})
+
+test('purgeStale restituisce zeri senza cancellare nulla quando non c\'e niente di vecchio', async () => {
+  const empty = vi.fn().mockResolvedValue({ data: [], error: null })
+  const notFn = vi.fn().mockReturnValue({ lt: vi.fn().mockResolvedValue({ data: [], error: null }) })
+  const isFn = vi.fn().mockReturnValue({ lt: vi.fn().mockResolvedValue({ data: [], error: null }) })
+  const eqFn = vi.fn().mockReturnValue({ not: empty })
+  const from = vi.fn(() => ({ select: vi.fn(() => ({ not: notFn, is: isFn, lt: empty, eq: eqFn })), delete: () => ({ in: empty }) }))
+  const store = createSupabaseStore({ from } as any)
+  const purged = await store.purgeStale('2025-10-20')
+  expect(purged).toEqual({ listings: 0, products: 0 })
+})

@@ -16,6 +16,7 @@ export type RunReport = {
   perSource: Record<string, number>
   failures: Record<string, string>
   zeroed: string[]
+  purged?: { listings: number; products: number }
 }
 
 export async function runCollector(args: {
@@ -29,6 +30,7 @@ export async function runCollector(args: {
   const failures: Record<string, string> = {}
   const zeroed: string[] = []
   const cutoff = retentionCutoff(nowFn())
+  const purged = await store.purgeStale(cutoff)
 
   for (const source of sources) {
     if (!source.enabled) continue
@@ -79,7 +81,7 @@ export async function runCollector(args: {
   }
 
   const ok = Object.keys(failures).length === 0
-  const report: RunReport = { ok, perSource, failures, zeroed }
+  const report: RunReport = { ok, perSource, failures, zeroed, purged }
   await store.logRun(ok, report)
   return report
 }

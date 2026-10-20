@@ -14,6 +14,7 @@ test('collects enabled sources and isolates a failing one', async () => {
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
+    purgeStale: vi.fn().mockResolvedValue({ listings: 0, products: 0 }),
   } as any
   const adapters = {
     shopify: async () => [{ externalId: '1', title: 'A', url: 'https://e.com/a' }],
@@ -38,6 +39,7 @@ test('scarta in ingresso i prodotti datati oltre la finestra', async () => {
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
+    purgeStale: vi.fn().mockResolvedValue({ listings: 0, products: 0 }),
   } as any
   const adapters = {
     shopify: async () => [
@@ -66,6 +68,7 @@ test('una fonte a zero non rende il report non ok', async () => {
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
+    purgeStale: vi.fn().mockResolvedValue({ listings: 0, products: 0 }),
   } as any
   const adapters = {
     shopify: async () => [], woocommerce: async () => [], wordpress: async () => [],

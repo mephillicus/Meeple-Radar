@@ -24,6 +24,7 @@ export interface ListingStore {
   findSources(): Promise<{ id: string; name: string }[]>
   upsertProducts(products: Listing[]): Promise<number[]>
   linkListingToProduct(listingId: number, productId: number): Promise<void>
+  purgeStale(before: string): Promise<{ listings: number; products: number }>
 }
 
 type SupabaseLike = { from(table: string): any }
@@ -145,6 +146,55 @@ export function createSupabaseStore(
         .update({ product_id: productId })
         .eq('id', listingId)
       if (error) throw new Error(`linkListingToProduct(${listingId}, ${productId}): ${error.message}`)
+    },
+
+    async purgeStale(before: string): Promise<{ listings: number; products: number }> {
+      const dated = await client
+        .from('listing')
+        .select('id')
+        .not('release_date', 'is', null)
+        .lt('release_date', before)
+      if (dated.error) throw new Error(`purgeStale: ${dated.error.message}`)
+      const undated = await client
+        .from('listing')
+        .select('id')
+        .is('release_date', null)
+        .lt('last_seen_at', before)
+      if (undated.error) throw new Error(`purgeStale: ${undated.error.message}`)
+      const stale = [...(dated.data ?? []), ...(undated.data ?? [])]
+        .map((row: Record<string, unknown>) => Number(row.id))
+
+      const favorites = await client
+        .from('user_action')
+        .select('listing_id')
+        .eq('action', 'favorite')
+        .not('listing_id', 'is', null)
+      if (favorites.error) throw new Error(`purgeStale: ${favorites.error.message}`)
+      const favoriteIds = (favorites.data ?? [])
+        .map((row: Record<string, unknown>) => Number(row.listing_id))
+
+      const toDelete = stale.filter((id) => !favoriteIds.includes(id))
+      const deletedListings = await client.from('listing').delete().in('id', toDelete)
+      if (deletedListings.error) throw new Error(`purgeStale: ${deletedListings.error.message}`)
+
+      const staleProducts = await client.from('product').select('id').lt('release_date', before)
+      if (staleProducts.error) throw new Error(`purgeStale: ${staleProducts.error.message}`)
+      const staleProductIds: number[] = (staleProducts.data ?? [])
+        .map((row: Record<string, unknown>) => Number(row.id))
+
+      const referenced = await client
+        .from('listing')
+        .select('product_id')
+        .not('product_id', 'is', null)
+      if (referenced.error) throw new Error(`purgeStale: ${referenced.error.message}`)
+      const referencedIds = new Set((referenced.data ?? [])
+        .map((row: Record<string, unknown>) => Number(row.product_id)))
+
+      const orphan = staleProductIds.filter((id) => !referencedIds.has(id))
+      const deletedProducts = await client.from('product').delete().in('id', orphan)
+      if (deletedProducts.error) throw new Error(`purgeStale: ${deletedProducts.error.message}`)
+
+      return { listings: toDelete.length, products: orphan.length }
     },
   }
 }
