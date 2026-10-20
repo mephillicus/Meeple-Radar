@@ -179,8 +179,7 @@ fun IncomingScreen(
                                 placeholder = { Text("Cerca...", style = MaterialTheme.typography.bodySmall) },
                                 singleLine = true,
                                 modifier = Modifier
-                                    .width(110.dp)
-                                    .height(40.dp),
+                                    .width(120.dp),
                                 textStyle = MaterialTheme.typography.bodySmall,
                                 shape = RoundedCornerShape(12.dp),
                                 leadingIcon = {
