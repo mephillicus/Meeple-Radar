@@ -173,13 +173,9 @@ fun IncomingScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            var searchQuery by remember(searchQueryState) { mutableStateOf(searchQueryState) }
                             OutlinedTextField(
-                                value = searchQuery,
-                                onValueChange = {
-                                    searchQuery = it
-                                    vm.setSearchQuery(it)
-                                },
+                                value = searchQueryState,
+                                onValueChange = { vm.setSearchQuery(it) },
                                 placeholder = { Text("Cerca...", style = MaterialTheme.typography.bodySmall) },
                                 singleLine = true,
                                 modifier = Modifier
@@ -190,13 +186,10 @@ fun IncomingScreen(
                                 leadingIcon = {
                                     Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(14.dp))
                                 },
-                                trailingIcon = if (searchQuery.isNotEmpty()) {
+                                trailingIcon = if (searchQueryState.isNotEmpty()) {
                                     {
                                         IconButton(
-                                            onClick = {
-                                                searchQuery = ""
-                                                vm.setSearchQuery("")
-                                            },
+                                            onClick = { vm.setSearchQuery("") },
                                             modifier = Modifier.size(18.dp),
                                         ) {
                                             Icon(Icons.Filled.Close, contentDescription = "Cancella", modifier = Modifier.size(12.dp))

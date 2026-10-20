@@ -1,20 +1,30 @@
 package com.meepleradar.ui.nav
 
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -62,10 +72,33 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         icon = { Icon(Icons.Filled.Home, contentDescription = null) },
                         label = { Text("In arrivo") },
                     )
+                    val newlyAddedCount = container.repository.newlyAddedCount()
                     NavigationBarItem(
                         selected = currentRoute == ROUTE_NEWS,
                         onClick = { navController.switchTab(ROUTE_NEWS) },
-                        icon = { Icon(MeepleVector, contentDescription = null) },
+                        icon = {
+                            Box {
+                                Icon(MeepleVector, contentDescription = null, modifier = Modifier.size(24.dp))
+                                if (newlyAddedCount > 0) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = 10.dp, y = (-4).dp),
+                                    ) {
+                                        Text(
+                                            text = "$newlyAddedCount",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 9.sp,
+                                            color = MaterialTheme.colorScheme.onTertiary,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        },
                         label = { Text("Novità") },
                     )
                     NavigationBarItem(
