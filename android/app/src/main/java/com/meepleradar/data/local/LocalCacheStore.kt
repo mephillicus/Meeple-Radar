@@ -69,20 +69,30 @@ class SharedPreferencesLocalCacheStore(
     ): Pair<CachedDatabase, Boolean> {
         val current = load()
 
-        val listingsChanged = current?.listings != newListings
-        val gamesChanged = current?.games != newGames
-        val sourcesChanged = current?.sources != newSources
-        val productsChanged = current?.products != newProducts
+        val sortedNewListings = newListings.sortedBy { it.id }
+        val sortedNewGames = newGames.sortedBy { it.id }
+        val sortedNewSources = newSources.sortedBy { it.id }
+        val sortedNewProducts = newProducts.sortedBy { it.id }
+
+        val sortedCurrentListings = current?.listings?.sortedBy { it.id }
+        val sortedCurrentGames = current?.games?.sortedBy { it.id }
+        val sortedCurrentSources = current?.sources?.sortedBy { it.id }
+        val sortedCurrentProducts = current?.products?.sortedBy { it.id }
+
+        val listingsChanged = sortedCurrentListings != sortedNewListings
+        val gamesChanged = sortedCurrentGames != sortedNewGames
+        val sourcesChanged = sortedCurrentSources != sortedNewSources
+        val productsChanged = sortedCurrentProducts != sortedNewProducts
 
         val hasChanges = current == null || listingsChanged || gamesChanged || sourcesChanged || productsChanged
 
         val timestamp = if (hasChanges) System.currentTimeMillis() else (current?.lastModifiedTimestamp ?: System.currentTimeMillis())
 
         if (hasChanges) {
-            val dtoListings = newListings.map { CachedListing.from(it) }
-            val dtoGames = newGames.map { CachedGame.from(it) }
-            val dtoSources = newSources.map { CachedSource.from(it) }
-            val dtoProducts = newProducts.map { CachedProduct.from(it) }
+            val dtoListings = sortedNewListings.map { CachedListing.from(it) }
+            val dtoGames = sortedNewGames.map { CachedGame.from(it) }
+            val dtoSources = sortedNewSources.map { CachedSource.from(it) }
+            val dtoProducts = sortedNewProducts.map { CachedProduct.from(it) }
 
             preferences.edit()
                 .putString(KEY_LISTINGS, json.encodeToString(dtoListings))
@@ -94,10 +104,10 @@ class SharedPreferencesLocalCacheStore(
         }
 
         val updatedDb = CachedDatabase(
-            listings = newListings,
-            games = newGames,
-            sources = newSources,
-            products = newProducts,
+            listings = sortedNewListings,
+            games = sortedNewGames,
+            sources = sortedNewSources,
+            products = sortedNewProducts,
             lastModifiedTimestamp = timestamp,
         )
 

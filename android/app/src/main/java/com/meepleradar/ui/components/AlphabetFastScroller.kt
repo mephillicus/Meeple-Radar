@@ -74,9 +74,10 @@ fun AlphabetFastScroller(
     }
 
     val firstVisibleIndex = lazyListState.firstVisibleItemIndex
-    val currentLetter = remember(firstVisibleIndex, items) {
-        if (items.isNotEmpty() && firstVisibleIndex in items.indices) {
-            items[firstVisibleIndex].title.trim().uppercase(Locale.ROOT).firstOrNull()?.takeIf { it.isLetter() } ?: '#'
+    val safeIndex = if (items.isNotEmpty()) firstVisibleIndex.coerceIn(0, items.lastIndex) else 0
+    val currentLetter = remember(safeIndex, items) {
+        if (items.isNotEmpty()) {
+            items[safeIndex].title.trim().uppercase(Locale.ROOT).firstOrNull()?.takeIf { it.isLetter() } ?: '#'
         } else {
             null
         }
