@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -265,117 +266,100 @@ private fun FilterDrawerContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Filtri e Opzioni", style = MaterialTheme.typography.titleLarge)
-            IconButton(onClick = onClose) {
-                Icon(Icons.Filled.Close, contentDescription = "Chiudi")
+            Text("Filtri e Opzioni", style = MaterialTheme.typography.titleMedium)
+            IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Chiudi", modifier = Modifier.size(18.dp))
             }
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+        HorizontalDivider()
+
+        Text(
+            text = "Visualizzazione",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Nascondi senza data",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Switch(
+                checked = localHideUndated,
+                onCheckedChange = { localHideUndated = it },
+                modifier = Modifier.scale(0.75f),
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Nascondi senza prezzo",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Switch(
+                checked = localHidePriceless,
+                onCheckedChange = { localHidePriceless = it },
+                modifier = Modifier.scale(0.75f),
+            )
+        }
+
+        HorizontalDivider()
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Negozi (${localSelectedSources.size}/${sources.size})",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        localSelectedSources = sources.map { it.id }.toMutableSet()
+                    },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text("Tutti", style = MaterialTheme.typography.labelSmall)
+                }
+                OutlinedButton(
+                    onClick = {
+                        localSelectedSources = mutableSetOf()
+                    },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text("Nessuno", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            item {
-                Text(
-                    text = "Opzioni di visualizzazione",
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
+            items(sources.chunked(3), key = { row -> row.first().id }) { rowSources ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Nascondi senza data",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = "Solo giochi con data definita",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = localHideUndated,
-                        onCheckedChange = { localHideUndated = it },
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Nascondi senza prezzo",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = "Solo giochi con prezzo disponibile",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = localHidePriceless,
-                        onCheckedChange = { localHidePriceless = it },
-                    )
-                }
-            }
-
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Negozi (${localSelectedSources.size}/${sources.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                localSelectedSources = sources.map { it.id }.toMutableSet()
-                            },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        ) {
-                            Text("Tutti", style = MaterialTheme.typography.labelSmall)
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                localSelectedSources = mutableSetOf()
-                            },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                        ) {
-                            Text("Nessuno", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            }
-
-            items(sources.chunked(2), key = { row -> row.first().id }) { rowSources ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 0.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     rowSources.forEach { source ->
                         val isChecked = localSelectedSources.contains(source.id)
@@ -399,7 +383,7 @@ private fun FilterDrawerContent(
                                     Icon(
                                         imageVector = Icons.Filled.Check,
                                         contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
+                                        modifier = Modifier.size(12.dp),
                                     )
                                 }
                             } else {
@@ -408,30 +392,34 @@ private fun FilterDrawerContent(
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    if (rowSources.size == 1) {
-                        Spacer(modifier = Modifier.weight(1f))
+                    if (rowSources.size < 3) {
+                        repeat(3 - rowSources.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+        HorizontalDivider()
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedButton(
                 onClick = onReset,
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = 6.dp),
             ) {
-                Text("Ripristina")
+                Text("Ripristina", style = MaterialTheme.typography.bodySmall)
             }
             Button(
                 onClick = { onApply(localSelectedSources.toSet(), localHideUndated, localHidePriceless) },
                 modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = 6.dp),
             ) {
-                Text("Applica")
+                Text("Applica", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
