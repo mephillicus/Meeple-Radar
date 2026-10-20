@@ -88,7 +88,7 @@ fun IncomingScreen(
             ModalDrawerSheet(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(320.dp),
+                    .width(340.dp),
             ) {
                 FilterDrawerContent(
                     sources = sources,
@@ -267,7 +267,7 @@ private fun FilterDrawerContent(
         modifier = Modifier
             .fillMaxSize()
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -283,7 +283,7 @@ private fun FilterDrawerContent(
         HorizontalDivider()
 
         Text(
-            text = "Visualizzazione",
+            text = "Nascondi",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -293,31 +293,37 @@ private fun FilterDrawerContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "Nascondi senza data",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Switch(
-                checked = localHideUndated,
-                onCheckedChange = { localHideUndated = it },
-                modifier = Modifier.scale(0.75f),
-            )
-        }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = "Senza data",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Switch(
+                    checked = localHideUndated,
+                    onCheckedChange = { localHideUndated = it },
+                    modifier = Modifier.scale(0.7f),
+                )
+            }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Nascondi senza prezzo",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Switch(
-                checked = localHidePriceless,
-                onCheckedChange = { localHidePriceless = it },
-                modifier = Modifier.scale(0.75f),
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = "Senza prezzo",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Switch(
+                    checked = localHidePriceless,
+                    onCheckedChange = { localHidePriceless = it },
+                    modifier = Modifier.scale(0.7f),
+                )
+            }
         }
 
         HorizontalDivider()
@@ -354,9 +360,9 @@ private fun FilterDrawerContent(
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            items(sources.chunked(3), key = { row -> row.first().id }) { rowSources ->
+            items(sources.chunked(2), key = { row -> row.first().id }) { rowSources ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -392,10 +398,8 @@ private fun FilterDrawerContent(
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    if (rowSources.size < 3) {
-                        repeat(3 - rowSources.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
+                    if (rowSources.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
