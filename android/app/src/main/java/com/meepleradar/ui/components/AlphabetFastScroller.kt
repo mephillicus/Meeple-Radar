@@ -7,10 +7,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,20 +57,13 @@ fun AlphabetFastScroller(
     }
 
     Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .width(44.dp)
-            .wrapContentWidth(Alignment.End),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.CenterEnd,
     ) {
         Column(
             modifier = Modifier
-                .padding(end = 4.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
-                .padding(horizontal = 6.dp, vertical = 10.dp)
-                .onGloballyPositioned { coordinates ->
-                    barHeight = coordinates.size.height.toFloat()
-                }
+                .fillMaxHeight()
+                .width(44.dp)
                 .pointerInput(alphabet) {
                     detectVerticalDragGestures(
                         onDragStart = { offset ->
@@ -90,6 +84,12 @@ fun AlphabetFastScroller(
                             }
                         },
                     )
+                }
+                .padding(end = 4.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                .padding(horizontal = 6.dp, vertical = 10.dp)
+                .onGloballyPositioned { coordinates ->
+                    barHeight = coordinates.size.height.toFloat()
                 },
             verticalArrangement = Arrangement.spacedBy(1.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -120,18 +120,24 @@ fun AlphabetFastScroller(
         if (draggingLetter != null) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(80.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                    .fillMaxSize()
+                    .wrapContentSize(Alignment.Center),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = draggingLetter.toString(),
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontSize = 38.sp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontWeight = FontWeight.Bold,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = draggingLetter.toString(),
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontSize = 44.sp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
