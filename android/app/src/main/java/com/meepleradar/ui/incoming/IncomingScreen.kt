@@ -1,6 +1,7 @@
 package com.meepleradar.ui.incoming
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -206,21 +207,32 @@ fun IncomingScreen(
                     is IncomingUiState.Content -> if (current.items.isEmpty()) {
                         EmptyView("Nessuna uscita in arrivo con i filtri selezionati")
                     } else {
-                        LazyColumn(
-                            contentPadding = PaddingValues(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            items(current.items.size, key = { current.items[it].key }) { index ->
-                                val item = current.items[index]
-                                ListingCard(
-                                    item = item,
-                                    isFavorite = item.key in current.favorites,
-                                    onOpen = { onOpen(item) },
-                                    onToggleFavorite = { vm.toggleFavorite(item) },
-                                    onIgnore = { vm.ignore(item) },
-                                    imageLookup = imageLookup,
-                                )
+                        val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            LazyColumn(
+                                state = lazyListState,
+                                contentPadding = PaddingValues(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                items(current.items.size, key = { current.items[it].key }) { index ->
+                                    val item = current.items[index]
+                                    ListingCard(
+                                        item = item,
+                                        isFavorite = item.key in current.favorites,
+                                        onOpen = { onOpen(item) },
+                                        onToggleFavorite = { vm.toggleFavorite(item) },
+                                        onIgnore = { vm.ignore(item) },
+                                        imageLookup = imageLookup,
+                                    )
+                                }
                             }
+
+                            com.meepleradar.ui.components.AlphabetFastScroller(
+                                items = current.items,
+                                lazyListState = lazyListState,
+                                modifier = Modifier.fillMaxSize(),
+                            )
                         }
                     }
                 }
