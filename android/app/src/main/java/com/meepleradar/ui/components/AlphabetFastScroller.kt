@@ -1,12 +1,16 @@
 package com.meepleradar.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,36 +57,39 @@ fun AlphabetFastScroller(
 
     Box(
         modifier = modifier
-            .pointerInput(alphabet) {
-                detectVerticalDragGestures(
-                    onDragStart = { offset ->
-                        val index = (offset.y / (barHeight / alphabet.size)).toInt().coerceIn(0, alphabet.lastIndex)
-                        val char = alphabet[index]
-                        draggingLetter = char
-                        scrollToLetter(char, items, lazyListState, coroutineScope)
-                    },
-                    onDragEnd = { draggingLetter = null },
-                    onDragCancel = { draggingLetter = null },
-                    onVerticalDrag = { change, _ ->
-                        val y = change.position.y.coerceIn(0f, barHeight.coerceAtLeast(1f))
-                        val index = (y / (barHeight / alphabet.size)).toInt().coerceIn(0, alphabet.lastIndex)
-                        val char = alphabet[index]
-                        if (draggingLetter != char) {
-                            draggingLetter = char
-                            scrollToLetter(char, items, lazyListState, coroutineScope)
-                        }
-                    },
-                )
-            },
+            .fillMaxHeight()
+            .width(44.dp)
+            .wrapContentWidth(Alignment.End),
+        contentAlignment = Alignment.CenterEnd,
     ) {
         Column(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
                 .padding(end = 4.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f), RoundedCornerShape(14.dp))
-                .padding(horizontal = 4.dp, vertical = 8.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                .padding(horizontal = 6.dp, vertical = 10.dp)
                 .onGloballyPositioned { coordinates ->
                     barHeight = coordinates.size.height.toFloat()
+                }
+                .pointerInput(alphabet) {
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            val index = (offset.y / (barHeight / alphabet.size)).toInt().coerceIn(0, alphabet.lastIndex)
+                            val char = alphabet[index]
+                            draggingLetter = char
+                            scrollToLetter(char, items, lazyListState, coroutineScope)
+                        },
+                        onDragEnd = { draggingLetter = null },
+                        onDragCancel = { draggingLetter = null },
+                        onVerticalDrag = { change, _ ->
+                            val y = change.position.y.coerceIn(0f, barHeight.coerceAtLeast(1f))
+                            val index = (y / (barHeight / alphabet.size)).toInt().coerceIn(0, alphabet.lastIndex)
+                            val char = alphabet[index]
+                            if (draggingLetter != char) {
+                                draggingLetter = char
+                                scrollToLetter(char, items, lazyListState, coroutineScope)
+                            }
+                        },
+                    )
                 },
             verticalArrangement = Arrangement.spacedBy(1.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -90,8 +97,8 @@ fun AlphabetFastScroller(
             alphabet.forEach { char ->
                 val isSelected = draggingLetter == char
                 val isCurrent = currentLetter == char && draggingLetter == null
-                val scale = if (isSelected) 1.6f else 1f
-                val fontSize = if (isSelected) 12.sp else 9.sp
+                val scale = if (isSelected) 2.0f else if (isCurrent) 1.3f else 1f
+                val fontSize = if (isSelected) 16.sp else if (isCurrent) 11.sp else 9.sp
 
                 Text(
                     text = char.toString(),
@@ -101,7 +108,11 @@ fun AlphabetFastScroller(
                     color = if (isSelected || isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .scale(scale)
-                        .padding(horizontal = 3.dp, vertical = 0.5.dp),
+                        .clickable {
+                            draggingLetter = char
+                            scrollToLetter(char, items, lazyListState, coroutineScope)
+                        }
+                        .padding(horizontal = 4.dp, vertical = 0.5.dp),
                 )
             }
         }
@@ -110,14 +121,14 @@ fun AlphabetFastScroller(
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .size(72.dp)
+                    .size(80.dp)
                     .background(MaterialTheme.colorScheme.primary, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = draggingLetter.toString(),
                     style = MaterialTheme.typography.headlineLarge,
-                    fontSize = 32.sp,
+                    fontSize = 38.sp,
                     color = MaterialTheme.colorScheme.onPrimary,
                     fontWeight = FontWeight.Bold,
                 )
