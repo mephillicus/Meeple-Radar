@@ -3,7 +3,10 @@ package com.meepleradar.data.repo
 import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.model.Action
+import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.IncomingItem
+import com.meepleradar.data.model.Listing
+import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
@@ -15,6 +18,7 @@ interface ListingRepository {
         sourceIds: Set<String>? = null,
         includeUndated: Boolean = true,
         includePriceless: Boolean = true,
+        forceRefresh: Boolean = false,
         onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem>
 
@@ -23,6 +27,7 @@ interface ListingRepository {
         sourceIds: Set<String>? = null,
         includeUndated: Boolean = true,
         includePriceless: Boolean = true,
+        forceRefresh: Boolean = false,
         onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem>
 
@@ -47,15 +52,16 @@ class DefaultListingRepository(
         sourceIds: Set<String>?,
         includeUndated: Boolean,
         includePriceless: Boolean,
+        forceRefresh: Boolean,
         onProgress: ((percent: Int, message: String) -> Unit)?,
     ): List<IncomingItem> {
-        onProgress?.invoke(10, "Connessione a Supabase…")
+        onProgress?.invoke(10, "Verifica azioni utente…")
         val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
         val ignored = latestActionsByKey(userActions)
             .filterValues { it == Action.IGNORED }
             .keys
             .toSet()
-        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless, onProgress)
+        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless, forceRefresh, onProgress)
     }
 
     override suspend fun favorites(
@@ -63,15 +69,16 @@ class DefaultListingRepository(
         sourceIds: Set<String>?,
         includeUndated: Boolean,
         includePriceless: Boolean,
+        forceRefresh: Boolean,
         onProgress: ((percent: Int, message: String) -> Unit)?,
     ): List<IncomingItem> {
-        onProgress?.invoke(10, "Connessione a Supabase…")
+        onProgress?.invoke(10, "Verifica azioni utente…")
         val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
         val actionsMap = latestActionsByKey(userActions)
         val ignored = actionsMap.filterValues { it == Action.IGNORED }.keys
         val remoteFavoriteKeys = actionsMap.filterValues { it == Action.FAVORITE }.keys
         val favoriteKeys = favoriteStore.keys() + remoteFavoriteKeys
-        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless, onProgress).filter { it.key in favoriteKeys }
+        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless, forceRefresh, onProgress).filter { it.key in favoriteKeys }
     }
 
     override suspend fun sources(): List<Source> {
@@ -107,30 +114,39 @@ class DefaultListingRepository(
         sourceIds: Set<String>?,
         includeUndated: Boolean,
         includePriceless: Boolean,
+        forceRefresh: Boolean,
         onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem> {
         onProgress?.invoke(25, "Caricamento database locale…")
         var cached = localCacheStore?.load()
 
-        onProgress?.invoke(40, "Verifica lista e-commerce…")
-        val remoteSources = runCatching { api.sources() }.getOrDefault(cached?.sources.orEmpty())
+        val remoteListings: List<Listing>
+        val remoteGames: List<Game>
+        val remoteSources: List<Source>
+        val remoteProducts: List<Product>
 
-        onProgress?.invoke(55, "Download novità in arrivo…")
-        val remoteListings = runCatching { api.listings() }.getOrDefault(cached?.listings.orEmpty())
+        if (forceRefresh || cached == null || cached.listings.isEmpty()) {
+            onProgress?.invoke(40, "Connessione a Supabase…")
+            remoteListings = runCatching { api.listings() }.getOrDefault(cached?.listings.orEmpty())
+            remoteGames = runCatching { api.games() }.getOrDefault(cached?.games.orEmpty())
+            remoteSources = runCatching { api.sources() }.getOrDefault(cached?.sources.orEmpty())
+            remoteProducts = runCatching { api.products() }.getOrDefault(cached?.products.orEmpty())
 
-        onProgress?.invoke(70, "Download giochi e cataloghi…")
-        val remoteGames = runCatching { api.games() }.getOrDefault(cached?.games.orEmpty())
-        val remoteProducts = runCatching { api.products() }.getOrDefault(cached?.products.orEmpty())
-
-        onProgress?.invoke(85, "Analisi modifiche e differenze…")
-        if (localCacheStore != null && remoteListings.isNotEmpty()) {
-            val (updatedDb, _) = localCacheStore.saveIfChanged(
-                newListings = remoteListings,
-                newGames = remoteGames,
-                newSources = remoteSources,
-                newProducts = remoteProducts,
-            )
-            cached = updatedDb
+            onProgress?.invoke(85, "Analisi modifiche e differenze…")
+            if (localCacheStore != null && remoteListings.isNotEmpty()) {
+                val (updatedDb, _) = localCacheStore.saveIfChanged(
+                    newListings = remoteListings,
+                    newGames = remoteGames,
+                    newSources = remoteSources,
+                    newProducts = remoteProducts,
+                )
+                cached = updatedDb
+            }
+        } else {
+            remoteListings = cached.listings
+            remoteGames = cached.games
+            remoteSources = cached.sources
+            remoteProducts = cached.products
         }
 
         onProgress?.invoke(95, "Elaborazione preferiti e filtri…")

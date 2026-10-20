@@ -44,12 +44,12 @@ class IncomingViewModelTest {
     ) : ListingRepository {
         val actions = mutableListOf<Pair<String, Action>>()
 
-        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> {
+        override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> {
             failure?.let { throw it }
             return incomingItems
         }
 
-        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> {
+        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> {
             failure?.let { throw it }
             return favoriteItems
         }

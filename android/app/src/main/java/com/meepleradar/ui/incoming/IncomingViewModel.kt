@@ -62,7 +62,7 @@ class IncomingViewModel(
 
     init {
         loadSources()
-        refresh() // Load database immediately on start
+        loadLocal() // Load from local cache on startup without hitting Supabase network
     }
 
     fun setSearchQuery(query: String) {
@@ -74,7 +74,7 @@ class IncomingViewModel(
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
         _hidePriceless.value = hidePriceless
-        updateFilteredState() // Filter locally in memory without hitting Supabase
+        updateFilteredState()
     }
 
     fun resetFilters() {
@@ -83,6 +83,35 @@ class IncomingViewModel(
         _hidePriceless.value = false
         _searchQuery.value = ""
         updateFilteredState()
+    }
+
+    private fun loadLocal() {
+        _state.value = IncomingUiState.Loading
+        viewModelScope.launch {
+            try {
+                rawItems = repo.incoming(
+                    today = today,
+                    sourceIds = null,
+                    includeUndated = true,
+                    includePriceless = true,
+                    forceRefresh = false,
+                )
+                rawFavorites = repo.favorites(
+                    today = today,
+                    sourceIds = null,
+                    includeUndated = true,
+                    includePriceless = true,
+                    forceRefresh = false,
+                ).map { it.key }.toSet()
+
+                _lastModifiedTimestamp.value = repo.lastDbModifiedTimestamp()
+                updateFilteredState()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
+            }
+        }
     }
 
     fun refresh() {
@@ -95,6 +124,7 @@ class IncomingViewModel(
                     sourceIds = null,
                     includeUndated = true,
                     includePriceless = true,
+                    forceRefresh = true, // Force refresh from Supabase via manual button
                     onProgress = { percent, message ->
                         _syncProgress.value = SyncProgressState.Progress(percent, message)
                     },
@@ -104,6 +134,7 @@ class IncomingViewModel(
                     sourceIds = null,
                     includeUndated = true,
                     includePriceless = true,
+                    forceRefresh = false,
                 ).map { it.key }.toSet()
 
                 _lastModifiedTimestamp.value = repo.lastDbModifiedTimestamp()

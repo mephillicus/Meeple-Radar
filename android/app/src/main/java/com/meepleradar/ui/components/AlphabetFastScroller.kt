@@ -1,5 +1,9 @@
 package com.meepleradar.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -26,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -55,11 +60,17 @@ fun AlphabetFastScroller(
         if (isScrollInProgress || isTouchingBar || draggingLetter != null) {
             visible = true
         } else {
-            delay(2000)
+            delay(2000L)
             if (!lazyListState.isScrollInProgress && !isTouchingBar && draggingLetter == null) {
                 visible = false
             }
         }
+    }
+
+    val availableLetters = remember(items) {
+        items.map { item ->
+            item.title.trim().uppercase(Locale.ROOT).firstOrNull()?.takeIf { it.isLetter() } ?: '#'
+        }.toSet()
     }
 
     val firstVisibleIndex = lazyListState.firstVisibleItemIndex
@@ -71,9 +82,14 @@ fun AlphabetFastScroller(
         }
     }
 
-    if (visible) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(300)),
+        exit = fadeOut(animationSpec = tween(300)),
+        modifier = modifier.fillMaxSize(),
+    ) {
         Box(
-            modifier = modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.CenterEnd,
         ) {
             Column(
@@ -88,8 +104,10 @@ fun AlphabetFastScroller(
                                 val barHeight = size.height.toFloat()
                                 val index = (offset.y / (barHeight / alphabet.size)).toInt().coerceIn(0, alphabet.lastIndex)
                                 val char = alphabet[index]
-                                draggingLetter = char
-                                scrollToLetter(char, items, lazyListState, coroutineScope)
+                                if (char in availableLetters) {
+                                    draggingLetter = char
+                                    scrollToLetter(char, items, lazyListState, coroutineScope)
+                                }
                             },
                             onDragEnd = {
                                 isTouchingBar = false
@@ -105,7 +123,7 @@ fun AlphabetFastScroller(
                                 val y = change.position.y.coerceIn(0f, barHeight.coerceAtLeast(1f))
                                 val index = (y / (barHeight / alphabet.size)).toInt().coerceIn(0, alphabet.lastIndex)
                                 val char = alphabet[index]
-                                if (draggingLetter != char) {
+                                if (char in availableLetters && draggingLetter != char) {
                                     draggingLetter = char
                                     scrollToLetter(char, items, lazyListState, coroutineScope)
                                 }
@@ -116,16 +134,19 @@ fun AlphabetFastScroller(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 alphabet.forEach { char ->
+                    val hasItems = char in availableLetters
                     val isSelected = draggingLetter == char
                     val isCurrent = currentLetter == char && draggingLetter == null
                     val scale = if (isSelected) 2.0f else if (isCurrent) 1.3f else 1f
                     val fontSize = if (isSelected) 16.sp else if (isCurrent) 11.sp else 9.sp
+                    val alpha = if (hasItems) 1.0f else 0.25f
 
                     Box(
                         modifier = Modifier
                             .width(28.dp)
                             .height(18.dp)
-                            .clickable {
+                            .alpha(alpha)
+                            .clickable(enabled = hasItems) {
                                 isTouchingBar = true
                                 draggingLetter = char
                                 scrollToLetter(char, items, lazyListState, coroutineScope)
