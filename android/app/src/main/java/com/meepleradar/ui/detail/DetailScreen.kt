@@ -479,17 +479,19 @@ private fun OfferRow(offer: Offer, isBestOffer: Boolean, onOpen: () -> Unit) {
                     }
                 }
                 offer.availability?.let {
-                    Spacer(Modifier.height(2.dp))
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
-                    ) {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                        )
+                    if (it.lowercase() != "true" && it.isNotBlank()) {
+                        Spacer(Modifier.height(2.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+                        ) {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            )
+                        }
                     }
                 }
             }

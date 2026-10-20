@@ -53,56 +53,75 @@ class IncomingViewModel(
     private val _syncProgress = MutableStateFlow<SyncProgressState>(SyncProgressState.Idle)
     val syncProgress: StateFlow<SyncProgressState> = _syncProgress.asStateFlow()
 
+    private var rawItems: List<IncomingItem> = emptyList()
+    private var rawFavorites: Set<String> = emptySet()
+
     init {
         loadSources()
+        refresh() // Load database immediately on start
     }
 
     fun applyFilters(sourceIds: Set<String>?, hideUndated: Boolean, hidePriceless: Boolean = false) {
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
         _hidePriceless.value = hidePriceless
-        refresh()
+        updateFilteredState() // Filter locally in memory without hitting Supabase
     }
 
     fun resetFilters() {
         _selectedSources.value = null
         _hideUndated.value = false
         _hidePriceless.value = false
-        refresh()
+        updateFilteredState()
     }
 
     fun refresh() {
         _state.value = IncomingUiState.Loading
         _syncProgress.value = SyncProgressState.Progress(0, "Avvio sincronizzazione…")
         viewModelScope.launch {
-            _state.value = try {
-                val items = repo.incoming(
+            try {
+                rawItems = repo.incoming(
                     today = today,
-                    sourceIds = _selectedSources.value,
-                    includeUndated = !_hideUndated.value,
-                    includePriceless = !_hidePriceless.value,
+                    sourceIds = null,
+                    includeUndated = true,
+                    includePriceless = true,
                     onProgress = { percent, message ->
                         _syncProgress.value = SyncProgressState.Progress(percent, message)
                     },
                 )
-                val favorites = repo.favorites(
+                rawFavorites = repo.favorites(
                     today = today,
-                    sourceIds = _selectedSources.value,
-                    includeUndated = !_hideUndated.value,
-                    includePriceless = !_hidePriceless.value,
+                    sourceIds = null,
+                    includeUndated = true,
+                    includePriceless = true,
                 ).map { it.key }.toSet()
 
                 _lastModifiedTimestamp.value = repo.lastDbModifiedTimestamp()
                 _syncProgress.value = SyncProgressState.Finished
-                IncomingUiState.Content(items = items, favorites = favorites)
+                updateFilteredState()
             } catch (e: CancellationException) {
                 _syncProgress.value = SyncProgressState.Idle
                 throw e
             } catch (e: Exception) {
                 _syncProgress.value = SyncProgressState.Idle
-                IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
+                _state.value = IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
             }
         }
+    }
+
+    private fun updateFilteredState() {
+        val sourceIds = _selectedSources.value
+        val hideUndated = _hideUndated.value
+        val hidePriceless = _hidePriceless.value
+
+        val filtered = rawItems.filter { item ->
+            val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
+            val dateMatch = !hideUndated || item.releaseDate != null
+            val priceMatch = !hidePriceless || item.offers.any { it.price != null }
+            sourceMatch && dateMatch && priceMatch
+        }
+
+        _state.value = IncomingUiState.Content(items = filtered, favorites = rawFavorites)
     }
 
     fun loadSources() {
@@ -123,13 +142,12 @@ class IncomingViewModel(
         viewModelScope.launch {
             try {
                 repo.setAction(item.key, action)
-                val current = _state.value as? IncomingUiState.Content ?: return@launch
-                val favorites = if (wasFavorite) {
-                    current.favorites - item.key
+                rawFavorites = if (wasFavorite) {
+                    rawFavorites - item.key
                 } else {
-                    current.favorites + item.key
+                    rawFavorites + item.key
                 }
-                _state.value = current.copy(favorites = favorites)
+                updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -142,8 +160,8 @@ class IncomingViewModel(
         viewModelScope.launch {
             try {
                 repo.setAction(item.key, Action.IGNORED)
-                val content = _state.value as? IncomingUiState.Content ?: return@launch
-                _state.value = content.copy(items = content.items.filterNot { it.key == item.key })
+                rawItems = rawItems.filterNot { it.key == item.key }
+                updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

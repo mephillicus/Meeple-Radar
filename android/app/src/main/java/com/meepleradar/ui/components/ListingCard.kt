@@ -8,9 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,10 +30,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.meepleradar.data.model.IncomingItem
@@ -70,13 +71,13 @@ fun ListingCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Image / Thumbnail
             Box(
                 modifier = Modifier
-                    .size(84.dp)
+                    .size(76.dp)
                     .clip(RoundedCornerShape(16.dp)),
             ) {
                 GameCover(
@@ -88,12 +89,12 @@ fun ListingCard(
                 )
             }
 
-            Spacer(Modifier.width(14.dp))
+            Spacer(Modifier.width(12.dp))
 
-            // Details Column
+            // Details Column (Center)
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
                     text = item.title,
@@ -108,7 +109,7 @@ fun ListingCard(
                     Icon(
                         imageVector = Icons.Filled.DateRange,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(12.dp),
                         tint = MaterialTheme.colorScheme.secondary,
                     )
                     Spacer(Modifier.width(4.dp))
@@ -119,110 +120,100 @@ fun ListingCard(
                     )
                 }
 
-                // Source Store Badge
-                val sourceText = androidx.compose.runtime.remember(item.offers) {
-                    val names = item.offers.map { it.sourceName }.distinct()
-                    when {
-                        names.isEmpty() -> "N/D"
-                        names.size == 1 -> names.first()
-                        names.size == 2 -> "${names[0]} · ${names[1]}"
-                        else -> "${names[0]} +${names.size - 1}"
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {
-                    Text(
-                        text = "Fonte: $sourceText",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                    )
-                }
-
-                // Price and Store Count Badges
+                // Price, Rating Badge, and Small Action Buttons (Favorite & Ignore)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
                         text = bestPriceLabel(item.offers),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.tertiary,
                         fontWeight = FontWeight.ExtraBold,
                     )
 
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                    item.game?.bggRating?.let { RatingBadge(it) }
+
+                    Spacer(Modifier.weight(1f))
+
+                    // Small Favorite Button
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier.size(28.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ShoppingCart,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = "${item.offers.size}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                        }
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = "Preferito",
+                            tint = if (isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
                     }
 
-                    item.game?.bggRating?.let { RatingBadge(it) }
+                    // Small Ignore Button
+                    IconButton(
+                        onClick = onIgnore,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Ignora",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
                 }
             }
 
             Spacer(Modifier.width(8.dp))
 
-            // Action Buttons
+            // Right Column: Shopping Cart + Sources (without "Fonte")
+            val sourceText = remember(item.offers) {
+                val names = item.offers.map { it.sourceName }.distinct()
+                when {
+                    names.isEmpty() -> "N/D"
+                    names.size == 1 -> names.first()
+                    names.size == 2 -> "${names.first()}\n${names[1]}"
+                    else -> "${names.first()}\n+${names.size - 1}"
+                }
+            }
+
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
+                horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.width(96.dp),
             ) {
-                IconButton(onClick = onToggleFavorite) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (isFavorite) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.size(36.dp),
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                contentDescription = if (isFavorite) "Rimuovi dai preferiti" else "Aggiungi ai preferiti",
-                                tint = if (isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Filled.ShoppingCart,
+                            contentDescription = null,
+                            modifier = Modifier.size(11.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            text = "${item.offers.size} store",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
 
-                IconButton(onClick = onIgnore) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(32.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Filled.Close,
-                                contentDescription = "Ignora",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = sourceText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.End,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
