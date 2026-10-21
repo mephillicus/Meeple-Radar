@@ -6,6 +6,7 @@ type StoreProduct = {
   name?: string
   permalink?: string
   description?: string
+  short_description?: string
   is_in_stock?: boolean
   images?: { src?: string }[]
   prices?: { price?: string; currency_code?: string; currency_minor_unit?: number }
@@ -38,7 +39,7 @@ export async function fetchWooCommerceProducts(
         minorUnitRaw: p.prices?.currency_minor_unit,
         currencyRaw: p.prices?.currency_code ?? currency,
         availabilityRaw: p.is_in_stock === undefined ? undefined : String(p.is_in_stock),
-        descriptionRaw: p.description,
+        descriptionRaw: p.description || p.short_description,
         imageUrl: p.images?.[0]?.src,
       })
       if (parsed.success) out.push(parsed.data)
