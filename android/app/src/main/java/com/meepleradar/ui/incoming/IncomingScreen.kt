@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
@@ -41,7 +40,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -58,11 +56,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
@@ -98,254 +99,264 @@ fun IncomingScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(340.dp),
-            ) {
-                FilterDrawerContent(
-                    sources = sources,
-                    selectedSources = selectedSources,
-                    hideUndated = hideUndated,
-                    hidePriceless = hidePriceless,
-                    selectedAvailability = selectedAvailability,
-                    onApply = { newSelectedSources, newHideUndated, newHidePriceless, newAvailability ->
-                        vm.applyFilters(newSelectedSources, newHideUndated, newHidePriceless, newAvailability)
-                        scope.launch { drawerState.close() }
-                    },
-                    onReset = {
-                        vm.resetFilters()
-                        scope.launch { drawerState.close() }
-                    },
-                    onClose = {
-                        scope.launch { drawerState.close() }
-                    },
-                )
-            }
-        },
+    Scaffold(
         modifier = modifier.fillMaxSize(),
-    ) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            contentWindowInsets = ScreenContentInsets,
-        ) { padding ->
-            Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                val selSources = selectedSources
-                val hasActiveFilters = hideUndated || hidePriceless ||
-                    (selSources != null && selSources.size < sources.size) ||
-                    selectedAvailability.size < AvailabilityStatus.entries.size
+        contentWindowInsets = ScreenContentInsets,
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            val selSources = selectedSources
+            val hasActiveFilters = hideUndated || hidePriceless ||
+                (selSources != null && selSources.size < sources.size) ||
+                selectedAvailability.size < AvailabilityStatus.entries.size
 
-                ScreenHeader(
-                    title = "In arrivo",
-                    onRefresh = { vm.refresh() },
-                    timestampText = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
-                    titleContent = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = "In arrivo",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = MaterialTheme.colorScheme.onBackground,
-                            )
-                            if (vm.newlyAddedCount > 0) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = MeepleVector,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp),
-                                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                        )
-                                        Text(
-                                            text = "+${vm.newlyAddedCount}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            softWrap = false,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    trailingContent = {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            // Compact Search Box
+            ScreenHeader(
+                title = "In arrivo",
+                onRefresh = { vm.refresh() },
+                timestampText = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
+                titleContent = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "In arrivo",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        if (vm.newlyAddedCount > 0) {
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                                color = MaterialTheme.colorScheme.surface,
-                                modifier = Modifier
-                                    .width(115.dp)
-                                    .height(34.dp),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
-                                    BasicTextField(
-                                        value = searchQueryState,
-                                        onValueChange = { vm.setSearchQuery(it) },
-                                        singleLine = true,
-                                        textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
-                                        modifier = Modifier.weight(1f),
-                                        decorationBox = { innerTextField ->
-                                            if (searchQueryState.isEmpty()) {
-                                                Text(
-                                                    "Cerca...",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                                )
-                                            }
-                                            innerTextField()
-                                        },
+                                    Icon(
+                                        imageVector = MeepleVector,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
                                     )
+                                    Text(
+                                        text = "+${vm.newlyAddedCount}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                trailingContent = {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // Compact Search Box
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier
+                                .width(115.dp)
+                                .height(34.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                BasicTextField(
+                                    value = searchQueryState,
+                                    onValueChange = { vm.setSearchQuery(it) },
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                                    modifier = Modifier.weight(1f),
+                                    decorationBox = { innerTextField ->
+                                        if (searchQueryState.isEmpty()) {
+                                            Text(
+                                                "Cerca...",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            )
+                                        }
+                                        innerTextField()
+                                    },
+                                )
 
-                                    Box(
-                                        modifier = Modifier.size(20.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Crossfade(
-                                            targetState = searchQueryState.isNotEmpty(),
-                                            animationSpec = tween(durationMillis = 180),
-                                            label = "searchAction",
-                                        ) { showClear ->
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .then(
-                                                        if (showClear) {
-                                                            Modifier.clickable(
-                                                                onClickLabel = "Cancella",
-                                                                role = Role.Button,
-                                                            ) { vm.setSearchQuery("") }
-                                                        } else {
-                                                            Modifier
-                                                        },
-                                                    ),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                if (showClear) {
-                                                    Icon(
-                                                        Icons.Filled.Close,
-                                                        contentDescription = "Cancella",
-                                                        modifier = Modifier.size(12.dp),
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    )
-                                                } else {
-                                                    Icon(
-                                                        Icons.Filled.Search,
-                                                        contentDescription = "Cerca",
-                                                        modifier = Modifier.size(13.dp),
-                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    )
-                                                }
+                                Box(
+                                    modifier = Modifier.size(20.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Crossfade(
+                                        targetState = searchQueryState.isNotEmpty(),
+                                        animationSpec = tween(durationMillis = 180),
+                                        label = "searchAction",
+                                    ) { showClear ->
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .then(
+                                                    if (showClear) {
+                                                        Modifier.clickable(
+                                                            onClickLabel = "Cancella",
+                                                            role = Role.Button,
+                                                        ) { vm.setSearchQuery("") }
+                                                    } else {
+                                                        Modifier
+                                                    },
+                                                ),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            if (showClear) {
+                                                Icon(
+                                                    Icons.Filled.Close,
+                                                    contentDescription = "Cancella",
+                                                    modifier = Modifier.size(12.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            } else {
+                                                Icon(
+                                                    Icons.Filled.Search,
+                                                    contentDescription = "Cerca",
+                                                    modifier = Modifier.size(13.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
                                             }
                                         }
                                     }
                                 }
                             }
-
-                            // Compact Grouped Refresh + Filter Buttons (No text "Filtri")
-                            Row(
-                                modifier = Modifier
-                                    .height(34.dp)
-                                    .background(
-                                        if (hasActiveFilters) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                        RoundedCornerShape(10.dp),
-                                    )
-                                    .padding(horizontal = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            ) {
-                                IconButton(
-                                    onClick = { vm.refresh() },
-                                    modifier = Modifier.size(30.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Refresh,
-                                        contentDescription = "Aggiorna",
-                                        tint = if (hasActiveFilters) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(15.dp),
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { scope.launch { drawerState.open() } },
-                                    modifier = Modifier.size(30.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Settings,
-                                        contentDescription = "Filtri",
-                                        tint = if (hasActiveFilters) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(15.dp),
-                                    )
-                                }
-                            }
                         }
-                    },
-                )
 
-                if (syncProgress is SyncProgressState.Progress) {
-                    SyncProgressCard(progress = syncProgress as SyncProgressState.Progress)
-                }
-
-                when (val current = state) {
-                    IncomingUiState.Loading -> LoadingView()
-
-                    is IncomingUiState.Error -> ErrorView(
-                        message = current.message,
-                        onRetry = { vm.refresh() },
-                    )
-
-                    is IncomingUiState.Content -> if (current.items.isEmpty()) {
-                        EmptyView("Nessuna uscita in arrivo con i filtri selezionati")
-                    } else {
-                        val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            LazyColumn(
-                                state = lazyListState,
-                                contentPadding = PaddingValues(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                                modifier = Modifier.fillMaxSize(),
+                        // Compact Grouped Refresh + Filter Buttons (No text "Filtri")
+                        Row(
+                            modifier = Modifier
+                                .height(34.dp)
+                                .background(
+                                    if (hasActiveFilters) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(10.dp),
+                                )
+                                .padding(horizontal = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            IconButton(
+                                onClick = { vm.refresh() },
+                                modifier = Modifier.size(30.dp),
                             ) {
-                                items(current.items.size, key = { current.items[it].key }) { index ->
-                                    val item = current.items[index]
-                                    ListingCard(
-                                        item = item,
-                                        isFavorite = item.key in current.favorites,
-                                        onOpen = { onOpen(item) },
-                                        onToggleFavorite = { vm.toggleFavorite(item) },
-                                        onIgnore = { vm.ignore(item) },
-                                        imageLookup = imageLookup,
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = "Aggiorna",
+                                    tint = if (hasActiveFilters) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(15.dp),
+                                )
                             }
 
-                            AlphabetFastScroller(
-                                items = current.items,
-                                lazyListState = lazyListState,
-                                modifier = Modifier.fillMaxSize(),
-                            )
+                            IconButton(
+                                onClick = { scope.launch { drawerState.open() } },
+                                modifier = Modifier.size(30.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Settings,
+                                    contentDescription = "Filtri",
+                                    tint = if (hasActiveFilters) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                            }
                         }
                     }
+                },
+            )
+
+            if (syncProgress is SyncProgressState.Progress) {
+                SyncProgressCard(progress = syncProgress as SyncProgressState.Progress)
+            }
+
+            when (val current = state) {
+                IncomingUiState.Loading -> LoadingView()
+
+                is IncomingUiState.Error -> ErrorView(
+                    message = current.message,
+                    onRetry = { vm.refresh() },
+                )
+
+                is IncomingUiState.Content -> if (current.items.isEmpty()) {
+                    EmptyView("Nessuna uscita in arrivo con i filtri selezionati")
+                } else {
+                    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            state = lazyListState,
+                            contentPadding = PaddingValues(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            items(current.items.size, key = { current.items[it].key }) { index ->
+                                val item = current.items[index]
+                                ListingCard(
+                                    item = item,
+                                    isFavorite = item.key in current.favorites,
+                                    onOpen = { onOpen(item) },
+                                    onToggleFavorite = { vm.toggleFavorite(item) },
+                                    onIgnore = { vm.ignore(item) },
+                                    imageLookup = imageLookup,
+                                )
+                            }
+                        }
+
+                        AlphabetFastScroller(
+                            items = current.items,
+                            lazyListState = lazyListState,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Full Screen Drawer Overlay (Overlaps even bottom navigation bar)
+    if (drawerState.isOpen) {
+        Popup(
+            onDismissRequest = { scope.launch { drawerState.close() } },
+            properties = PopupProperties(focusable = true, clippingEnabled = false),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .clickable { scope.launch { drawerState.close() } },
+            ) {
+                ModalDrawerSheet(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(320.dp)
+                        .clickable(enabled = false) {},
+                ) {
+                    FilterDrawerContent(
+                        sources = sources,
+                        selectedSources = selectedSources,
+                        hideUndated = hideUndated,
+                        hidePriceless = hidePriceless,
+                        selectedAvailability = selectedAvailability,
+                        onApply = { newSelectedSources, newHideUndated, newHidePriceless, newAvailability ->
+                            vm.applyFilters(newSelectedSources, newHideUndated, newHidePriceless, newAvailability)
+                            scope.launch { drawerState.close() }
+                        },
+                        onReset = {
+                            vm.resetFilters()
+                            scope.launch { drawerState.close() }
+                        },
+                        onClose = {
+                            scope.launch { drawerState.close() }
+                        },
+                    )
                 }
             }
         }
@@ -565,17 +576,6 @@ private fun FilterDrawerContent(
                                         style = MaterialTheme.typography.labelSmall,
                                         fontSize = 10.sp,
                                     )
-                                },
-                                leadingIcon = if (isSelected) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Filled.Check,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(10.dp),
-                                        )
-                                    }
-                                } else {
-                                    null
                                 },
                                 modifier = Modifier.weight(1f),
                             )
