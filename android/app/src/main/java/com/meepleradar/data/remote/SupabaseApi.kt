@@ -118,6 +118,7 @@ private data class GameDto(
     @SerialName("bgg_rating") val bggRating: Double? = null,
     @SerialName("bgg_rank") val bggRank: Int? = null,
     @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("description") val description: String? = null,
 ) {
     fun toDomain() = Game(
         id = id,
@@ -127,6 +128,7 @@ private data class GameDto(
         bggRating = bggRating,
         bggRank = bggRank,
         imageUrl = imageUrl,
+        description = description,
     )
 }
 
@@ -136,12 +138,14 @@ private data class ProductDto(
     val title: String? = null,
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("description") val description: String? = null,
 ) {
     fun toDomain() = Product(
         id = id,
         title = title,
         imageUrl = imageUrl,
         releaseDate = releaseDate.asLocalDateOrNull(),
+        description = description,
     )
 }
 
@@ -159,6 +163,7 @@ private data class ListingDto(
     @SerialName("game_id") val gameId: Long? = null,
     @SerialName("match_confidence") val matchConfidence: Double? = null,
     @SerialName("product_id") val productId: Long? = null,
+    @SerialName("description") val description: String? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -173,6 +178,7 @@ private data class ListingDto(
         gameId = gameId,
         matchConfidence = matchConfidence,
         productId = productId,
+        description = description,
     )
 }
 

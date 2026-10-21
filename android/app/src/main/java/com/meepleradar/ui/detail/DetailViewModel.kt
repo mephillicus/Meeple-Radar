@@ -65,12 +65,13 @@ class DetailViewModel(
                 )
                 val lookup = imageLookup ?: return@launch
                 try {
+                    val customDesc = item.customDescription ?: item.game?.description
                     var details = lookup.findDetails(item.title, item.game?.bggId)
                     if (details == null && item.game != null) {
                         details = BoardGameDetails(
                             bggId = item.game.bggId ?: 0,
                             imageUrl = item.game.imageUrl,
-                            description = null,
+                            description = customDesc,
                             yearPublished = null,
                             minPlayers = null,
                             maxPlayers = null,
@@ -80,6 +81,8 @@ class DetailViewModel(
                             categories = emptyList(),
                             mechanics = emptyList(),
                         )
+                    } else if (!customDesc.isNullOrBlank() && details != null) {
+                        details = details.copy(description = customDesc)
                     }
                     updateContent { it.copy(boardGameDetails = details, isLoadingDetails = false) }
                 } catch (e: CancellationException) {

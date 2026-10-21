@@ -59,6 +59,9 @@ fun buildIncomingItems(
                     availability = listing.availability,
                 )
             }
+            val customDescription = game?.description?.takeIf { it.isNotBlank() }
+                ?: product?.description?.takeIf { it.isNotBlank() }
+                ?: groupListings.firstNotNullOfOrNull { it.description?.takeIf(String::isNotBlank) }
             IncomingItem(
                 key = key,
                 title = game?.name ?: product?.title ?: groupListings.first().title,
@@ -67,6 +70,7 @@ fun buildIncomingItems(
                 kind = if (releaseDate != null) ItemKind.UPCOMING else ItemKind.NEW_UNDATED,
                 game = game,
                 offers = offers,
+                customDescription = customDescription,
             )
         }
         .filter {

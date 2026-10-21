@@ -16,6 +16,7 @@ data class Game(
     val bggRating: Double?,
     val bggRank: Int?,
     val imageUrl: String?,
+    val description: String? = null,
 )
 
 data class Listing(
@@ -31,6 +32,7 @@ data class Listing(
     val gameId: Long?,
     val matchConfidence: Double?,
     val productId: Long? = null,
+    val description: String? = null,
 )
 
 data class Product(
@@ -38,6 +40,7 @@ data class Product(
     val title: String?,
     val imageUrl: String?,
     val releaseDate: LocalDate?,
+    val description: String? = null,
 )
 
 data class Price(val amount: Double, val currency: String)
@@ -58,4 +61,5 @@ data class IncomingItem(
     val kind: ItemKind,
     val game: Game?,
     val offers: List<Offer>,
+    val customDescription: String? = null,
 )

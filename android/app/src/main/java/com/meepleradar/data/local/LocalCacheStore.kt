@@ -156,6 +156,7 @@ private data class CachedListing(
     val gameId: Long?,
     val matchConfidence: Double?,
     val productId: Long? = null,
+    val description: String? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -170,6 +171,7 @@ private data class CachedListing(
         gameId = gameId,
         matchConfidence = matchConfidence,
         productId = productId,
+        description = description,
     )
     companion object {
         fun from(l: Listing) = CachedListing(
@@ -185,6 +187,7 @@ private data class CachedListing(
             gameId = l.gameId,
             matchConfidence = l.matchConfidence,
             productId = l.productId,
+            description = l.description,
         )
     }
 }
@@ -198,10 +201,11 @@ private data class CachedGame(
     val bggRating: Double?,
     val bggRank: Int?,
     val imageUrl: String?,
+    val description: String? = null,
 ) {
-    fun toDomain() = Game(id, name, kind, bggId, bggRating, bggRank, imageUrl)
+    fun toDomain() = Game(id, name, kind, bggId, bggRating, bggRank, imageUrl, description)
     companion object {
-        fun from(g: Game) = CachedGame(g.id, g.name, g.kind, g.bggId, g.bggRating, g.bggRank, g.imageUrl)
+        fun from(g: Game) = CachedGame(g.id, g.name, g.kind, g.bggId, g.bggRating, g.bggRank, g.imageUrl, g.description)
     }
 }
 
@@ -219,10 +223,11 @@ private data class CachedProduct(
     val title: String?,
     val imageUrl: String?,
     val releaseDate: String?,
+    val description: String? = null,
 ) {
-    fun toDomain() = Product(id, title, imageUrl, releaseDate.asLocalDateOrNull())
+    fun toDomain() = Product(id, title, imageUrl, releaseDate.asLocalDateOrNull(), description)
     companion object {
-        fun from(p: Product) = CachedProduct(p.id, p.title, p.imageUrl, p.releaseDate?.toString())
+        fun from(p: Product) = CachedProduct(p.id, p.title, p.imageUrl, p.releaseDate?.toString(), p.description)
     }
 }
 
