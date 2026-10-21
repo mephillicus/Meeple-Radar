@@ -11,7 +11,6 @@ export const SOURCES: Source[] = [
   { id: 'magicmerchant', name: 'Magic Merchant',       kind: 'headless',    baseUrl: 'https://magicmerchant.it',         enabled: false }, // Cloudflare managed challenge: blocca fetch/curl e il reader Jina AI → resta disabilitata
   { id: 'uplay',         name: 'uplay.it',             kind: 'headless',    baseUrl: 'https://www.uplay.it',             enabled: false }, // Cloudflare + reader Jina anonimo inaffidabile in CI (quota ~20/min): riabilitare con JINA_API_KEY; spec in html/uplay.ts
   { id: 'boardhouse',    name: 'BoardHouse Store',      kind: 'shopify',    baseUrl: 'https://boardhousestore.com',      collection: 'preordini', enabled: true }, // collection preordini: l'intero catalogo sono ~2800 prodotti
-  { id: 'philibert',     name: 'Philibert',            kind: 'html',        baseUrl: 'https://www.philibertnet.com',     enabled: true },
   { id: 'supernova',     name: 'Studio Supernova',      kind: 'shopify',     baseUrl: 'https://www.studiosupernova.it',   enabled: true },   // il dominio senza www ha TLS rotto
   { id: 'littlerocket',  name: 'Little Rocket Games',   kind: 'woocommerce', baseUrl: 'https://www.littlerocketgames.com', enabled: true },
   { id: 'msedizioni',    name: 'MS Edizioni',           kind: 'woocommerce', baseUrl: 'https://www.msedizioni.it',        enabled: true },
