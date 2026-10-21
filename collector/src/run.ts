@@ -62,6 +62,7 @@ export async function runCollector(args: {
             currency: m.currency,
             availability: null,
             releaseDate: m.releaseDate,
+            description: null,
             imageUrl: m.imageUrl,
             gameId: m.gameId,
           })),

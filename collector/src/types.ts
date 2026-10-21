@@ -39,6 +39,7 @@ export type Listing = {
   currency: string | null
   availability: string | null
   releaseDate: string | null
+  description: string | null
   imageUrl: string | null
   gameId: number | null
 }

@@ -1,4 +1,5 @@
 import { RawProductSchema, type RawProduct } from '../types.js'
+import { decodeHtml } from '../text.js'
 import { defaultFetch, USER_AGENT, type HttpClient } from './http.js'
 
 type WpPost = {
@@ -15,17 +16,6 @@ function normalizePermalink(link: string, base: string, postType: string, permal
   if (!permalinkBase) return link
   const match = link.match(new RegExp(`[?&]${postType}=([^&]+)`))
   return match ? `${base}${permalinkBase}/${match[1]}/` : link
-}
-
-export function decodeHtml(s: string): string {
-  return s
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
 }
 
 export async function fetchWordPressProducts(

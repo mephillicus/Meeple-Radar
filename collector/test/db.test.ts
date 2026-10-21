@@ -7,7 +7,7 @@ test('upserts on the (source_id, external_id) conflict target', async () => {
   const store = createSupabaseStore({ from } as any, () => '2026-10-17T00:00:00Z')
   await store.upsertListings([
     { sourceId: 'cranio', externalId: '1', title: 'X', url: 'https://e.com/x',
-      price: 1, currency: 'EUR', availability: null, releaseDate: null, imageUrl: null, gameId: null },
+      price: 1, currency: 'EUR', availability: null, releaseDate: null, description: null, imageUrl: null, gameId: null },
   ])
   expect(from).toHaveBeenCalledWith('listing')
   expect(upsert.mock.calls[0][1]).toMatchObject({ onConflict: 'source_id,external_id' })
@@ -19,7 +19,7 @@ test('includes game_id in the upsert payload', async () => {
   const store = createSupabaseStore({ from } as any, () => '2026-10-17T00:00:00Z')
   await store.upsertListings([
     { sourceId: 'cranio', externalId: '1', title: 'X', url: 'https://e.com/x',
-      price: 1, currency: 'EUR', availability: null, releaseDate: null, imageUrl: null, gameId: 42 },
+      price: 1, currency: 'EUR', availability: null, releaseDate: null, description: null, imageUrl: null, gameId: 42 },
   ])
   expect(upsert.mock.calls[0][0][0]).toMatchObject({ game_id: 42 })
 })
@@ -30,7 +30,7 @@ test('upsertListings omette i campi nulli per non azzerare i valori esistenti', 
   const store = createSupabaseStore({ from } as any, () => '2026-10-20T00:00:00Z')
   await store.upsertListings([
     { sourceId: 'cranio', externalId: '1', title: 'X', url: 'https://e.com/x',
-      price: null, currency: null, availability: null, releaseDate: null, imageUrl: null, gameId: null },
+      price: null, currency: null, availability: null, releaseDate: null, description: null, imageUrl: null, gameId: null },
   ])
   const payload = upsert.mock.calls[0][0][0]
   expect(payload).not.toHaveProperty('price')
@@ -48,7 +48,7 @@ test('upsertListings scrive i campi valorizzati, così un prezzo aggiornato prev
   const store = createSupabaseStore({ from } as any, () => '2026-10-20T00:00:00Z')
   await store.upsertListings([
     { sourceId: 'cranio', externalId: '1', title: 'X', url: 'https://e.com/x',
-      price: 25, currency: 'EUR', availability: 'Disponibile', releaseDate: '2027-01-01', imageUrl: null, gameId: 42 },
+      price: 25, currency: 'EUR', availability: 'Disponibile', releaseDate: '2027-01-01', description: null, imageUrl: null, gameId: 42 },
   ])
   const payload = upsert.mock.calls[0][0][0]
   expect(payload).toMatchObject({ price: 25, currency: 'EUR', availability: 'Disponibile', release_date: '2027-01-01', game_id: 42 })
@@ -110,7 +110,7 @@ test('upserts sources on the id conflict target', async () => {
 
 const listing = (title: string) => ({
   sourceId: 'cranio', externalId: '1', title, url: 'https://e.com/x',
-  price: 1, currency: 'EUR', availability: null, releaseDate: null, imageUrl: null, gameId: null,
+  price: 1, currency: 'EUR', availability: null, releaseDate: null, description: null, imageUrl: null, gameId: null,
 })
 
 // supabase-js v2 ignora { returning: 'representation' } e restituisce data: null.
@@ -142,7 +142,7 @@ test('upsertProducts omette i campi nulli allo stesso modo', async () => {
   const store = createSupabaseStore({ from } as any, () => '2026-10-20T00:00:00Z')
   await store.upsertProducts([
     { sourceId: 's', externalId: '1', title: 'X', url: 'https://e.com/x',
-      price: null, currency: null, availability: null, releaseDate: null, imageUrl: null, gameId: null },
+      price: null, currency: null, availability: null, releaseDate: null, description: null, imageUrl: null, gameId: null },
   ])
   const payload = upsert.mock.calls[0][0][0]
   expect(payload).not.toHaveProperty('price')

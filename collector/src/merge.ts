@@ -31,6 +31,8 @@ export function canonicalizeProduct(listings: Listing[]): Listing | null {
     .sort((a, b) => releaseDatePrecision(b) - releaseDatePrecision(a))[0] ?? null
   const imageUrl = chooseCanonicalField(listings.map((l) => l.imageUrl), (v) => !!v) ?? null
   const gameId = chooseCanonicalField(listings.map((l) => l.gameId), (v) => v !== null && v !== undefined) ?? null
+  const description =
+    chooseCanonicalField(listings.map((l) => l.description), (v) => !!v) ?? null
 
   return {
     sourceId: listings[0].sourceId,
@@ -41,6 +43,7 @@ export function canonicalizeProduct(listings: Listing[]): Listing | null {
     currency,
     availability: chooseCanonicalField(listings.map((l) => l.availability), (v) => !!v) ?? null,
     releaseDate,
+    description,
     imageUrl,
     gameId,
   }

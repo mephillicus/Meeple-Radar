@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { toPrice, extractReleaseDate, normalizeListing } from '../src/normalize.js'
+import { htmlToText } from '../src/text.js'
 
 test('converts minor units to a decimal price', () => {
   expect(toPrice('1299', 2)).toBe(12.99)
@@ -30,4 +31,29 @@ test('prefers a structured release date over the parsed description', () => {
     descriptionRaw: '<p>In uscita: 2026-04</p>',
   })
   expect(fallback.releaseDate).toBe('2026-04-01')
+})
+
+test('htmlToText rimuove i tag e decodifica le entità', () => {
+  expect(htmlToText('<p>Salpa per i sette mari!</p><p>Un gioco di <strong>esplorazione</strong>.</p>'))
+    .toBe('Salpa per i sette mari! Un gioco di esplorazione.')
+  expect(htmlToText('Ghenos&#039; gioco &amp; carta')).toBe("Ghenos' gioco & carta")
+})
+
+test('htmlToText restituisce null per testo vuoto o solo spazi', () => {
+  expect(htmlToText(undefined)).toBeNull()
+  expect(htmlToText('')).toBeNull()
+  expect(htmlToText('<p></p>   \n')).toBeNull()
+})
+
+test('normalizeListing porta descriptionRaw nella descrizione come testo pulito', () => {
+  const row = normalizeListing('cranio', {
+    externalId: '1', title: 'Azul', url: 'https://e.com/a',
+    descriptionRaw: '<div>Un gioco di <em>astratto</em></div>',
+  })
+  expect(row.description).toBe('Un gioco di astratto')
+})
+
+test('normalizeListing lascia la descrizione a null quando il sorgente non la ha', () => {
+  const row = normalizeListing('cranio', { externalId: '1', title: 'Azul', url: 'https://e.com/a' })
+  expect(row.description).toBeNull()
 })

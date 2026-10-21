@@ -1,4 +1,5 @@
 import type { Listing, RawProduct } from './types.js'
+import { htmlToText } from './text.js'
 
 export function normalizeTitle(title: string): string {
   return title.toLowerCase().replace(/[^\w\s]/gu, '').replace(/\s+/g, ' ').trim()
@@ -110,6 +111,7 @@ export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
     currency: raw.currencyRaw ? raw.currencyRaw.toUpperCase() : null,
     availability: raw.availabilityRaw ?? null,
     releaseDate: isoOrNull(raw.releaseDateRaw, raw.descriptionRaw),
+    description: htmlToText(raw.descriptionRaw),
     imageUrl: raw.imageUrl ?? null,
     gameId: raw.gameId ?? null,
   }
