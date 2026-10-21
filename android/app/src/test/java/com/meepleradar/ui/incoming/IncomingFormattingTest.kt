@@ -55,4 +55,12 @@ class IncomingFormattingTest {
         assertEquals("n/d", bestPriceLabel(listOf(offer(null, null))))
         assertEquals("n/d", bestPriceLabel(emptyList()))
     }
+
+    @Test
+    fun `bestPriceLabel mostra il prezzo numerico piu basso anche se non disponibile`() {
+        val unavailable = Offer("s1", "Store esaurito", Price(20.0, "EUR"), "url1", "OutOfStock")
+        val available = Offer("s2", "Store disponibile", Price(35.0, "EUR"), "url2", "InStock")
+
+        assertEquals("20,00 €", bestPriceLabel(listOf(unavailable, available)))
+    }
 }

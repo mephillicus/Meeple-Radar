@@ -38,12 +38,12 @@ fun NewsScreen(
         contentWindowInsets = ScreenContentInsets,
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            ScreenHeader(title = "Novità DB", onRefresh = { vm.loadNews() })
+            ScreenHeader(title = "Novità e preordini", onRefresh = { vm.loadNews() })
 
             when (val current = state) {
                 NewsUiState.Loading -> LoadingView()
                 is NewsUiState.Content -> if (current.items.isEmpty()) {
-                    EmptyView("Nessuna novità recente nell'ultimo aggiornamento DB")
+                    EmptyView("Nessuna novità recente o preordine disponibile")
                 } else {
                     LazyColumn(
                         contentPadding = PaddingValues(12.dp),

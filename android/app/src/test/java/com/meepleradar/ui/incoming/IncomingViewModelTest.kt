@@ -1,8 +1,11 @@
 package com.meepleradar.ui.incoming
 
 import com.meepleradar.data.model.Action
+import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
+import com.meepleradar.data.model.Offer
+import com.meepleradar.data.model.Price
 import com.meepleradar.data.model.Source
 import com.meepleradar.data.repo.ListingRepository
 import java.io.IOException
@@ -201,5 +204,27 @@ class IncomingViewModelTest {
         viewModel.resetFilters()
         assertEquals(false, viewModel.hideUndated.value)
         assertEquals(null, viewModel.selectedSources.value)
+        assertEquals(AvailabilityStatus.entries.toSet(), viewModel.selectedAvailability.value)
+    }
+
+    @Test
+    fun `filtro disponibilita mostra solo i giochi con un offerta dello stato selezionato`() = runTest(dispatcher) {
+        val available = item("game:1", "Disponibile").copy(
+            offers = listOf(Offer("s1", "Store", Price(20.0, "EUR"), "url1", "InStock")),
+        )
+        val preorder = item("game:2", "Preordine").copy(
+            offers = listOf(Offer("s2", "Store", Price(30.0, "EUR"), "url2", "http://schema.org/PreOrder")),
+        )
+        val viewModel = IncomingViewModel(repo = FakeRepo(incomingItems = listOf(available, preorder)), today = today)
+        advanceUntilIdle()
+
+        viewModel.applyFilters(
+            sourceIds = null,
+            hideUndated = false,
+            availability = setOf(AvailabilityStatus.PREORDER),
+        )
+
+        val state = viewModel.state.value as IncomingUiState.Content
+        assertEquals(listOf("game:2"), state.items.map { it.key })
     }
 }

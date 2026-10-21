@@ -2,6 +2,7 @@ package com.meepleradar.ui.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.remote.BoardGameDetails
@@ -24,6 +25,7 @@ sealed interface DetailUiState {
     data class Content(
         val item: IncomingItem,
         val offers: List<Offer>,
+        val isFavorite: Boolean = false,
         val boardGameDetails: BoardGameDetails? = null,
         val isLoadingDetails: Boolean = false,
         val detailsError: String? = null,
@@ -54,9 +56,11 @@ class DetailViewModel(
                     return@launch
                 }
 
+                val isFavorite = repo.favorites(today).any { it.key == key }
                 _state.value = DetailUiState.Content(
                     item = item,
                     offers = orderOffers(item.offers),
+                    isFavorite = isFavorite,
                     isLoadingDetails = imageLookup != null,
                 )
                 val lookup = imageLookup ?: return@launch
@@ -88,6 +92,35 @@ class DetailViewModel(
                         )
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = DetailUiState.Error(e.message ?: DEFAULT_ERROR)
+            }
+        }
+    }
+
+    fun toggleFavorite() {
+        val content = _state.value as? DetailUiState.Content ?: return
+        val action = if (content.isFavorite) Action.UNFAVORITED else Action.FAVORITE
+        viewModelScope.launch {
+            try {
+                repo.setAction(key, action)
+                updateContent { it.copy(isFavorite = !content.isFavorite) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = DetailUiState.Error(e.message ?: DEFAULT_ERROR)
+            }
+        }
+    }
+
+    fun ignore(onIgnored: () -> Unit) {
+        if (_state.value !is DetailUiState.Content) return
+        viewModelScope.launch {
+            try {
+                repo.setAction(key, Action.IGNORED)
+                onIgnored()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

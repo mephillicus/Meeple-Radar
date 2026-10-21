@@ -3,8 +3,10 @@ package com.meepleradar.ui.incoming
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meepleradar.data.model.Action
+import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.model.availabilityStatus
 import com.meepleradar.data.repo.ListingRepository
 import java.time.LocalDate
 import java.util.Locale
@@ -48,6 +50,9 @@ class IncomingViewModel(
     private val _hidePriceless = MutableStateFlow<Boolean>(false)
     val hidePriceless: StateFlow<Boolean> = _hidePriceless.asStateFlow()
 
+    private val _selectedAvailability = MutableStateFlow(AvailabilityStatus.entries.toSet())
+    val selectedAvailability: StateFlow<Set<AvailabilityStatus>> = _selectedAvailability.asStateFlow()
+
     private val _lastModifiedTimestamp = MutableStateFlow<Long>(repo.lastDbModifiedTimestamp())
     val lastModifiedTimestamp: StateFlow<Long> = _lastModifiedTimestamp.asStateFlow()
 
@@ -72,10 +77,16 @@ class IncomingViewModel(
         updateFilteredState()
     }
 
-    fun applyFilters(sourceIds: Set<String>?, hideUndated: Boolean, hidePriceless: Boolean = false) {
+    fun applyFilters(
+        sourceIds: Set<String>?,
+        hideUndated: Boolean,
+        hidePriceless: Boolean = false,
+        availability: Set<AvailabilityStatus> = AvailabilityStatus.entries.toSet(),
+    ) {
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
         _hidePriceless.value = hidePriceless
+        _selectedAvailability.value = availability
         updateFilteredState()
     }
 
@@ -83,6 +94,7 @@ class IncomingViewModel(
         _selectedSources.value = null
         _hideUndated.value = false
         _hidePriceless.value = false
+        _selectedAvailability.value = AvailabilityStatus.entries.toSet()
         _searchQuery.value = ""
         updateFilteredState()
     }
@@ -156,6 +168,7 @@ class IncomingViewModel(
         val sourceIds = _selectedSources.value
         val hideUndated = _hideUndated.value
         val hidePriceless = _hidePriceless.value
+        val selectedAvailability = _selectedAvailability.value
         val query = _searchQuery.value.trim()
 
         val queryWords = if (query.length >= 3) {
@@ -168,6 +181,8 @@ class IncomingViewModel(
             val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
             val dateMatch = !hideUndated || item.releaseDate != null
             val priceMatch = !hidePriceless || item.offers.any { it.price != null }
+            val availabilityMatch = selectedAvailability == AvailabilityStatus.entries.toSet() ||
+                item.offers.any { availabilityStatus(it.availability) in selectedAvailability }
 
             val searchMatch = if (queryWords.isEmpty()) {
                 true
@@ -176,7 +191,7 @@ class IncomingViewModel(
                 queryWords.all { word -> titleLower.contains(word) }
             }
 
-            sourceMatch && dateMatch && priceMatch && searchMatch
+            sourceMatch && dateMatch && priceMatch && availabilityMatch && searchMatch
         }
 
         _state.value = IncomingUiState.Content(items = filtered, favorites = rawFavorites)

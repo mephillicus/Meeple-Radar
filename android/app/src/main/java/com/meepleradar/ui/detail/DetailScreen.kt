@@ -21,7 +21,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,6 +62,10 @@ import com.meepleradar.ui.components.LoadingView
 import com.meepleradar.ui.components.RatingBadge
 import com.meepleradar.ui.components.ScreenContentInsets
 import com.meepleradar.ui.incoming.dateLabel
+import com.meepleradar.ui.incoming.availabilityColor
+import com.meepleradar.ui.incoming.availabilityLabel
+import com.meepleradar.ui.incoming.bestComparableEuroOffers
+import com.meepleradar.ui.incoming.offerPriceColor
 import com.meepleradar.ui.incoming.priceLabel
 import java.util.Locale
 
@@ -104,6 +111,23 @@ fun DetailScreen(
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
+                Spacer(Modifier.weight(1f))
+                (state as? DetailUiState.Content)?.let { content ->
+                    IconButton(onClick = { vm.toggleFavorite() }) {
+                        Icon(
+                            imageVector = if (content.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                            contentDescription = if (content.isFavorite) "Rimuovi dai preferiti" else "Aggiungi ai preferiti",
+                            tint = if (content.isFavorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = { vm.ignore(onBack) }) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Ignora gioco",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
 
             when (val current = state) {
@@ -125,7 +149,7 @@ fun DetailScreen(
 @Composable
 private fun DetailContent(content: DetailUiState.Content, imageLookup: BoardGameImageLookup) {
     val uriHandler = LocalUriHandler.current
-    val bestOffer = content.offers.firstOrNull { it.price?.currency == "EUR" }
+    val bestOffers = remember(content.offers) { bestComparableEuroOffers(content.offers) }
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
@@ -151,7 +175,8 @@ private fun DetailContent(content: DetailUiState.Content, imageLookup: BoardGame
         items(content.offers) { offer ->
             OfferRow(
                 offer = offer,
-                isBestOffer = offer == bestOffer,
+                allOffers = content.offers,
+                isBestOffer = offer in bestOffers,
                 onOpen = { runCatching { uriHandler.openUri(offer.url) } },
             )
         }
@@ -438,19 +463,21 @@ private fun GameSpecificationRows(details: BoardGameDetails) {
 }
 
 @Composable
-private fun OfferRow(offer: Offer, isBestOffer: Boolean, onOpen: () -> Unit) {
+private fun OfferRow(offer: Offer, allOffers: List<Offer>, isBestOffer: Boolean, onOpen: () -> Unit) {
+    val priceColor = offerPriceColor(offer, allOffers)
+    val stockColor = availabilityColor(offer)
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isBestOffer) {
-                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.08f)
-            } else {
+            containerColor = if (priceColor == MaterialTheme.colorScheme.onSurfaceVariant) {
                 MaterialTheme.colorScheme.surface
+            } else {
+                priceColor.copy(alpha = 0.08f)
             },
         ),
         border = BorderStroke(
             1.dp,
-            if (isBestOffer) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outlineVariant,
+            if (priceColor == MaterialTheme.colorScheme.onSurfaceVariant) priceColor.copy(alpha = 0.25f) else priceColor,
         ),
     ) {
         Row(
@@ -478,21 +505,19 @@ private fun OfferRow(offer: Offer, isBestOffer: Boolean, onOpen: () -> Unit) {
                         )
                     }
                 }
-                offer.availability?.let {
-                    if (it.lowercase() != "true" && it.isNotBlank()) {
-                        Spacer(Modifier.height(2.dp))
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
-                        ) {
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            )
+                availabilityLabel(offer)?.let { status ->
+                    Spacer(Modifier.height(2.dp))
+                    Surface(
+                        shape = CircleShape,
+                        color = stockColor.copy(alpha = 0.15f),
+                    ) {
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = stockColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
                         }
-                    }
                 }
             }
 
@@ -500,11 +525,7 @@ private fun OfferRow(offer: Offer, isBestOffer: Boolean, onOpen: () -> Unit) {
                 Text(
                     text = priceLabel(offer),
                     style = MaterialTheme.typography.titleLarge,
-                    color = if (isBestOffer) {
-                        MaterialTheme.colorScheme.tertiary
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
+                    color = priceColor,
                     fontWeight = FontWeight.ExtraBold,
                 )
                 Spacer(Modifier.height(6.dp))

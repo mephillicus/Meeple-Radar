@@ -30,7 +30,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,7 +40,11 @@ import androidx.compose.ui.unit.dp
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.ui.incoming.bestPriceLabel
+import com.meepleradar.ui.incoming.availabilityColor
+import com.meepleradar.ui.incoming.bestPricedOffer
 import com.meepleradar.ui.incoming.dateLabel
+import com.meepleradar.ui.incoming.offerPriceColor
+import com.meepleradar.ui.incoming.orderedOffersForDisplay
 import com.meepleradar.ui.theme.BggGoldBackground
 import com.meepleradar.ui.theme.BggGoldDarkBackground
 import com.meepleradar.ui.theme.BggGoldDarkText
@@ -121,6 +124,7 @@ fun ListingCard(
                 }
 
                 // Price, Rating Badge, and Small Action Buttons (Favorite & Ignore)
+                val bestOfferForDisplay = bestPricedOffer(item.offers)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -128,7 +132,8 @@ fun ListingCard(
                     Text(
                         text = bestPriceLabel(item.offers),
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = bestOfferForDisplay?.let { offerPriceColor(it, item.offers) }
+                            ?: MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.ExtraBold,
                     )
 
@@ -167,19 +172,9 @@ fun ListingCard(
             Spacer(Modifier.width(8.dp))
 
             // Right Column: Shopping Cart + Sources (without "Fonte")
-            val sourceText = remember(item.offers) {
-                val names = item.offers.map { it.sourceName }.distinct()
-                when {
-                    names.isEmpty() -> "N/D"
-                    names.size == 1 -> names.first()
-                    names.size == 2 -> "${names.first()}\n${names[1]}"
-                    else -> "${names.first()}\n+${names.size - 1}"
-                }
-            }
-
             Column(
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
                 modifier = Modifier.width(96.dp),
             ) {
                 Surface(
@@ -206,14 +201,27 @@ fun ListingCard(
                     }
                 }
 
-                Text(
-                    text = sourceText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.End,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                val displayedOffers = orderedOffersForDisplay(item.offers).take(2)
+                displayedOffers.forEach { offer ->
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = offer.sourceName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = availabilityColor(offer),
+                            textAlign = TextAlign.End,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (item.offers.size > displayedOffers.size) {
+                    Text(
+                        text = "+${item.offers.size - displayedOffers.size} altri",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.End,
+                    )
+                }
             }
         }
     }

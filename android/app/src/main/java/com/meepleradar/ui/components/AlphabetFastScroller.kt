@@ -49,7 +49,7 @@ fun AlphabetFastScroller(
     modifier: Modifier = Modifier,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val alphabet = remember { ('A'..'Z').toList() + '#' }
+    val alphabet = remember { listOf('#') + ('A'..'Z').toList() }
     var draggingLetter by remember { mutableStateOf<Char?>(null) }
     var isTouchingBar by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
@@ -148,10 +148,7 @@ fun AlphabetFastScroller(
                             .height(18.dp)
                             .alpha(alpha)
                             .clickable(enabled = hasItems) {
-                                isTouchingBar = true
-                                draggingLetter = char
                                 scrollToLetter(char, items, lazyListState, coroutineScope)
-                                isTouchingBar = false
                             },
                         contentAlignment = Alignment.Center,
                     ) {

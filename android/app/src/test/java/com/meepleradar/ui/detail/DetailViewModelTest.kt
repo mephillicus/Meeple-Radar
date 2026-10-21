@@ -43,9 +43,11 @@ class DetailViewModelTest {
 
     private class FakeRepo(
         private val items: List<IncomingItem>,
+        private var favoriteItems: List<IncomingItem> = emptyList(),
         private val failure: Throwable? = null,
     ) : ListingRepository {
         var requestedSourceIds: Set<String>? = emptySet()
+        val actions = mutableListOf<Pair<String, Action>>()
 
         override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> {
             requestedSourceIds = sourceIds
@@ -53,11 +55,17 @@ class DetailViewModelTest {
             return items
         }
 
-        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> = emptyList()
+        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> = favoriteItems
 
         override suspend fun sources(): List<Source> = emptyList()
 
-        override suspend fun setAction(key: String, action: Action) = Unit
+        override suspend fun setAction(key: String, action: Action) {
+            actions += key to action
+            favoriteItems = when (action) {
+                Action.FAVORITE -> items.filter { it.key == key }
+                Action.UNFAVORITED, Action.IGNORED -> emptyList()
+            }
+        }
 
         override fun lastDbModifiedTimestamp(): Long = 0L
 
@@ -161,7 +169,7 @@ class DetailViewModelTest {
     @Test
     fun `errore nel caricamento del gioco e visibile invece di una pagina vuota`() = runTest(dispatcher) {
         val viewModel = DetailViewModel(
-            repo = FakeRepo(emptyList(), IllegalStateException("Connessione assente")),
+            repo = FakeRepo(emptyList(), failure = IllegalStateException("Connessione assente")),
             key = "game:5",
             today = today,
         )
@@ -182,5 +190,35 @@ class DetailViewModelTest {
         advanceUntilIdle()
 
         assertEquals(DetailUiState.NotFound, viewModel.state.value)
+    }
+
+    @Test
+    fun `dettaglio legge e aggiorna lo stato preferito`() = runTest(dispatcher) {
+        val game = item("game:5", emptyList())
+        val repo = FakeRepo(items = listOf(game), favoriteItems = listOf(game))
+        val viewModel = DetailViewModel(repo, key = "game:5", today = today)
+
+        advanceUntilIdle()
+        assertTrue((viewModel.state.value as DetailUiState.Content).isFavorite)
+
+        viewModel.toggleFavorite()
+        advanceUntilIdle()
+
+        assertEquals(listOf("game:5" to Action.UNFAVORITED), repo.actions)
+        assertEquals(false, (viewModel.state.value as DetailUiState.Content).isFavorite)
+    }
+
+    @Test
+    fun `ignora un gioco e invoca il callback dopo il salvataggio`() = runTest(dispatcher) {
+        val repo = FakeRepo(items = listOf(item("game:5", emptyList())))
+        val viewModel = DetailViewModel(repo, key = "game:5", today = today)
+        var ignored = false
+        advanceUntilIdle()
+
+        viewModel.ignore { ignored = true }
+        advanceUntilIdle()
+
+        assertEquals(listOf("game:5" to Action.IGNORED), repo.actions)
+        assertTrue(ignored)
     }
 }

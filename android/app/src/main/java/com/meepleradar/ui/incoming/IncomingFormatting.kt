@@ -3,7 +3,6 @@ package com.meepleradar.ui.incoming
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Offer
-import com.meepleradar.data.repo.bestEurPrice
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -22,9 +21,7 @@ fun priceLabel(offer: Offer): String {
 }
 
 fun bestPriceLabel(offers: List<Offer>): String {
-    val bestEur = bestEurPrice(offers)
-    val chosen = offers.firstOrNull { it.price != null && it.price == bestEur }
-        ?: offers.firstOrNull { it.price != null }
+    val chosen = bestPricedOffer(offers)
         ?: return NO_PRICE_LABEL
     return priceLabel(chosen)
 }
