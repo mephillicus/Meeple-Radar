@@ -11,6 +11,10 @@ import { retentionCutoff } from './retention.js'
 
 export type Adapter = (source: Source) => Promise<RawProduct[]>
 
+// Testi generati dal titolo e non scritti da un editore: non finiscono mai su
+// product.description. Restano su descriptionRaw per estrarre la data.
+const GENERATED_TEXT_KINDS: ReadonlySet<SourceKind> = new Set(['news', 'gemini'])
+
 export type RunReport = {
   ok: boolean
   perSource: Record<string, number>
@@ -47,6 +51,7 @@ export async function runCollector(args: {
       if (raw.length === 0) zeroed.push(source.id)
       const rows = raw
         .map((r) => normalizeListing(source.id, r))
+        .map((row) => (GENERATED_TEXT_KINDS.has(source.kind) ? { ...row, description: null } : row))
         .filter((row) => row.releaseDate === null || row.releaseDate >= cutoff)
       await store.upsertListings(rows)
 
@@ -75,6 +80,10 @@ export async function runCollector(args: {
         const productIds = await store.upsertProducts([canonical])
         const productId = productIds[0]
         if (productId === undefined) continue
+
+        // Write-once: lo store aggiorna solo dove la colonna e ancora null,
+        // quindi il guard qui sopra serve solo a non sprecare una chiamata.
+        if (canonical.description) await store.fillProductDescription(productId, canonical.description)
 
         const allMatches = await store.findListingsByTitle(normalizeTitle(canonical.title))
         for (const listingRow of allMatches) {

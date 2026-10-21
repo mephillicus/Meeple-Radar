@@ -11,6 +11,7 @@ test('collects enabled sources and isolates a failing one', async () => {
       { id: 12, title: 'A', url: 'https://e.com/a', price: null, currency: null, releaseDate: null, imageUrl: null, gameId: null, sourceId: 's1' },
     ]),
     upsertProducts: vi.fn().mockResolvedValue([7]),
+    fillProductDescription: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -36,6 +37,7 @@ test('scarta in ingresso i prodotti datati oltre la finestra', async () => {
     upsertListings: vi.fn().mockResolvedValue(undefined),
     findListingsByTitle: vi.fn().mockResolvedValue([]),
     upsertProducts: vi.fn().mockResolvedValue([1]),
+    fillProductDescription: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -65,6 +67,7 @@ test('una fonte a zero non rende il report non ok', async () => {
     upsertListings: vi.fn().mockResolvedValue(undefined),
     findListingsByTitle: vi.fn().mockResolvedValue([]),
     upsertProducts: vi.fn().mockResolvedValue([]),
+    fillProductDescription: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -87,6 +90,7 @@ test('un fallimento di purgeStale non ferma la raccolta ma rende il report non o
     upsertListings: vi.fn().mockResolvedValue(undefined),
     findListingsByTitle: vi.fn().mockResolvedValue([]),
     upsertProducts: vi.fn().mockResolvedValue([]),
+    fillProductDescription: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -115,11 +119,54 @@ test('un fallimento di purgeStale non ferma la raccolta ma rende il report non o
   )
 })
 
+const storeBase = () => ({
+  upsertListings: vi.fn().mockResolvedValue(undefined),
+  findListingsByTitle: vi.fn().mockResolvedValue([]),
+  upsertProducts: vi.fn().mockResolvedValue([7]),
+  fillProductDescription: vi.fn().mockResolvedValue(undefined),
+  linkListingToProduct: vi.fn().mockResolvedValue(undefined),
+  markSourceScanned: vi.fn(),
+  logRun: vi.fn(),
+  purgeStale: vi.fn().mockResolvedValue({ listings: 0, products: 0 }),
+} as any)
+
+test('chiama fillProductDescription con la descrizione del prodotto canonico', async () => {
+  const store = storeBase()
+  const adapters = {
+    shopify: async () => [{ externalId: '1', title: 'A', url: 'https://e.com/a', descriptionRaw: '<p>Una descrizione</p>' }],
+    woocommerce: async () => [], wordpress: async () => [], html: async () => [], headless: async () => [],
+  } as any
+  await runCollector({ sources: [src('s1', 'shopify')], adapters, store })
+  expect(store.fillProductDescription).toHaveBeenCalledWith(7, 'Una descrizione')
+})
+
+test("non scrive la descrizione quando il prodotto canonico non ce l'ha", async () => {
+  const store = storeBase()
+  const adapters = {
+    shopify: async () => [{ externalId: '1', title: 'A', url: 'https://e.com/a' }],
+    woocommerce: async () => [], wordpress: async () => [], html: async () => [], headless: async () => [],
+  } as any
+  await runCollector({ sources: [src('s1', 'shopify')], adapters, store })
+  expect(store.fillProductDescription).not.toHaveBeenCalled()
+})
+
+test('non scrive la descrizione di una fonte news', async () => {
+  const store = storeBase()
+  const adapters = {
+    news: async () => [{ externalId: '9', title: 'N', url: 'https://e.com/n', descriptionRaw: 'Una frase dal titolo' }],
+    shopify: async () => [], woocommerce: async () => [], wordpress: async () => [],
+    html: async () => [], headless: async () => [],
+  } as any
+  await runCollector({ sources: [src('sN', 'news')], adapters, store })
+  expect(store.fillProductDescription).not.toHaveBeenCalled()
+})
+
 test('passa a logRun l istante in cui la run e iniziata', async () => {
   const store = {
     upsertListings: vi.fn().mockResolvedValue(undefined),
     findListingsByTitle: vi.fn().mockResolvedValue([]),
     upsertProducts: vi.fn().mockResolvedValue([]),
+    fillProductDescription: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),

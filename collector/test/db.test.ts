@@ -352,3 +352,19 @@ test('logRun scrive started_at con l istante di avvio della run', async () => {
   // della transazione di INSERT: quindi started_at finirebbe per indicare la FINE run.
   expect(insert.mock.calls[0][0].started_at).toBe('2026-10-21T09:30:00.000Z')
 })
+
+test('fillProductDescription aggiorna solo la colonna ancora vuota', async () => {
+  const is = vi.fn().mockReturnValue({ error: null })
+  const eq = vi.fn(() => ({ is }))
+  const update = vi.fn((payload: { description: string }) => ({ eq }))
+  const from = vi.fn(() => ({ update }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-21T00:00:00Z')
+  await store.fillProductDescription(7, 'Una descrizione')
+  expect(from).toHaveBeenCalledWith('product')
+  expect(update.mock.calls[0][0]).toEqual({ description: 'Una descrizione' })
+  expect(eq).toHaveBeenCalledWith('id', 7)
+  // Il filtro e quello che tiene in piedi la write-once: PostgREST sovrascrive
+  // ogni colonna presente nel payload, quindi l'unico scrittore ammesso e
+  // un update che aggancia solo le righe la cui descrizione e ancora nulla.
+  expect(is).toHaveBeenCalledWith('description', null)
+})

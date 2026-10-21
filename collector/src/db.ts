@@ -24,6 +24,7 @@ export interface ListingStore {
   findSources(): Promise<{ id: string; name: string }[]>
   upsertProducts(products: Listing[]): Promise<number[]>
   linkListingToProduct(listingId: number, productId: number): Promise<void>
+  fillProductDescription(productId: number, description: string): Promise<void>
   purgeStale(before: string): Promise<{ listings: number; products: number }>
 }
 
@@ -154,6 +155,18 @@ export function createSupabaseStore(
         .update({ product_id: productId })
         .eq('id', listingId)
       if (error) throw new Error(`linkListingToProduct(${listingId}, ${productId}): ${error.message}`)
+    },
+
+    async fillProductDescription(productId: number, description: string): Promise<void> {
+      // L'unico scrittore della colonna. Il filtro .is("description", null)
+      // e cio che rende l'operazione write-once: una descrizione presente
+      // resta quella della prima fonte che l'ha portata, a qualunque costo.
+      const { error } = await client
+        .from('product')
+        .update({ description })
+        .eq('id', productId)
+        .is('description', null)
+      if (error) throw new Error(`fillProductDescription(${productId}): ${error.message}`)
     },
 
     async purgeStale(before: string): Promise<{ listings: number; products: number }> {
