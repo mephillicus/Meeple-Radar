@@ -62,6 +62,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
@@ -501,7 +502,7 @@ private fun FilterDrawerContent(
 
         HorizontalDivider()
 
-        // Section 2: Tipologia Disponibilità (Senza titolo, 6 categorie con Tutti/Nessuno a Sx)
+        // Section 2: Tipologia Disponibilità (Tabella a 3 colonne, Tutti/Nessuno sovrapposti a Sx)
         val allAvailability = remember { AvailabilityStatus.entries.toSet() }
 
         val availabilityOptions = listOf(
@@ -515,68 +516,71 @@ private fun FilterDrawerContent(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 OutlinedButton(
                     onClick = { localAvailability = allAvailability.toMutableSet() },
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.height(26.dp),
                 ) {
-                    Text("Tutti", style = MaterialTheme.typography.labelSmall)
+                    Text("Tutti", style = MaterialTheme.typography.labelSmall, fontSize = 9.sp)
                 }
                 OutlinedButton(
                     onClick = { localAvailability = mutableSetOf() },
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.height(26.dp),
                 ) {
-                    Text("Nessuno", style = MaterialTheme.typography.labelSmall)
+                    Text("Nessuno", style = MaterialTheme.typography.labelSmall, fontSize = 9.sp)
                 }
             }
-            Text(
-                text = "Disponibilità (${localAvailability.size}/6)",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
 
-        availabilityOptions.chunked(2).forEach { rowOptions ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                rowOptions.forEach { (status, label) ->
-                    val isSelected = status in localAvailability
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            val next = localAvailability.toMutableSet()
-                            if (isSelected) next.remove(status) else next.add(status)
-                            localAvailability = next
-                        },
-                        label = {
-                            Text(
-                                text = label,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelSmall,
+                availabilityOptions.chunked(3).forEach { rowOptions ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        rowOptions.forEach { (status, label) ->
+                            val isSelected = status in localAvailability
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    val next = localAvailability.toMutableSet()
+                                    if (isSelected) next.remove(status) else next.add(status)
+                                    localAvailability = next
+                                },
+                                label = {
+                                    Text(
+                                        text = label,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 10.sp,
+                                    )
+                                },
+                                leadingIcon = if (isSelected) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(10.dp),
+                                        )
+                                    }
+                                } else {
+                                    null
+                                },
+                                modifier = Modifier.weight(1f),
                             )
-                        },
-                        leadingIcon = if (isSelected) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Filled.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(12.dp),
-                                )
-                            }
-                        } else {
-                            null
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (rowOptions.size == 1) {
-                    Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }
