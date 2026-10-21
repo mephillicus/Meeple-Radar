@@ -44,3 +44,32 @@ test('finds the product nested under ItemPage.mainEntity (giochiuniti/Magento)',
   })
   expect(p?.availabilityRaw).toContain('OutOfStock')
 })
+
+test('itemprop description vince sull og:description quando e piu lungo', () => {
+  const html = `<html><head>
+    <meta property="og:title" content="Dungeon Dice" />
+    <meta property="og:description" content="Gioca con i dadi." />
+  </head><body>
+    <div itemprop="description">Una descrizione lunga e dettagliata scritta dal produttore, che racconta meccanica, componenti e durata della partita.</div>
+  </body></html>`
+  const p = extractProduct(html, 'https://e.com/p')
+  expect(p?.descriptionRaw).toContain('scritta dal produttore')
+})
+
+test('senza itemprop resta l og:description', () => {
+  const html = `<html><head>
+    <meta property="og:title" content="Catan" />
+    <meta property="og:description" content="Il classico gioco di insediamento." />
+  </head><body></body></html>`
+  const p = extractProduct(html, 'https://e.com/p')
+  expect(p?.descriptionRaw).toBe('Il classico gioco di insediamento.')
+})
+
+test('non usa il meta name description da tre righe', () => {
+  const html = `<html><head>
+    <meta property="og:title" content="Catan" />
+    <meta name="description" content="Acquista Catan. Scopri tutte le offerte" />
+  </head><body></body></html>`
+  const p = extractProduct(html, 'https://e.com/p')
+  expect(p?.descriptionRaw).toBeUndefined()
+})

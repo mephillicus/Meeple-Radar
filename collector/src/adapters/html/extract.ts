@@ -135,5 +135,11 @@ function fromOpenGraph($: cheerio.CheerioAPI, pageUrl: string, canonical?: strin
 export function extractProduct(html: string, pageUrl: string): RawProduct | null {
   const $ = cheerio.load(html)
   const canonical = asString($('link[rel="canonical"]').attr('href'))
-  return fromJsonLd($, pageUrl, canonical) ?? fromOpenGraph($, pageUrl, canonical)
+  const product = fromJsonLd($, pageUrl, canonical) ?? fromOpenGraph($, pageUrl, canonical)
+  if (!product) return null
+  const visible = $('div[itemprop="description"]').first().text().trim()
+  if (visible && (!product.descriptionRaw || product.descriptionRaw.length < visible.length)) {
+    return { ...product, descriptionRaw: visible }
+  }
+  return product
 }
