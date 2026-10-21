@@ -34,6 +34,18 @@ function normalizePrice(text: string): string | undefined {
   return s
 }
 
+// Il tab Description e il testo lungo della pagina; lo short-description ha
+// dentro le righe Designer/Artist con le immagini, quindi si usa solo se manca
+// il tab. L'<h2> di testa e l'etichetta della sezione, non parte del testo.
+function descriptionFrom($: cheerio.CheerioAPI): string | undefined {
+  const tab = $('#tab-description').first()
+  const source = tab.length > 0 ? tab : $('.woocommerce-product-details__short-description').first()
+  if (source.length === 0) return undefined
+  const copy = source.clone()
+  copy.find('h2').first().remove()
+  return copy.html()?.trim() || undefined
+}
+
 export const horribleguildSpec: HtmlSourceSpec = {
   discover: async (fetchText) => toItems(await collectLinks(fetchText, [SHOP_URL], (url) => PRODUCT_URL.test(url))),
   extract(html, url) {
@@ -41,6 +53,12 @@ export const horribleguildSpec: HtmlSourceSpec = {
     const title = $('.product_title').first().text().trim()
     const rawPrice = priceTextFrom($).match(/[\d.,]+/)?.[0]
     const price = rawPrice === undefined ? undefined : normalizePrice(rawPrice)
-    return buildProduct({ title, url, price, currency: price === undefined ? undefined : 'EUR' })
+    return buildProduct({
+      title,
+      url,
+      price,
+      currency: price === undefined ? undefined : 'EUR',
+      description: descriptionFrom($),
+    })
   },
 }

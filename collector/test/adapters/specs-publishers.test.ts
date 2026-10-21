@@ -165,3 +165,55 @@ test('horribleguild extract leaves priceRaw undefined when the price text has no
   expect(product?.title).toBe('Mystery Box')
   expect(product?.priceRaw).toBeUndefined()
 })
+
+test('dvgiochi extract legge la descrizione dal blocco di testo, senza l\'elenco dei componenti', () => {
+  const html = `<html><body>
+    <h2>BANG! Game System | Black Flag! (ITA) | DV Games<br /> <img src="/images/infobox.gif" alt="Black Flag! (ITA)" title="Black Flag! (ITA)"></h2>
+    <div class="col-sm-30 col-md-30 lp40 rp40 tm20" style="font-size:1.3em">
+      <p><i><p>Salpa per i sette mari!</p></i></p>
+      <p>Il capitano vi attende a bordo: naviga tra le isole, contratta con i porti e torna con il tesoro piu grande dei sette mari.</p>
+      <div class="orange"><ul><li>1 tabellone</li><li>60 carte</li></ul></div>
+    </div>
+  </body></html>`
+  const product = HTML_SPECS.dvgiochi.extract?.(html, 'https://www.dvgiochi.com/catalogo/black-flag-ita/')
+  expect(product?.descriptionRaw).toContain('naviga tra le isole')
+  expect(product?.descriptionRaw).not.toContain('60 carte')
+})
+
+test('horribleguild extract legge la descrizione dal tab Description', () => {
+  const html = `<html><body>
+    <h2 class="single-post-title product_title entry-title" itemprop="name">Railroad Ink Challenge</h2>
+    <div class="summary entry-summary">
+      <p class="price"><span class="woocommerce-Price-amount amount"><bdi>24.90<span>€</span></bdi></span></p>
+    </div>
+    <div id="tab-description">
+      <h2>Description</h2>
+      <p>Pianifica il tuo percorso migliore su una mappa condivisa e collega le citta mentre il viaggio si sviluppa.</p>
+      <p>Contenuto: 4 lavagne bottiglia, 16 dadi, 18 cubi.</p>
+    </div>
+    <div class="woocommerce-product-details__short-description">Designer: Alice<br /><img src="/d.png" /></div>
+  </body></html>`
+  const product = HTML_SPECS.horribleguild.extract?.(html, 'https://horribleguild.com/eu/product/railroad-ink-challenge/')
+  expect(product?.descriptionRaw).toContain('Pianifica il tuo percorso migliore')
+  expect(product?.descriptionRaw).not.toContain('Description')
+  expect(product?.descriptionRaw).not.toContain('Designer')
+})
+
+test('gateongames extract legge la prosa che segue il titolo Scopri', () => {
+  const html = `<html><body>
+    <div class="e-col ms-12 tr-7">
+      <h2>Scopri Alpaca</h2>
+      <p>Un gioco veloce di aste in cui ogni mano di carte puo cambiare il destino della tua mandria.</p>
+      <p>Componi la migliore combinazione e segna il maggior numero di punti.</p>
+      <h2>Componenti</h2>
+      <p>120 carte</p>
+      <p>4 segnalini</p>
+    </div>
+    <script type="application/ld+json">{"@type":"Product","name":"Alpaca","sku":"alpaca"}</script>
+  </body></html>`
+  const product = HTML_SPECS.gateongames.extract?.(html, 'https://www.gateongames.com/alpaca/')
+  expect(product?.title).toBe('Alpaca')
+  expect(product?.descriptionRaw).toContain('aste in cui ogni mano')
+  expect(product?.descriptionRaw).not.toContain('Scopri Alpaca')
+  expect(product?.descriptionRaw).not.toContain('120 carte')
+})
