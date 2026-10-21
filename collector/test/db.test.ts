@@ -150,6 +150,22 @@ test('upsertProducts omette i campi nulli allo stesso modo', async () => {
   expect(payload).toMatchObject({ title: 'X', normalized_title: 'x' })
 })
 
+// fillProductDescription e l'unico scrittore della colonna: un description
+// nel payload andrebbe in ON CONFLICT DO UPDATE e sovrascriverebbe il valore
+// write-once. La descrizione va quindi lasciata fuori anche quando esiste.
+test('upsertProducts non porta mai description nel payload', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [], error: null })
+  const upsert = vi.fn().mockReturnValue({ select })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-20T00:00:00Z')
+  await store.upsertProducts([
+    { sourceId: 's', externalId: '1', title: 'X', url: 'https://e.com/x',
+      price: 1, currency: 'EUR', availability: null, releaseDate: null,
+      description: 'Descrizione gia presente', imageUrl: null, gameId: null },
+  ])
+  expect(upsert.mock.calls[0][0][0]).not.toHaveProperty('description')
+})
+
 // PostgREST serve al massimo `max-rows` righe per richiesta: il fake deve
 // paginare con .range come fa il database, non restituire tutto in un colpo.
 function paged(rows: Record<string, unknown>[], cap = rows.length) {
