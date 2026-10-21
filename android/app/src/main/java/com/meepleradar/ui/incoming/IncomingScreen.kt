@@ -655,9 +655,9 @@ private fun SquareSelectButtons(
     onDeselectAll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier,
     ) {
         Surface(
