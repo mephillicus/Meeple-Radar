@@ -463,7 +463,7 @@ private fun FilterDrawerContent(
 
         HorizontalDivider()
 
-        // Section 1: Nascondi con interruttori sulla stessa riga del titolo
+        // Section 1: Nascondi con FilterChip sulla stessa riga
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -477,43 +477,25 @@ private fun FilterDrawerContent(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        text = "Senza data",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Switch(
-                        checked = localHideUndated,
-                        onCheckedChange = { localHideUndated = it },
-                        modifier = Modifier.scale(0.7f),
-                    )
-                }
+                FilterChip(
+                    selected = localHideUndated,
+                    onClick = { localHideUndated = !localHideUndated },
+                    label = { Text("Senza data", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                )
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        text = "Senza prezzo",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Switch(
-                        checked = localHidePriceless,
-                        onCheckedChange = { localHidePriceless = it },
-                        modifier = Modifier.scale(0.7f),
-                    )
-                }
+                FilterChip(
+                    selected = localHidePriceless,
+                    onClick = { localHidePriceless = !localHidePriceless },
+                    label = { Text("Senza prezzo", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                )
             }
         }
 
         HorizontalDivider()
 
-        // Section 2: Tipologia Disponibilità (Tabella a 3 colonne, Tutti/Nessuno sovrapposti a Sx)
+        // Section 2: Tipologia Disponibilità (Tabella 3 colonne con pulsanti quadrati Tutti/Nessuno a Sx)
         val allAvailability = remember { AvailabilityStatus.entries.toSet() }
 
         val availabilityOptions = listOf(
@@ -530,25 +512,10 @@ private fun FilterDrawerContent(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                OutlinedButton(
-                    onClick = { localAvailability = allAvailability.toMutableSet() },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                    modifier = Modifier.height(26.dp),
-                ) {
-                    Text("Tutti", style = MaterialTheme.typography.labelSmall, fontSize = 9.sp)
-                }
-                OutlinedButton(
-                    onClick = { localAvailability = mutableSetOf() },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                    modifier = Modifier.height(26.dp),
-                ) {
-                    Text("Nessuno", style = MaterialTheme.typography.labelSmall, fontSize = 9.sp)
-                }
-            }
+            SquareSelectButtons(
+                onSelectAll = { localAvailability = allAvailability.toMutableSet() },
+                onDeselectAll = { localAvailability = mutableSetOf() },
+            )
 
             Column(
                 modifier = Modifier.weight(1f),
@@ -598,20 +565,10 @@ private fun FilterDrawerContent(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedButton(
-                    onClick = { localSelectedSources = sources.map { it.id }.toMutableSet() },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                ) {
-                    Text("Tutti", style = MaterialTheme.typography.labelSmall)
-                }
-                OutlinedButton(
-                    onClick = { localSelectedSources = mutableSetOf() },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                ) {
-                    Text("Nessuno", style = MaterialTheme.typography.labelSmall)
-                }
-            }
+            SquareSelectButtons(
+                onSelectAll = { localSelectedSources = sources.map { it.id }.toMutableSet() },
+                onDeselectAll = { localSelectedSources = mutableSetOf() },
+            )
         }
 
         LazyColumn(
@@ -687,6 +644,55 @@ private fun FilterDrawerContent(
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 Text("Applica")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SquareSelectButtons(
+    onSelectAll: () -> Unit,
+    onDeselectAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+            modifier = Modifier
+                .size(26.dp)
+                .clickable(onClick = onSelectAll),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "Seleziona Tutti",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+            modifier = Modifier
+                .size(26.dp)
+                .clickable(onClick = onDeselectAll),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Deseleziona Tutti",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp),
+                )
             }
         }
     }
