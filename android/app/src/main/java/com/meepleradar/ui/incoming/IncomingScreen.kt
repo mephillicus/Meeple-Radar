@@ -451,11 +451,66 @@ private fun FilterDrawerContent(
 
         HorizontalDivider()
 
-        // Section 1: Nascondi
-        Text(
-            text = "Nascondi",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
+        // Section 1: Nascondi con interruttori sulla stessa riga del titolo
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Nascondi",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = "Senza data",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Switch(
+                        checked = localHideUndated,
+                        onCheckedChange = { localHideUndated = it },
+                        modifier = Modifier.scale(0.7f),
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = "Senza prezzo",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Switch(
+                        checked = localHidePriceless,
+                        onCheckedChange = { localHidePriceless = it },
+                        modifier = Modifier.scale(0.7f),
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider()
+
+        // Section 2: Tipologia Disponibilità (Senza titolo, 6 categorie con Tutti/Nessuno a Sx)
+        val allAvailability = remember { AvailabilityStatus.entries.toSet() }
+
+        val availabilityOptions = listOf(
+            AvailabilityStatus.AVAILABLE to "Disponibile",
+            AvailabilityStatus.PREORDER to "Preordine",
+            AvailabilityStatus.BACKORDER to "Su richiesta",
+            AvailabilityStatus.UNAVAILABLE to "Non disponib.",
+            AvailabilityStatus.DISCONTINUED to "Fuori prod.",
+            AvailabilityStatus.UNKNOWN to "Da verificare",
         )
 
         Row(
@@ -463,89 +518,66 @@ private fun FilterDrawerContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = "Senza data",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Switch(
-                    checked = localHideUndated,
-                    onCheckedChange = { localHideUndated = it },
-                    modifier = Modifier.scale(0.7f),
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(
+                    onClick = { localAvailability = allAvailability.toMutableSet() },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text("Tutti", style = MaterialTheme.typography.labelSmall)
+                }
+                OutlinedButton(
+                    onClick = { localAvailability = mutableSetOf() },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text("Nessuno", style = MaterialTheme.typography.labelSmall)
+                }
             }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = "Senza prezzo",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Switch(
-                    checked = localHidePriceless,
-                    onCheckedChange = { localHidePriceless = it },
-                    modifier = Modifier.scale(0.7f),
-                )
-            }
+            Text(
+                text = "Disponibilità (${localAvailability.size}/6)",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
 
-        HorizontalDivider()
-
-        // Section 2: Tipologia Disponibilità
-        Text(
-            text = "Tipologia Disponibilità",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-
-        val availabilityOptions = listOf(
-            AvailabilityStatus.AVAILABLE to "Disponibile",
-            AvailabilityStatus.PREORDER to "Preordine",
-            AvailabilityStatus.BACKORDER to "Su richiesta",
-            AvailabilityStatus.UNAVAILABLE to "Non disponibile",
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            availabilityOptions.take(2).forEach { (status, label) ->
-                val isSelected = status in localAvailability
-                FilterChip(
-                    selected = isSelected,
-                    onClick = {
-                        val next = localAvailability.toMutableSet()
-                        if (isSelected) next.remove(status) else next.add(status)
-                        localAvailability = next
-                    },
-                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            availabilityOptions.drop(2).forEach { (status, label) ->
-                val isSelected = status in localAvailability
-                FilterChip(
-                    selected = isSelected,
-                    onClick = {
-                        val next = localAvailability.toMutableSet()
-                        if (isSelected) next.remove(status) else next.add(status)
-                        localAvailability = next
-                    },
-                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.weight(1f),
-                )
+        availabilityOptions.chunked(2).forEach { rowOptions ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                rowOptions.forEach { (status, label) ->
+                    val isSelected = status in localAvailability
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            val next = localAvailability.toMutableSet()
+                            if (isSelected) next.remove(status) else next.add(status)
+                            localAvailability = next
+                        },
+                        label = {
+                            Text(
+                                text = label,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                        leadingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (rowOptions.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
             }
         }
 
