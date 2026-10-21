@@ -61,6 +61,39 @@ test('senza il blocco restituisce campi vuoti e si cade sul contenuto dell API',
   expect(parseGhenosProductPage('')).toEqual({})
 })
 
+const postApi = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    id: i + 1,
+    link: `https://s.com/prodotto/${i + 1}/`,
+    title: { rendered: `G${i + 1}` },
+  }))
+
+test('smette di scaricare le pagine dopo molti fallimenti di fila', async () => {
+  const api = postApi(10)
+  let pageCalls = 0
+  const http = async (u: string) => {
+    if (u.includes('/wp-json/')) return { status: 200, json: async () => api, text: async () => '' }
+    pageCalls++
+    return { status: 500, json: async () => ({}), text: async () => '' }
+  }
+  const out = await fetchWordPressProducts('https://s.com', http)
+  // Le pagine cadute non fermano il post: restano tutti con i campi dell API.
+  expect(out).toHaveLength(10)
+  expect(pageCalls).toBe(5)
+})
+
+test('un fallimento isolato non ferma le pagine successive', async () => {
+  const api = postApi(3)
+  let pageCalls = 0
+  const http = async (u: string) => {
+    if (u.includes('/wp-json/')) return { status: 200, json: async () => api, text: async () => '' }
+    pageCalls++
+    return { status: pageCalls === 1 ? 500 : 200, json: async () => ({}), text: async () => '' }
+  }
+  await fetchWordPressProducts('https://s.com', http)
+  expect(pageCalls).toBe(3)
+})
+
 test('porta in uscita la data della pagina e non quella di WordPress', async () => {
   const api = [
     {

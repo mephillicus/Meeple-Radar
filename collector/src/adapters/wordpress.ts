@@ -13,6 +13,10 @@ type WpPost = {
 }
 
 const PAGE_SIZE = 100
+const PAGE_DELAY_MS = 250
+const PAGE_FAILURE_LIMIT = 5
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function normalizePermalink(link: string, base: string, postType: string, permalinkBase?: string): string {
   if (!permalinkBase) return link
@@ -43,14 +47,37 @@ export function parseGhenosProductPage(html: string): PageFields {
   return out
 }
 
-async function fetchPageFields(link: string | undefined, http: HttpClient): Promise<PageFields> {
-  if (!link) return {}
+async function fetchPageFields(link: string, http: HttpClient): Promise<PageFields | null> {
+  // null = la pagina non e arrivata: e l'unico segnale che conta i fallimenti,
+  // mentre {} e una pagina letta che non ha il blocco.
   try {
     const res = await http(link, { 'User-Agent': USER_AGENT })
-    if (res.status !== 200) return {}
+    if (res.status !== 200) return null
     return parseGhenosProductPage(await res.text())
   } catch {
-    return {}
+    return null
+  }
+}
+
+function makePageReader(baseUrl: string, http: HttpClient): (link: string | undefined) => Promise<PageFields> {
+  let failures = 0
+  let enabled = true
+  let requested = false
+  return async (link) => {
+    if (!link || !enabled) return {}
+    if (requested) await sleep(PAGE_DELAY_MS)
+    requested = true
+    const fields = await fetchPageFields(link, http)
+    if (fields === null) {
+      failures += 1
+      if (failures >= PAGE_FAILURE_LIMIT) {
+        enabled = false
+        console.error(`[wp] ${baseUrl}: ${PAGE_FAILURE_LIMIT} pagine prodotto fallite di fila, salto le altre`)
+      }
+      return {}
+    }
+    failures = 0
+    return fields
   }
 }
 
@@ -62,6 +89,7 @@ export async function fetchWordPressProducts(
 ): Promise<RawProduct[]> {
   const base = baseUrl.replace(/\/+$/, '')
   const out: RawProduct[] = []
+  const readPage = makePageReader(base, http)
   for (let page = 1; ; page++) {
     const res = await http(`${base}/wp-json/wp/v2/${postType}?per_page=${PAGE_SIZE}&page=${page}`, {
       'User-Agent': USER_AGENT,
@@ -71,13 +99,13 @@ export async function fetchWordPressProducts(
     const posts = Array.isArray(body) ? body : []
     if (posts.length === 0) break
     for (const p of posts) {
-      const page = await fetchPageFields(p.link, http)
+      const fields = await readPage(p.link)
       const parsed = RawProductSchema.safeParse({
         externalId: String(p.id),
         title: decodeHtml(p.title?.rendered ?? ''),
         url: normalizePermalink(p.link ?? '', base, postType, permalinkBase),
-        descriptionRaw: page.descriptionRaw || p.content?.rendered,
-        releaseDateRaw: page.releaseDateRaw,
+        descriptionRaw: fields.descriptionRaw || p.content?.rendered,
+        releaseDateRaw: fields.releaseDateRaw,
         publishedAtRaw: p.date,
       })
       if (parsed.success) out.push(parsed.data)
