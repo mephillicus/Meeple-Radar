@@ -8,6 +8,51 @@
       "published_at": "2026-01-10T09:00:00-05:00",
       "images": [{ "src": "https://cdn.shopify.com/x.jpg" }],
       "variants": [{ "price": "89.90", "available": true }]
+    },
+    {
+      "id": 16087837376844,
+      "title": "Gioco Preordine",
+      "handle": "gioco-preordine",
+      "body_html": "<p>In uscita il 15/12/2026</p>",
+      "published_at": "2026-10-10T09:00:00-05:00",
+      "images": [{ "src": "https://cdn.shopify.com/x.jpg" }],
+      "variants": [{ "price": "26,99", "available": true }]
+    },
+    {
+      "id": 16087837376845,
+      "title": "Gioco Esaurito",
+      "handle": "gioco-esaurito",
+      "body_html": "<p>Disponibile</p>",
+      "published_at": "2026-01-10T09:00:00-05:00",
+      "images": [{ "src": "https://cdn.shopify.com/x.jpg" }],
+      "variants": [{ "price": "19,90", "available": false }]
+    },
+    {
+      "id": 16087837376846,
+      "title": "Gioco Senza Data",
+      "handle": "gioco-senza-data",
+      "body_html": "<p>Un gioco fantastico</p>",
+      "published_at": "2026-10-10T09:00:00-05:00",
+      "images": [{ "src": "https://cdn.shopify.com/x.jpg" }],
+      "variants": [{ "price": "29,99", "available": true }]
+    },
+    {
+      "id": 16087837376847,
+      "title": "Gioco Preordine Senza Data",
+      "handle": "gioco-preordine-senza-data",
+      "body_html": "<p>Nuova espansione in arrivo</p>",
+      "published_at": "2026-10-10T09:00:00-05:00",
+      "images": [{ "src": "https://cdn.shopify.com/x.jpg" }],
+      "variants": [{ "price": "34,50", "available": true }]
+    },
+    {
+      "id": 16087837376848,
+      "title": "Inferno 1348",
+      "handle": "inferno-1348",
+      "body_html": "<p>Uscita prevista per Autunno 2027</p>",
+      "published_at": "2026-10-10T09:00:00-05:00",
+      "images": [{ "src": "https://cdn.shopify.com/x.jpg" }],
+      "variants": [{ "price": "45,00", "available": true }]
     }
   ]
 }

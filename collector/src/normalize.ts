@@ -93,6 +93,22 @@ export function extractReleaseDate(text?: string): string | null {
     if (accept(iso)) return iso
   }
 
+  const stagioni: Record<string, { m: number; d: number }> = {
+    primavera: { m: 4, d: 15 },
+    estate: { m: 7, d: 15 },
+    autunno: { m: 10, d: 15 },
+    inverno: { m: 1, d: 15 },
+  }
+  const stagioneRegex = /\b(primavera|estate|autunno|inverno)\b/i
+  const sn = text.match(stagioneRegex)
+  if (sn) {
+    const mg = stagioni[sn[1].toLowerCase()]
+    const after = text.slice((sn.index ?? 0) + sn[0].length)
+    const year = Number(after.match(/\b(\d{4})\b/)?.[1] ?? nowYear)
+    const iso = `${year}-${String(mg.m).padStart(2, '0')}-${String(mg.d).padStart(2, '0')}`
+    if (accept(iso)) return iso
+  }
+
   return null
 }
 

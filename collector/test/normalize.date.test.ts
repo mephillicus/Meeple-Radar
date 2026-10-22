@@ -59,3 +59,11 @@ test('scarta le date fuori dalla finestra plausibile', () => {
   expect(extractReleaseDate(`${year + 4}-06-30`)).toBeNull()
   expect(extractReleaseDate('uscita prevista per marzo 8230')).toBeNull()
 })
+
+test('converte una stagione nel 15 del mese intermedio', () => {
+  const year = new Date().getUTCFullYear()
+  expect(extractReleaseDate('Autunno 2026')).toBe('2026-10-15')
+  expect(extractReleaseDate('primavera')).toBe(`${year}-04-15`)
+  expect(extractReleaseDate('estate 2027')).toBe('2027-07-15')
+  expect(extractReleaseDate('inverno')).toBe(`${year}-01-15`)
+})
