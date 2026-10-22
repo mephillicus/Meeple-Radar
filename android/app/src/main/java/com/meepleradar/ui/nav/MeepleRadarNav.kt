@@ -22,6 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,9 +49,12 @@ import com.meepleradar.ui.incoming.IncomingScreen
 import com.meepleradar.ui.incoming.IncomingViewModel
 import com.meepleradar.ui.news.NewsScreen
 import com.meepleradar.ui.news.NewsViewModel
+import com.meepleradar.ui.preorders.PreordersScreen
+import com.meepleradar.ui.preorders.PreordersViewModel
 
 const val ROUTE_INCOMING = "incoming"
 const val ROUTE_NEWS = "news"
+const val ROUTE_PREORDERS = "preorders"
 const val ROUTE_FAVORITES = "favorites"
 const val ROUTE_DETAIL = "detail/{key}"
 
@@ -103,6 +108,21 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         label = { Text("Novità") },
                     )
                     NavigationBarItem(
+                        selected = currentRoute == ROUTE_PREORDERS,
+                        onClick = { navController.switchTab(ROUTE_PREORDERS) },
+                        icon = {
+                            Icon(
+                                imageVector = MeepleVector,
+                                contentDescription = null,
+                                tint = Color(0xFF3B82F6),
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .blur(1.dp),
+                            )
+                        },
+                        label = { Text("Preordini") },
+                    )
+                    NavigationBarItem(
                         selected = currentRoute == ROUTE_FAVORITES,
                         onClick = { navController.switchTab(ROUTE_FAVORITES) },
                         icon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
@@ -138,6 +158,19 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                     },
                 )
                 NewsScreen(
+                    vm = vm,
+                    onOpen = { item -> navController.navigate(detailRoute(item.key)) },
+                    imageLookup = container.boardGameImageLookup,
+                )
+            }
+
+            composable(ROUTE_PREORDERS) {
+                val vm: PreordersViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer { PreordersViewModel(container.repository) }
+                    },
+                )
+                PreordersScreen(
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
                     imageLookup = container.boardGameImageLookup,

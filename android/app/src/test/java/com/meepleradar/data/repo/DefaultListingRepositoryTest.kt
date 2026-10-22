@@ -1,13 +1,13 @@
 package com.meepleradar.data.repo
 
+import com.meepleradar.data.local.CachedDatabase
+import com.meepleradar.data.local.FavoriteStore
+import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
-import com.meepleradar.data.local.CachedDatabase
-import com.meepleradar.data.local.FavoriteStore
-import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
@@ -186,7 +186,7 @@ class DefaultListingRepositoryTest {
     }
 
     @Test
-    fun `newsItems include i preordini anche se non sono appena stati aggiunti e con data passata`() = runTest {
+    fun `newsItems include solo novità recenti non preordine`() = runTest {
         val cache = FakeLocalCacheStore(
             CachedDatabase(
                 listings = listOf(
@@ -195,18 +195,17 @@ class DefaultListingRepositoryTest {
                         gameId = 5,
                         title = "Catan",
                         releaseDate = today.minusDays(20),
-                        availability = "http://schema.org/PreOrder",
                     ),
                     listing(
                         id = 2,
                         gameId = 6,
                         title = "Carcassonne",
-                        releaseDate = today.minusDays(20),
-                        availability = "InStock",
+                        releaseDate = today.plusDays(10),
                     ),
                 ),
                 games = listOf(game(5, "Catan"), game(6, "Carcassonne")),
                 sources = listOf(Source("s1", "Store Uno")),
+                newlyAddedListingIds = setOf(1L, 2L),
             ),
         )
         val repository = DefaultListingRepository(FakeSupabaseApi(), FakeFavoriteStore(), cache)
@@ -214,6 +213,25 @@ class DefaultListingRepositoryTest {
         val items = repository.newsItems(today)
 
         assertEquals(listOf("game:5"), items.map { it.key })
+    }
+
+    @Test
+    fun `preorderItems include solo i giochi con data successiva a oggi`() = runTest {
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(
+                    listing(id = 1, gameId = 5, title = "Catan", releaseDate = today.minusDays(20)),
+                    listing(id = 2, gameId = 6, title = "Carcassonne", releaseDate = today.plusDays(10)),
+                ),
+                games = listOf(game(5, "Catan"), game(6, "Carcassonne")),
+                sources = listOf(Source("s1", "Store Uno")),
+            ),
+        )
+        val repository = DefaultListingRepository(FakeSupabaseApi(), FakeFavoriteStore(), cache)
+
+        val items = repository.preorderItems(today)
+
+        assertEquals(listOf("game:6"), items.map { it.key })
     }
 
     @Test

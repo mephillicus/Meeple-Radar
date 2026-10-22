@@ -3,13 +3,11 @@ package com.meepleradar.data.repo
 import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.model.Action
-import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
-import com.meepleradar.data.model.availabilityStatus
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
@@ -38,6 +36,8 @@ interface ListingRepository {
 
     suspend fun newsItems(today: LocalDate): List<IncomingItem>
 
+    suspend fun preorderItems(today: LocalDate): List<IncomingItem>
+
     suspend fun sources(): List<Source>
 
     suspend fun setAction(key: String, action: Action)
@@ -64,52 +64,59 @@ class DefaultListingRepository(
 
     override fun newlyAddedCountFlow(): StateFlow<Int> = _newlyAddedCount.asStateFlow()
 
-    override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
+    override suspend fun preorderItems(today: LocalDate): List<IncomingItem> {
         val cached = localCacheStore?.load() ?: return emptyList()
-        val addedIds = cached.newlyAddedListingIds
-        val addedListings = cached.listings.filter { it.id in addedIds }
-        val preorderListings = cached.listings.filter {
-            availabilityStatus(it.availability) == AvailabilityStatus.PREORDER
+        val preorderListings = cached.listings.filter { listing ->
+            val date = listing.releaseDate
+            date != null && date.isAfter(today)
         }
+        if (preorderListings.isEmpty()) return emptyList()
+
         val games = cached.games.associateBy { it.id }
         val sources = cached.sources.associateBy { it.id }
         val products = cached.products.associateBy { it.id }
 
-        val items = LinkedHashMap<String, IncomingItem>()
-        buildIncomingItems(
-            listings = addedListings,
-            games = games,
-            sources = sources,
-            ignoredKeys = emptySet(),
-            today = today,
-            includeUndated = true,
-            includePriceless = true,
-            products = products,
-        ).forEach { items[it.key] = it }
-
-        buildIncomingItems(
+        return buildIncomingItems(
             listings = preorderListings,
             games = games,
             sources = sources,
             ignoredKeys = emptySet(),
-            today = LocalDate.MIN,
+            today = today,
+            sourceIds = null,
             includeUndated = true,
             includePriceless = true,
             products = products,
-        ).forEach { preorderItem ->
-            val current = items[preorderItem.key]
-            items[preorderItem.key] = if (current == null) {
-                preorderItem
-            } else {
-                current.copy(
-                    offers = (current.offers + preorderItem.offers).distinctBy { offer ->
-                        Triple(offer.sourceId, offer.url, offer.price)
-                    },
-                )
-            }
-        }
+        ).filter { it.releaseDate != null && it.releaseDate.isAfter(today) }
+    }
 
-        return items.values.toList()
+    override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
+        val cached = localCacheStore?.load() ?: return emptyList()
+        val addedIds = cached.newlyAddedListingIds
+        val twoMonthsAgo = today.minusMonths(2)
+
+        val addedListings = cached.listings.filter { it.id in addedIds }
+        if (addedListings.isEmpty()) return emptyList()
+
+        val games = cached.games.associateBy { it.id }
+        val sources = cached.sources.associateBy { it.id }
+        val products = cached.products.associateBy { it.id }
+
+        return buildIncomingItems(
+            listings = addedListings,
+            games = games,
+            sources = sources,
+            ignoredKeys = emptySet(),
+            today = twoMonthsAgo,
+            sourceIds = null,
+            includeUndated = true,
+            includePriceless = true,
+            products = products,
+        ).filter { item ->
+            val date = item.releaseDate
+            val isPreorder = date != null && date.isAfter(today)
+            val isTooOld = date != null && date.isBefore(twoMonthsAgo)
+            !isPreorder && !isTooOld
+        }
     }
 
     override suspend fun incoming(
