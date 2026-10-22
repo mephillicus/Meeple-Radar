@@ -40,7 +40,7 @@ export type ParsedUpcoming = {
 // Con la ricerca web Gemini non può forzare il JSON: il testo può contenere frasi attorno o
 // blocchi ```json. Prima si prova il parse diretto, poi si ritaglia dal primo `{`/`[` all'ultimo
 // `}`/`]` corrispondente.
-function extractJson(text: string): unknown {
+export function extractJson(text: string): unknown {
   const cleaned = text
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
