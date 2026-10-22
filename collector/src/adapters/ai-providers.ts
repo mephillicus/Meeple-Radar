@@ -196,7 +196,9 @@ export function buildProviders(
 
   const geminiKey = env.GEMINI_API_KEY
   if (geminiKey) {
-    const model = env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite'
+    // Un valore vuoto (GEMINI_MODEL= nel file env) equivale a non impostato: con `??`
+    // la stringa vuota avrebbe vinto sui default e costruito un URL invalido (404).
+    const model = env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
     providers.push({
       id: 'gemini',
       model,
@@ -206,7 +208,7 @@ export function buildProviders(
 
     // Secondo modello Gemini (stessa chiave): se il primo fallisce o non trova nulla si prova
     // questo prima di arrendersi.
-    const fallbackModel = env.GEMINI_FALLBACK_MODEL ?? 'gemini-3.6-flash'
+    const fallbackModel = env.GEMINI_FALLBACK_MODEL || 'gemini-3.6-flash'
     if (fallbackModel !== model) {
       providers.push({
         id: 'gemini-fallback',

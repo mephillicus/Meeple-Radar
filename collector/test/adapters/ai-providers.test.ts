@@ -41,6 +41,18 @@ test('rispetta i modelli sovrascritti da env', () => {
   ])
 })
 
+test('un modello vuoto in env equivale a non impostato', () => {
+  const env = {
+    GEMINI_API_KEY: 'g',
+    GEMINI_MODEL: '',
+    GEMINI_FALLBACK_MODEL: '',
+  } as NodeJS.ProcessEnv
+  expect(buildProviders(env).map((p) => [p.id, p.model])).toEqual([
+    ['gemini', 'gemini-3.5-flash-lite'],
+    ['gemini-fallback', 'gemini-3.6-flash'],
+  ])
+})
+
 test('se il ripiego coincide col primario non si aggiunge due volte', () => {
   const env = {
     GEMINI_API_KEY: 'g',
