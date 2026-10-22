@@ -61,6 +61,16 @@ const DELAY_BETWEEN_FEEDS_MS = 1000
 // corpo troppo corto non brucia un posto e resta sul percorso solo-titoli.
 export const MAX_ARTICLE_BODIES = 12
 const MIN_ARTICLE_CHARS = 300
+// Cap del corpo analizzato (step 3 della specifica): oltre 100k caratteri il testo viene
+// troncato, così il prompt dell'LLM resta dentro i limiti del modello.
+const MAX_ARTICLE_BODY_CHARS = 100_000
+// Budget di fetch di corpo falliti consecutivi: esaurito, i candidati senza corpo saltano
+// direttamente sul percorso solo-titoli senza più essere provati. Si azzera a ogni fetch riuscito.
+const MAX_CONSECUTIVE_FETCH_FAILURES = 5
+// Timeout per il relay (createRelayFetcher non supporta AbortSignal): oltre i 15s si butta
+// via la risposta e si continua col fetch diretto.
+const RELAY_TIMEOUT_MS = 15_000
+const DELAY_BETWEEN_ARTICLES_MS = 1000
 
 function decodeEntities(text: string): string {
   return text
@@ -224,11 +234,27 @@ ${righe.join('\n')}
 
 // Corpo dell'articolo quando il feed non lo contiene: di default relay Jina (raggiunge anche
 // le fonti dietro Cloudflare) e, se il relay non risponde, fetch diretto del link. Con
-// articleFetch iniettato (solo test) si usa quello e basta, senza fallback reali.
-async function fetchArticleBody(item: NewsItem, articleFetch?: TextFetcher): Promise<string | null> {
+// articleFetch iniettato (solo test) si usa quello e basta, senza fallback reali. Il relay
+// è costruito una sola volta per run (M4) e qui viene limitato da un timeout che il relay
+// stesso non può esprimere.
+async function fetchArticleBody(
+  item: NewsItem,
+  articleFetch: TextFetcher | undefined,
+  relayFetch: TextFetcher,
+): Promise<string | null> {
   if (articleFetch) return articleFetch(item.link)
-  const relayed = await createRelayFetcher()(item.link)
-  if (relayed !== null) return relayed
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const relayed = await Promise.race([
+      relayFetch(item.link),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), RELAY_TIMEOUT_MS)
+      }),
+    ])
+    if (relayed !== null) return relayed
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
   try {
     const res = await fetch(item.link, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MeepleRadar/1.0)' },
@@ -347,6 +373,10 @@ export async function fetchNewsProducts(
   // Un articolo non raggiungibile o una risposta inutilizzabile non butta giù la fonte:
   // resta tra i titoli (log + skip).
   const articleFetch = options?.articleFetch ?? options?.news?.articleFetch
+  const relayFetch = createRelayFetcher()
+  const sleep = options?.sleep
+    ?? options?.news?.sleep
+    ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
   const candidates = items
     .filter((i) => isCandidateHeadline(i.title, !!i.body))
     .sort((a, b) =>
@@ -357,16 +387,44 @@ export async function fetchNewsProducts(
   const articleProducts: RawProduct[] = []
   const analyzedTitles = new Set<string>()
   let analyzedBodies = 0
+  let consecutiveFetchFailures = 0
+  let fetchBudgetLogged = false
+  let articlesAnalyzed = 0
 
   for (const item of candidates) {
     if (analyzedBodies >= MAX_ARTICLE_BODIES) break
     try {
-      const html = item.body ?? await fetchArticleBody(item, articleFetch)
-      const body = htmlToText(html ?? undefined)
+      // body falsy (undefined o stringa vuota) → fetch: il corpo del feed non consuma mai
+      // il budget dei fetch, che conta solo i tentativi falliti consecutivi.
+      let html: string | null
+      if (item.body) {
+        html = item.body
+      } else if (consecutiveFetchFailures >= MAX_CONSECUTIVE_FETCH_FAILURES) {
+        if (!fetchBudgetLogged) {
+          console.error(`[news] ${MAX_CONSECUTIVE_FETCH_FAILURES} fetch di corpo falliti di fila: smesso di provare, gli articoli restano tra i titoli`)
+          fetchBudgetLogged = true
+        }
+        continue
+      } else {
+        try {
+          html = await fetchArticleBody(item, articleFetch, relayFetch)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`[news] "${item.title}": fetch corpo: ${msg}`)
+          html = null
+        }
+      }
+      const text = htmlToText(html ?? undefined)
+      const body = text === null ? null : text.slice(0, MAX_ARTICLE_BODY_CHARS)
       if (body === null || body.length < MIN_ARTICLE_CHARS) {
+        if (!item.body) consecutiveFetchFailures++
         console.error(`[news] "${item.title}": corpo mancante o troppo corto, resta tra i titoli`)
         continue
       }
+      if (!item.body) consecutiveFetchFailures = 0
+      // Pacing tra le chiamate LLM d'articolo: mai prima della prima, mai dopo l'ultima.
+      if (articlesAnalyzed > 0) await sleep(DELAY_BETWEEN_ARTICLES_MS)
+      articlesAnalyzed++
       const games = await analyzeArticleGames(body, providers, item.title)
       if (games === null) {
         console.error(`[news] "${item.title}": articolo non analizzato, resta tra i titoli`)
@@ -386,14 +444,21 @@ export async function fetchNewsProducts(
           if (verified !== null) product.articleDescription = verified
         }
         // Come in parseUpcomingJson: i dati di catalogo (il negozio) vincono sull'articolo.
+        // Un errore del catalogo su un gioco non butta via gli altri prodotti già mappati:
+        // quel gioco resta con i campi dell'articolo (M5).
         if (gameFinder) {
-          const match = await gameFinder(normalizeTitle(g.title), g.publisher)
-          if (match) {
-            if (match.price !== null) product.priceRaw = String(match.price)
-            if (match.currency !== null) product.currencyRaw = match.currency
-            if (match.releaseDate !== null) product.releaseDateRaw = match.releaseDate
-            if (match.imageUrl !== null) product.imageUrl = match.imageUrl
-            if (match.gameId !== null) product.gameId = match.gameId
+          try {
+            const match = await gameFinder(normalizeTitle(g.title), g.publisher)
+            if (match) {
+              if (match.price !== null) product.priceRaw = String(match.price)
+              if (match.currency !== null) product.currencyRaw = match.currency
+              if (match.releaseDate !== null) product.releaseDateRaw = match.releaseDate
+              if (match.imageUrl !== null) product.imageUrl = match.imageUrl
+              if (match.gameId !== null) product.gameId = match.gameId
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            console.error(`[news] gameFinder: ${msg}`)
           }
         }
         mapped.push(product)

@@ -287,7 +287,11 @@ test('analizza l’articolo ed estrae citazione, data e url dell’articolo', as
     releaseDate: 'novembre 2026',
     descriptionQuote: 'Arriva il gioco Cascadia.',
   }] })))
-  const out = await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q') }, articleFetch: async () => null })
+  const out = await fetchNewsProducts(source, undefined, {
+    sleep: noSleep,
+    news: { sources: newsSources('q') },
+    articleFetch: async () => null,
+  })
   expect(out).toHaveLength(1)
   expect(out[0]).toMatchObject({
     title: 'Cascadia',
@@ -303,7 +307,10 @@ test('scarta la citazione parafrasata', async () => {
   fetchMock.mockResolvedValueOnce(geminiOk(JSON.stringify({ games: [
     { title: 'Cascadia', descriptionQuote: 'Il gioco di carte arriva a novembre.' },
   ] })))
-  const out = await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q') } })
+  const out = await fetchNewsProducts(source, undefined, {
+    sleep: noSleep,
+    news: { sources: newsSources('q') },
+  })
   expect(out[0]).not.toHaveProperty('articleDescription')
 })
 
@@ -344,7 +351,127 @@ test('il cap conta i corpi analizzati con successo', async () => {
   const gemini = vi.fn().mockResolvedValue(geminiOk('{"games":[]}'))
   fetchMock.mockImplementation(async (url: string) =>
     url.includes('generativelanguage') ? gemini() : rssOk(rss(items)))
-  await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q'), maxItems: 15 } })
+  await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q'), maxItems: 15 }, sleep: noSleep })
   // 15 candidati con corpo: solo 12 chiamate LLM articolo, più 1 chiamata titoli per i 3 rimasti.
   expect(gemini).toHaveBeenCalledTimes(13)
+})
+
+// Corpo del feed più lungo di 100k caratteri con un marcatore in coda: il prompt dell'LLM
+// non deve mai riceverlo (cap del corpo, step 3 della specifica).
+test('il corpo dell’articolo viene troncato a 100k caratteri prima del prompt', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  const xml = rss(`<item>
+    <title><![CDATA[Novita uscite di novembre - HoG]]></title>
+    <link>https://www.houseofgames.it/uscite</link>
+    <pubDate>Wed, 15 Oct 2026 09:30:00 GMT</pubDate>
+    <content:encoded><![CDATA[<p>${'x'.repeat(110_000)} SENTINEL_FINE</p>]]></content:encoded>
+  </item>`)
+  fetchMock.mockResolvedValueOnce(rssOk(xml)).mockResolvedValueOnce(geminiOk('{"games":[]}'))
+  await fetchNewsProducts(source, undefined, {
+    sleep: noSleep,
+    news: { sources: newsSources('q'), sleep: noSleep },
+  })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  const prompt = JSON.parse(fetchMock.mock.calls[1][1].body as string).contents[0].parts[0].text as string
+  expect(prompt).not.toContain('SENTINEL_FINE')
+  expect(prompt).toContain(`x`.repeat(1000))
+})
+
+// Budget di 5 fetch di corpo falliti di fila: dopo il quinto gli altri candidati senza corpo
+// saltano direttamente sul percorso solo-titoli senza più essere provati.
+test('dopo 5 fetch di corpo falliti di fila smette di provarci e resta sui titoli', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  const items = Array.from({ length: 6 }, (_, i) => item(`Arriva il gioco ${i}`, 'Wed, 15 Oct 2026 09:30:00 GMT')).join('')
+  fetchMock.mockResolvedValueOnce(geminiOk('[{"title": "Cascadia"}]'))
+  const articleFetch = vi.fn().mockResolvedValue(null)
+  const out = await fetchNewsProducts(source, undefined, {
+    sleep: noSleep,
+    news: {
+      sources: newsSources('q'),
+      sleep: noSleep,
+      fetchImpl: (async () => rssOk(rss(items))) as unknown as typeof fetch,
+    },
+    articleFetch,
+  })
+  expect(articleFetch).toHaveBeenCalledTimes(5)
+  expect(out).toHaveLength(1)
+  expect(out[0]?.title).toBe('Cascadia')
+  // Tutti e 6 i titoli finiscono nel prompt del percorso solo-titoli.
+  const prompt = JSON.parse(fetchMock.mock.calls[0][1].body as string).contents[0].parts[0].text as string
+  for (let i = 0; i < 6; i++) expect(prompt).toContain(`Arriva il gioco ${i}`)
+})
+
+// Un corpo vuoto nel feed (body: '') è falsy: deve comunque tentare il fetch dell'articolo.
+test('un corpo vuoto nel feed prova comunque il fetch dell’articolo', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  const xml = rss(`<item>
+    <title><![CDATA[Novita uscite di novembre - HoG]]></title>
+    <link>https://www.houseofgames.it/uscite</link>
+    <pubDate>Wed, 15 Oct 2026 09:30:00 GMT</pubDate>
+    <content:encoded><![CDATA[]]></content:encoded>
+  </item>`)
+  fetchMock
+    .mockResolvedValueOnce(rssOk(xml))
+    .mockResolvedValueOnce(geminiOk(JSON.stringify({ games: [{ title: 'Cascadia' }] })))
+  const articleFetch = vi.fn().mockResolvedValue(`<p>${'Arriva il gioco Cascadia. '.repeat(20)}</p>`)
+  const out = await fetchNewsProducts(source, undefined, {
+    sleep: noSleep,
+    news: { sources: newsSources('q'), sleep: noSleep },
+    articleFetch,
+  })
+  expect(articleFetch).toHaveBeenCalledTimes(1)
+  expect(out).toHaveLength(1)
+  expect(out[0]?.title).toBe('Cascadia')
+  expect(out[0]?.url).toBe('https://www.houseofgames.it/uscite')
+})
+
+// Un errore di gameFinder su un gioco non scarta gli altri prodotti già mappati dall'articolo.
+test('un errore di gameFinder tiene i prodotti già mappati dall’articolo', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  fetchMock
+    .mockResolvedValueOnce(rssOk(rss(bodyHog)))
+    .mockResolvedValueOnce(geminiOk(JSON.stringify({ games: [
+      { title: 'Cascadia', publisher: 'North Star', releaseDate: 'novembre 2026', descriptionQuote: 'Arriva il gioco Cascadia.' },
+      { title: 'Wingspan', releaseDate: 'novembre 2026' },
+    ] })))
+  const gameFinder = vi.fn(async (title: string) => {
+    if (title === 'cascadia') throw new Error('catalogo inaccessibile')
+    return { gameId: 7, price: 39.99, currency: 'EUR', releaseDate: '2027-01-01', imageUrl: 'https://img/x.png' }
+  })
+  const out = await fetchNewsProducts(source, gameFinder, {
+    sleep: noSleep,
+    news: { sources: newsSources('q'), sleep: noSleep },
+    articleFetch: async () => null,
+  })
+  expect(out).toHaveLength(2)
+  const cascadia = out.find((p) => p.title === 'Cascadia')
+  const wingspan = out.find((p) => p.title === 'Wingspan')
+  // Il gioco in errore resta con i campi dell'articolo: nessun override di catalogo.
+  expect(cascadia).toMatchObject({
+    releaseDateRaw: '2026-11-01',
+    articleDescription: 'Arriva il gioco Cascadia.',
+  })
+  expect(cascadia).not.toHaveProperty('priceRaw')
+  expect(cascadia).not.toHaveProperty('gameId')
+  expect(wingspan).toMatchObject({ priceRaw: '39.99', gameId: 7, releaseDateRaw: '2027-01-01' })
+})
+
+// Pacing: una sola pausa tra il primo e il secondo articolo analizzato, mai dopo l'ultimo.
+test('dopo il primo articolo analizzato fa una pausa prima del successivo', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  const items = ['uscite-novembre', 'uscite-dicembre'].map((slug) => `<item>
+    <title><![CDATA[Nuove uscite ${slug} - HoG]]></title>
+    <link>https://www.houseofgames.it/${slug}</link>
+    <pubDate>Wed, 15 Oct 2026 09:30:00 GMT</pubDate>
+    <content:encoded><![CDATA[<p>${'Arriva un gioco nuovo. '.repeat(20)}</p>]]></content:encoded>
+  </item>`).join('')
+  fetchMock.mockImplementation(async (url: string) =>
+    url.includes('generativelanguage') ? geminiOk('{"games":[]}') : rssOk(rss(items)))
+  const sleep = vi.fn(async () => {})
+  await fetchNewsProducts(source, undefined, {
+    sleep,
+    news: { sources: newsSources('q'), sleep: noSleep },
+  })
+  expect(sleep).toHaveBeenCalledTimes(1)
+  expect(sleep).toHaveBeenCalledWith(1000)
 })
