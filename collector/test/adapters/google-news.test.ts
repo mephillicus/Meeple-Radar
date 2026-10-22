@@ -116,6 +116,17 @@ test('parseRss tiene il contenuto del CDATA e lo spacchetta lo stesso', () => {
   expect(parseRss(xml)[0].title).toBe('7 Wonders: nuova edizione italiana')
 })
 
+test('parseRss tiene il corpo dell’articolo da content:encoded', () => {
+  const xml = rss(`<item>
+    <title><![CDATA[Cinque uscite di novembre - HoG]]></title>
+    <link>https://www.houseofgames.it/uscite</link>
+    <pubDate>Wed, 15 Oct 2026 09:30:00 GMT</pubDate>
+    <content:encoded><![CDATA[<p>Il primo gioco arriva il 3 novembre.</p>]]></content:encoded>
+  </item>`)
+  const items = parseRss(xml)
+  expect(items[0]?.body).toBe('<p>Il primo gioco arriva il 3 novembre.</p>')
+})
+
 test('parseRss scarta gli item senza link o con data illeggibile', () => {
   const xml = rss(`
 <item><title>Senza link - A</title><pubDate>Thu, 15 Oct 2026 09:00:00 GMT</pubDate><source>A</source></item>
@@ -152,6 +163,29 @@ test('fetchNewsHeadlines elimina i titoli doppi tra più ricerche', async () => 
   })
   expect(items).toHaveLength(1)
   expect(items[0].title).toBe('Carcassonne esce a dicembre')
+})
+
+test('alla deduplica vince la copia con il corpo', async () => {
+  const conCorpo = `<item>
+    <title><![CDATA[Stesso titolo]]></title>
+    <link>https://www.houseofgames.it/a</link>
+    <pubDate>Wed, 15 Oct 2026 09:30:00 GMT</pubDate>
+    <content:encoded><![CDATA[<p>Corpo</p>]]></content:encoded>
+  </item>`
+  const senzaCorpo = `<item>
+    <title><![CDATA[Stesso titolo - Testata]]></title>
+    <link>https://news.google.com/rss/articles/xyz</link>
+    <pubDate>Wed, 15 Oct 2026 09:30:00 GMT</pubDate>
+    <source url="https://testata.it">Testata</source>
+  </item>`
+  fetchMock.mockResolvedValueOnce(rssOk(rss(senzaCorpo))).mockResolvedValueOnce(rssOk(rss(conCorpo)))
+  const items = await fetchNewsHeadlines({
+    sources: [{ label: 'q', url: 'https://news.google.com/rss/search?q=x' }, { label: 'hog', url: 'https://www.houseofgames.it/feed/' }],
+    sleep: noSleep,
+  })
+  expect(items).toHaveLength(1)
+  expect(items[0]?.body).toBe('<p>Corpo</p>')
+  expect(items[0]?.link).toBe('https://www.houseofgames.it/a')
 })
 
 test('fetchNewsHeadlines ordina dalla più recente e taglia a maxItems', async () => {

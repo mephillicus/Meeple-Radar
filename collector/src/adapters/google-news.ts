@@ -13,6 +13,7 @@ export type NewsItem = {
   source: string
   link: string
   publishedAt: Date
+  body?: string
 }
 
 // L'operatore `when:` limita l'età delle notizie (when:7d, when:14d, ...). Le virgolette
@@ -97,7 +98,8 @@ export function parseRss(xml: string): NewsItem[] {
 
     const publishedAt = pub ? new Date(pub) : new Date(NaN)
     if (Number.isNaN(publishedAt.getTime())) continue
-    out.push({ title, source, link, publishedAt })
+    const body = tag(block, 'content:encoded')
+    out.push(body === undefined ? { title, source, link, publishedAt } : { title, source, link, publishedAt, body })
   }
   return out
 }
@@ -123,7 +125,7 @@ export async function fetchNewsHeadlines(options: NewsOptions = {}): Promise<New
   const doFetch = options.fetchImpl ?? fetch
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
 
-  const seen = new Set<string>()
+  const seen = new Map<string, number>()
   const items: NewsItem[] = []
   const errors: string[] = []
   let okFeeds = 0
@@ -148,8 +150,14 @@ export async function fetchNewsHeadlines(options: NewsOptions = {}): Promise<New
       for (const item of parsed) {
         if (Date.now() - item.publishedAt.getTime() > maxAgeMs) continue
         const key = normalizeTitle(item.title)
-        if (key === '' || seen.has(key)) continue
-        seen.add(key)
+        if (key === '') continue
+        const idx = seen.get(key)
+        if (idx !== undefined) {
+          // A parità di titolo vince la copia con il corpo dell'articolo.
+          if (items[idx].body === undefined && item.body !== undefined) items[idx] = item
+          continue
+        }
+        seen.set(key, items.length)
         items.push(item)
       }
     } catch (err) {
