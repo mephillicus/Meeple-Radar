@@ -47,6 +47,8 @@ interface ListingRepository {
     fun newlyAddedCount(): Int
 
     fun newlyAddedCountFlow(): StateFlow<Int>
+
+    fun preorderCount(): Int
 }
 
 class DefaultListingRepository(
@@ -64,11 +66,17 @@ class DefaultListingRepository(
 
     override fun newlyAddedCountFlow(): StateFlow<Int> = _newlyAddedCount.asStateFlow()
 
+    override fun preorderCount(): Int {
+        val cached = localCacheStore?.load() ?: return 0
+        val today = LocalDate.now()
+        return cached.listings.count { it.releaseDate != null && it.releaseDate.isAfter(today) }
+    }
+
     override suspend fun preorderItems(today: LocalDate): List<IncomingItem> {
         val cached = localCacheStore?.load() ?: return emptyList()
         val preorderListings = cached.listings.filter { listing ->
             val date = listing.releaseDate
-            date != null && !date.isBefore(today)
+            date != null && date.isAfter(today)
         }
         if (preorderListings.isEmpty()) return emptyList()
 
@@ -83,10 +91,10 @@ class DefaultListingRepository(
             ignoredKeys = emptySet(),
             today = today,
             sourceIds = null,
-            includeUndated = true,
+            includeUndated = false,
             includePriceless = true,
             products = products,
-        ).filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
+        ).filter { it.releaseDate != null && it.releaseDate.isAfter(today) }
     }
 
     override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
@@ -113,7 +121,7 @@ class DefaultListingRepository(
             products = products,
         ).filter { item ->
             val date = item.releaseDate
-            val isPreorder = date != null && !date.isBefore(today)
+            val isPreorder = date != null && date.isAfter(today)
             val isTooOld = date != null && date.isBefore(twoMonthsAgo)
             !isPreorder && !isTooOld
         }

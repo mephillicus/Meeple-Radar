@@ -66,6 +66,8 @@ class FavoritesViewModelTest {
 
         override fun newlyAddedCountFlow(): StateFlow<Int> = MutableStateFlow(0)
 
+        override fun preorderCount(): Int = 0
+
         override suspend fun newsItems(today: LocalDate): List<IncomingItem> = emptyList()
 
         override suspend fun preorderItems(today: LocalDate): List<IncomingItem> = emptyList()

@@ -107,18 +107,39 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         },
                         label = { Text("Novità") },
                     )
+                    val preorderCount = container.repository.preorderCount()
                     NavigationBarItem(
                         selected = currentRoute == ROUTE_PREORDERS,
                         onClick = { navController.switchTab(ROUTE_PREORDERS) },
                         icon = {
-                            Icon(
-                                imageVector = MeepleVector,
-                                contentDescription = null,
-                                tint = Color(0xFF3B82F6),
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .blur(1.dp),
-                            )
+                            Box {
+                                Icon(
+                                    imageVector = MeepleVector,
+                                    contentDescription = null,
+                                    tint = Color(0xFF3B82F6),
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .blur(1.dp),
+                                )
+                                if (preorderCount > 0) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = 10.dp, y = (-4).dp),
+                                    ) {
+                                        Text(
+                                            text = "$preorderCount",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 9.sp,
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        )
+                                    }
+                                }
+                            }
                         },
                         label = { Text("Preordini") },
                     )
