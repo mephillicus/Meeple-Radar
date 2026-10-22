@@ -416,9 +416,12 @@ export async function fetchNewsProducts(
       }
       const text = htmlToText(html ?? undefined)
       const body = text === null ? null : text.slice(0, MAX_ARTICLE_BODY_CHARS)
-      if (body === null || body.length < MIN_ARTICLE_CHARS) {
+      if (html === null || body === null || body.length < MIN_ARTICLE_CHARS) {
         if (!item.body) consecutiveFetchFailures++
-        console.error(`[news] "${item.title}": corpo mancante o troppo corto, resta tra i titoli`)
+        // Due esiti distinti: il fetch non ha proprio recuperato un corpo (null) oppure il
+        // corpo c'è ma è troppo corto. L'export locale li deve riportare in modo diverso.
+        const motivo = html === null ? 'fetch corpo fallito' : 'corpo mancante o troppo corto'
+        console.error(`[news] "${item.title}": ${motivo}, resta tra i titoli`)
         continue
       }
       if (!item.body) consecutiveFetchFailures = 0

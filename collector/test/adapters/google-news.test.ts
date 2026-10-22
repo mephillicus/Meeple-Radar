@@ -327,6 +327,32 @@ test('un articolo non fetchabile resta sul percorso titoli', async () => {
   expect(out[0]?.title).toBe('Cascadia')
 })
 
+// L'esito di un fetch di corpo che fallisce (null) è DISTINTO da un corpo recuperato ma
+// troppo corto: l'export locale deve riportare le due righe in modo diverso sul foglio Notizie.
+test('un fetch di corpo fallito ha un log distinto da un corpo troppo corto', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const feed = rss(`<item>
+  <title><![CDATA[Arriva Cascadia a novembre - HoG]]></title>
+  <link>https://www.houseofgames.it/cascadia</link>
+  <pubDate>Wed, 15 Oct 2026 09:30:00 GMT</pubDate>
+</item>
+<item>
+  <title><![CDATA[Uscita brevissima - HoG]]></title>
+  <link>https://www.houseofgames.it/breve</link>
+  <pubDate>Wed, 15 Oct 2026 09:31:00 GMT</pubDate>
+  <content:encoded><![CDATA[<p>troppo corto</p>]]></content:encoded>
+</item>`)
+  fetchMock
+    .mockResolvedValueOnce(rssOk(feed))
+    .mockResolvedValueOnce(geminiOk(JSON.stringify({ games: [{ title: 'Cascadia' }] })))
+  const articleFetch = vi.fn().mockResolvedValue(null)
+  await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q') }, articleFetch })
+  const righe = spy.mock.calls.map((c) => String(c[0]))
+  expect(righe.some((l) => l.includes('"Arriva Cascadia a novembre - HoG": fetch corpo fallito'))).toBe(true)
+  expect(righe.some((l) => l.includes('"Uscita brevissima - HoG": corpo mancante o troppo corto'))).toBe(true)
+})
+
 test('una recensione non viene analizzata ma resta nei titoli', async () => {
   process.env.GEMINI_API_KEY = 'k'
   fetchMock
