@@ -495,15 +495,15 @@ private fun FilterDrawerContent(
 
         HorizontalDivider()
 
-        // Section 2: Tipologia Disponibilità (Tabella 3 colonne con pulsanti quadrati Tutti/Nessuno a Sx)
+        // Section 2: Tipologia Disponibilità (Tabella 2 colonne con pulsanti verticali a Sx)
         val allAvailability = remember { AvailabilityStatus.entries.toSet() }
 
         val availabilityOptions = listOf(
             AvailabilityStatus.AVAILABLE to "Disponibile",
             AvailabilityStatus.PREORDER to "Preordine",
             AvailabilityStatus.BACKORDER to "Su richiesta",
-            AvailabilityStatus.UNAVAILABLE to "Non disponib.",
-            AvailabilityStatus.DISCONTINUED to "Fuori prod.",
+            AvailabilityStatus.UNAVAILABLE to "Non disponibile",
+            AvailabilityStatus.DISCONTINUED to "Fuori produzione",
             AvailabilityStatus.UNKNOWN to "Da verificare",
         )
 
@@ -512,7 +512,7 @@ private fun FilterDrawerContent(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SquareSelectButtons(
+            SquareSelectButtonsVertical(
                 onSelectAll = { localAvailability = allAvailability.toMutableSet() },
                 onDeselectAll = { localAvailability = mutableSetOf() },
             )
@@ -521,7 +521,7 @@ private fun FilterDrawerContent(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                availabilityOptions.chunked(3).forEach { rowOptions ->
+                availabilityOptions.chunked(2).forEach { rowOptions ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -541,7 +541,7 @@ private fun FilterDrawerContent(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.labelSmall,
-                                        fontSize = 10.sp,
+                                        fontSize = 11.sp,
                                     )
                                 },
                                 modifier = Modifier.weight(1f),
@@ -565,7 +565,7 @@ private fun FilterDrawerContent(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
-            SquareSelectButtons(
+            SquareSelectButtonsHorizontal(
                 onSelectAll = { localSelectedSources = sources.map { it.id }.toMutableSet() },
                 onDeselectAll = { localSelectedSources = mutableSetOf() },
             )
@@ -650,7 +650,7 @@ private fun FilterDrawerContent(
 }
 
 @Composable
-private fun SquareSelectButtons(
+private fun SquareSelectButtonsVertical(
     onSelectAll: () -> Unit,
     onDeselectAll: () -> Unit,
     modifier: Modifier = Modifier,
@@ -658,6 +658,55 @@ private fun SquareSelectButtons(
     Column(
         verticalArrangement = Arrangement.spacedBy(2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+            modifier = Modifier
+                .size(26.dp)
+                .clickable(onClick = onSelectAll),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = "Seleziona Tutti",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(6.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+            modifier = Modifier
+                .size(26.dp)
+                .clickable(onClick = onDeselectAll),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Deseleziona Tutti",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SquareSelectButtonsHorizontal(
+    onSelectAll: () -> Unit,
+    onDeselectAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier,
     ) {
         Surface(
