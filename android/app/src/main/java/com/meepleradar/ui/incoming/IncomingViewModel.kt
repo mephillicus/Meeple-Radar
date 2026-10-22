@@ -181,8 +181,10 @@ class IncomingViewModel(
             val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
             val dateMatch = !hideUndated || item.releaseDate != null
             val priceMatch = !hidePriceless || item.offers.any { it.price != null }
+            val isItemPreorder = item.releaseDate != null && item.releaseDate.isAfter(today)
             val availabilityMatch = selectedAvailability == AvailabilityStatus.entries.toSet() ||
-                item.offers.any { availabilityStatus(it.availability) in selectedAvailability }
+                (AvailabilityStatus.PREORDER in selectedAvailability && isItemPreorder) ||
+                item.offers.any { availabilityStatus(it.availability, it.releaseDate) in selectedAvailability }
 
             val searchMatch = if (queryWords.isEmpty()) {
                 true
