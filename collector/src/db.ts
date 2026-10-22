@@ -25,6 +25,7 @@ export interface ListingStore {
   upsertProducts(products: Listing[]): Promise<number[]>
   linkListingToProduct(listingId: number, productId: number): Promise<void>
   fillProductDescription(productId: number, description: string): Promise<void>
+  fillProductReleaseDate(productId: number, iso: string): Promise<void>
   purgeStale(before: string): Promise<{ listings: number; products: number }>
 }
 
@@ -167,6 +168,18 @@ export function createSupabaseStore(
         .eq('id', productId)
         .is('description', null)
       if (error) throw new Error(`fillProductDescription(${productId}): ${error.message}`)
+    },
+
+    async fillProductReleaseDate(productId: number, iso: string): Promise<void> {
+      // L'unico scrittore della colonna dai fill. Il filtro .is("release_date", null)
+      // e cio che rende l'operazione write-once: la data di uscita presente
+      // resta quella della prima fonte che l'ha portata, a qualunque costo.
+      const { error } = await client
+        .from('product')
+        .update({ release_date: iso })
+        .eq('id', productId)
+        .is('release_date', null)
+      if (error) throw new Error(`fillProductReleaseDate(${productId}): ${error.message}`)
     },
 
     async purgeStale(before: string): Promise<{ listings: number; products: number }> {

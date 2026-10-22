@@ -384,3 +384,16 @@ test('fillProductDescription aggiorna solo la colonna ancora vuota', async () =>
   // un update che aggancia solo le righe la cui descrizione e ancora nulla.
   expect(is).toHaveBeenCalledWith('description', null)
 })
+
+test('fillProductReleaseDate aggiorna solo la colonna ancora vuota', async () => {
+  const is = vi.fn().mockReturnValue({ error: null })
+  const eq = vi.fn(() => ({ is }))
+  const update = vi.fn((payload: { release_date: string }) => ({ eq }))
+  const from = vi.fn(() => ({ update }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-22T00:00:00Z')
+  await store.fillProductReleaseDate(7, '2026-11-01')
+  expect(from).toHaveBeenCalledWith('product')
+  expect(update.mock.calls[0][0]).toEqual({ release_date: '2026-11-01' })
+  expect(eq).toHaveBeenCalledWith('id', 7)
+  expect(is).toHaveBeenCalledWith('release_date', null)
+})
