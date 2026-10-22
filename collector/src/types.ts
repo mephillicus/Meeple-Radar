@@ -16,6 +16,8 @@ export const RawProductSchema = z.object({
   publishedAtRaw: z.string().optional(),
   releaseDateRaw: z.string().optional(),
   gameId: z.number().optional(),
+  // Citazione VERBATIM verificata dal testo dell'articolo news (solo percorso articoli).
+  articleDescription: z.string().optional(),
 })
 
 export type RawProduct = z.infer<typeof RawProductSchema>

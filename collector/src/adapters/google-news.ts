@@ -1,7 +1,11 @@
 import type { GameFinder, RawProduct, Source } from '../types.js'
-import { normalizeTitle } from '../normalize.js'
-import { buildProviders, type AiOptions, type AiResult } from './ai-providers.js'
+import { extractReleaseDate, normalizeTitle } from '../normalize.js'
+import { htmlToText } from '../text.js'
+import { buildProviders, type AiOptions, type AiProvider, type AiResult } from './ai-providers.js'
 import { parseUpcomingJson } from './gemini.js'
+import { type ArticleGame, buildArticlePrompt, isCandidateHeadline, parseArticleGames, verifyQuote } from './articles.js'
+import { createRelayFetcher } from './relay.js'
+import type { TextFetcher } from './http.js'
 
 // Fonte "novità da Google News": scarica i titoli recenti dal feed RSS di Google News per alcune
 // ricerche in italiano, poi chiede a Gemini (SENZA ricerca web, quindi anche col tier gratuito) di
@@ -52,6 +56,11 @@ const DEFAULT_MAX_AGE_DAYS = 30
 const DEFAULT_MAX_ITEMS = 80
 const DEFAULT_TIMEOUT_MS = 30_000
 const DELAY_BETWEEN_FEEDS_MS = 1000
+
+// Cap di articoli per run, contato sui CORPI analizzati con successo: un fetch fallito o un
+// corpo troppo corto non brucia un posto e resta sul percorso solo-titoli.
+export const MAX_ARTICLE_BODIES = 12
+const MIN_ARTICLE_CHARS = 300
 
 function decodeEntities(text: string): string {
   return text
@@ -113,6 +122,8 @@ export type NewsOptions = {
   // Solo per i test.
   fetchImpl?: typeof fetch
   sleep?: (ms: number) => Promise<void>
+  // Solo per i test: fetch del corpo articolo (default: relay Jina, poi fetch diretto).
+  articleFetch?: TextFetcher
 }
 
 // Scarica i feed, scarta le notizie troppo vecchie, elimina i doppioni (la stessa notizia compare
@@ -211,26 +222,63 @@ ${righe.join('\n')}
 `
 }
 
-// Stessa firma di fetchGeminiProducts, quindi si registra come qualsiasi altra fonte. I titoli
-// arrivano già dentro il prompt: Gemini non deve cercare sul web, quindi funziona anche col tier
-// gratuito.
-export async function fetchNewsProducts(
-  _source: Source,
+// Corpo dell'articolo quando il feed non lo contiene: di default relay Jina (raggiunge anche
+// le fonti dietro Cloudflare) e, se il relay non risponde, fetch diretto del link. Con
+// articleFetch iniettato (solo test) si usa quello e basta, senza fallback reali.
+async function fetchArticleBody(item: NewsItem, articleFetch?: TextFetcher): Promise<string | null> {
+  if (articleFetch) return articleFetch(item.link)
+  const relayed = await createRelayFetcher()(item.link)
+  if (relayed !== null) return relayed
+  try {
+    const res = await fetch(item.link, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MeepleRadar/1.0)' },
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    })
+    if (!res.ok) return null
+    return (await res.text()) || null
+  } catch {
+    return null
+  }
+}
+
+// Una chiamata LLM per articolo, a cascata come il percorso titoli. Ritorna null se nessun
+// provider ha saputo analizzare l'articolo: l'articolo resta sui titoli, senza errori fatali.
+async function analyzeArticleGames(
+  body: string,
+  providers: AiProvider[],
+  title: string,
+): Promise<ArticleGame[] | null> {
+  const prompt = buildArticlePrompt(body, new Date())
+  for (const provider of providers) {
+    let result: AiResult
+    try {
+      result = await provider.call(prompt)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[news] "${title}": ${provider.id}: ${msg}`)
+      continue
+    }
+    if (!result.ok) {
+      console.error(`[news] "${title}": ${provider.id}: ${result.reason}`)
+      continue
+    }
+    const { ok, games } = parseArticleGames(result.text)
+    if (!ok) {
+      console.error(`[news] "${title}": ${provider.id}: risposta non interpretabile: ${result.text.slice(0, 300)}`)
+      continue
+    }
+    return games
+  }
+  return null
+}
+
+// Percorso solo-titoli (quello di sempre): un'unica chiamata LLM con tutti i titoli.
+async function fetchHeadlineProducts(
+  items: NewsItem[],
+  providers: AiProvider[],
   gameFinder?: GameFinder,
-  options?: AiOptions & { news?: NewsOptions },
+  options?: AiOptions,
 ): Promise<RawProduct[]> {
-  const items = await fetchNewsHeadlines(options?.news)
-  if (items.length === 0) {
-    console.error('[news] nessuna notizia recente')
-    return []
-  }
-  console.error(`[news] ${items.length} titoli da analizzare`)
-
-  const providers = buildProviders(process.env, options)
-  if (providers.length === 0) {
-    throw new Error('nessuna chiave LLM: imposta GEMINI_API_KEY')
-  }
-
   const prompt = buildNewsPrompt(items)
   const errors: string[] = []
   let anyResponded = false
@@ -272,4 +320,105 @@ export async function fetchNewsProducts(
     throw new Error(`nessun provider LLM ha funzionato: ${errors.join(' | ')}`)
   }
   return []
+}
+
+// Stessa firma di fetchGeminiProducts, quindi si registra come qualsiasi altra fonte. I titoli
+// arrivano già dentro il prompt: Gemini non deve cercare sul web, quindi funziona anche col tier
+// gratuito. I titoli candidati (annunci di uscite, NON recensioni) vengono prima analizzati per
+// intero quando l'articolo è disponibile; il resto resta sul percorso solo-titoli.
+export async function fetchNewsProducts(
+  _source: Source,
+  gameFinder?: GameFinder,
+  options?: AiOptions & { news?: NewsOptions; articleFetch?: TextFetcher },
+): Promise<RawProduct[]> {
+  const items = await fetchNewsHeadlines(options?.news)
+  if (items.length === 0) {
+    console.error('[news] nessuna notizia recente')
+    return []
+  }
+  console.error(`[news] ${items.length} titoli da analizzare`)
+
+  const providers = buildProviders(process.env, options)
+  if (providers.length === 0) {
+    throw new Error('nessuna chiave LLM: imposta GEMINI_API_KEY')
+  }
+
+  // Percorso articoli: i candidati con il corpo già nel feed per primi, poi i più recenti.
+  // Un articolo non raggiungibile o una risposta inutilizzabile non butta giù la fonte:
+  // resta tra i titoli (log + skip).
+  const articleFetch = options?.articleFetch ?? options?.news?.articleFetch
+  const candidates = items
+    .filter((i) => isCandidateHeadline(i.title, !!i.body))
+    .sort((a, b) =>
+      Number(a.body === undefined) - Number(b.body === undefined)
+      || b.publishedAt.getTime() - a.publishedAt.getTime())
+  console.error(`[news] ${candidates.length} articoli candidati`)
+
+  const articleProducts: RawProduct[] = []
+  const analyzedTitles = new Set<string>()
+  let analyzedBodies = 0
+
+  for (const item of candidates) {
+    if (analyzedBodies >= MAX_ARTICLE_BODIES) break
+    try {
+      const html = item.body ?? await fetchArticleBody(item, articleFetch)
+      const body = htmlToText(html ?? undefined)
+      if (body === null || body.length < MIN_ARTICLE_CHARS) {
+        console.error(`[news] "${item.title}": corpo mancante o troppo corto, resta tra i titoli`)
+        continue
+      }
+      const games = await analyzeArticleGames(body, providers, item.title)
+      if (games === null) {
+        console.error(`[news] "${item.title}": articolo non analizzato, resta tra i titoli`)
+        continue
+      }
+      const mapped: RawProduct[] = []
+      for (const g of games) {
+        const product: RawProduct = {
+          externalId: normalizeTitle(g.title).replace(/\s+/g, '-'),
+          title: g.title,
+          url: item.link,
+        }
+        const iso = extractReleaseDate(g.releaseDate)
+        if (iso !== null) product.releaseDateRaw = iso
+        if (g.descriptionQuote !== undefined) {
+          const verified = verifyQuote(g.descriptionQuote, body)
+          if (verified !== null) product.articleDescription = verified
+        }
+        // Come in parseUpcomingJson: i dati di catalogo (il negozio) vincono sull'articolo.
+        if (gameFinder) {
+          const match = await gameFinder(normalizeTitle(g.title), g.publisher)
+          if (match) {
+            if (match.price !== null) product.priceRaw = String(match.price)
+            if (match.currency !== null) product.currencyRaw = match.currency
+            if (match.releaseDate !== null) product.releaseDateRaw = match.releaseDate
+            if (match.imageUrl !== null) product.imageUrl = match.imageUrl
+            if (match.gameId !== null) product.gameId = match.gameId
+          }
+        }
+        mapped.push(product)
+      }
+      articleProducts.push(...mapped)
+      analyzedTitles.add(normalizeTitle(item.title))
+      analyzedBodies++
+      console.error(`[news] "${item.title}": ${mapped.length} giochi dall'articolo`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[news] "${item.title}": ${msg}, resta tra i titoli`)
+    }
+  }
+  if (articleProducts.length > 0) {
+    console.error(`[news] ${articleProducts.length} prodotti dagli articoli`)
+  }
+
+  // Percorso solo-titoli sui titoli non già analizzati per intero; se non ne restano, la
+  // chiamata LLM per i titoli non parte.
+  const rest = items.filter((i) => !analyzedTitles.has(normalizeTitle(i.title)))
+  const headlineProducts = rest.length > 0
+    ? await fetchHeadlineProducts(rest, providers, gameFinder, options)
+    : []
+
+  // Alla deduplica finale vince l'articolo (più ricco del singolo titolo).
+  const fromArticles = new Set(articleProducts.map((p) => normalizeTitle(p.title)))
+  return [...articleProducts, ...headlineProducts.filter((p) => !fromArticles.has(normalizeTitle(p.title)))]
 }

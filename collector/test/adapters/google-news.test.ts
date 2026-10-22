@@ -269,3 +269,82 @@ test('fetchNewsProducts lancia se manca la chiave LLM', async () => {
   })).rejects.toThrow(/GEMINI_API_KEY/)
   expect(fetchMock).not.toHaveBeenCalled()
 })
+
+const bodyHog = `<item>
+  <title><![CDATA[Cinque uscite di novembre - HoG]]></title>
+  <link>https://www.houseofgames.it/uscite</link>
+  <pubDate>Wed, 15 Oct 2026 09:30:00 GMT</pubDate>
+  <content:encoded><![CDATA[<p>${'Arriva il gioco Cascadia. '.repeat(20)}</p>]]></content:encoded>
+</item>`
+
+test('analizza l’articolo ed estrae citazione, data e url dell’articolo', async () => {
+  // articleFetch non serve: il corpo arriva dal feed. GEMINI_API_KEY impostata,
+  // una sola chiamata LLM (articolo), nessun titolo restante.
+  process.env.GEMINI_API_KEY = 'k'
+  fetchMock.mockResolvedValueOnce(rssOk(rss(bodyHog)))
+  fetchMock.mockResolvedValueOnce(geminiOk(JSON.stringify({ games: [{
+    title: 'Cascadia', publisher: 'North Star',
+    releaseDate: 'novembre 2026',
+    descriptionQuote: 'Arriva il gioco Cascadia.',
+  }] })))
+  const out = await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q') }, articleFetch: async () => null })
+  expect(out).toHaveLength(1)
+  expect(out[0]).toMatchObject({
+    title: 'Cascadia',
+    url: 'https://www.houseofgames.it/uscite',
+    releaseDateRaw: '2026-11-01',
+    articleDescription: 'Arriva il gioco Cascadia.',
+  })
+})
+
+test('scarta la citazione parafrasata', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  fetchMock.mockResolvedValueOnce(rssOk(rss(bodyHog)))
+  fetchMock.mockResolvedValueOnce(geminiOk(JSON.stringify({ games: [
+    { title: 'Cascadia', descriptionQuote: 'Il gioco di carte arriva a novembre.' },
+  ] })))
+  const out = await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q') } })
+  expect(out[0]).not.toHaveProperty('articleDescription')
+})
+
+test('un articolo non fetchabile resta sul percorso titoli', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  fetchMock
+    .mockResolvedValueOnce(rssOk(rss(item('Arriva Cascadia a novembre', 'Wed, 15 Oct 2026 09:30:00 GMT'))))
+    .mockResolvedValueOnce(geminiOk(JSON.stringify({ games: [{ title: 'Cascadia' }] })))
+  const articleFetch = vi.fn().mockResolvedValue(null)
+  const out = await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q') }, articleFetch })
+  // Titolo positivo senza corpo: prova il fetch, fallisce, e l'articolo ricade nei titoli.
+  expect(articleFetch).toHaveBeenCalledTimes(1)
+  expect(out).toHaveLength(1)
+  expect(out[0]?.title).toBe('Cascadia')
+})
+
+test('una recensione non viene analizzata ma resta nei titoli', async () => {
+  process.env.GEMINI_API_KEY = 'k'
+  fetchMock
+    .mockResolvedValueOnce(rssOk(rss(item('Recensione: Cascadia è bellissimo', 'Wed, 15 Oct 2026 09:30:00 GMT'))))
+    .mockResolvedValueOnce(geminiOk(JSON.stringify({ games: [] })))
+  const articleFetch = vi.fn().mockResolvedValue(null)
+  const out = await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q') }, articleFetch })
+  expect(articleFetch).not.toHaveBeenCalled()
+  expect(out).toEqual([])
+})
+
+test('il cap conta i corpi analizzati con successo', async () => {
+  vi.setSystemTime(new Date('2026-10-15T12:00:00Z'))
+  process.env.GEMINI_API_KEY = 'k'
+  const items = Array.from({ length: 15 }, (_, i) => `<item>
+    <title><![CDATA[Novità gioco ${i} - HoG]]></title>
+    <link>https://www.houseofgames.it/${i}</link>
+    <pubDate>Wed, 15 Oct 2026 09:30:0${i % 10} GMT</pubDate>
+    <content:encoded><![CDATA[<p>${'Arriva un gioco nuovo. '.repeat(20)}</p>]]></content:encoded>
+  </item>`).join('')
+  fetchMock.mockResolvedValueOnce(rssOk(rss(items)))
+  const gemini = vi.fn().mockResolvedValue(geminiOk('{"games":[]}'))
+  fetchMock.mockImplementation(async (url: string) =>
+    url.includes('generativelanguage') ? gemini() : rssOk(rss(items)))
+  await fetchNewsProducts(source, undefined, { news: { sources: newsSources('q'), maxItems: 15 } })
+  // 15 candidati con corpo: solo 12 chiamate LLM articolo, più 1 chiamata titoli per i 3 rimasti.
+  expect(gemini).toHaveBeenCalledTimes(13)
+})
