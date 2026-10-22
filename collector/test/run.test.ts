@@ -12,6 +12,7 @@ test('collects enabled sources and isolates a failing one', async () => {
     ]),
     upsertProducts: vi.fn().mockResolvedValue([7]),
     fillProductDescription: vi.fn().mockResolvedValue(undefined),
+    fillProductReleaseDate: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -38,6 +39,7 @@ test('scarta in ingresso i prodotti datati oltre la finestra', async () => {
     findListingsByTitle: vi.fn().mockResolvedValue([]),
     upsertProducts: vi.fn().mockResolvedValue([1]),
     fillProductDescription: vi.fn().mockResolvedValue(undefined),
+    fillProductReleaseDate: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -68,6 +70,7 @@ test('una fonte a zero non rende il report non ok', async () => {
     findListingsByTitle: vi.fn().mockResolvedValue([]),
     upsertProducts: vi.fn().mockResolvedValue([]),
     fillProductDescription: vi.fn().mockResolvedValue(undefined),
+    fillProductReleaseDate: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -91,6 +94,7 @@ test('un fallimento di purgeStale non ferma la raccolta ma rende il report non o
     findListingsByTitle: vi.fn().mockResolvedValue([]),
     upsertProducts: vi.fn().mockResolvedValue([]),
     fillProductDescription: vi.fn().mockResolvedValue(undefined),
+    fillProductReleaseDate: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -124,6 +128,7 @@ const storeBase = () => ({
   findListingsByTitle: vi.fn().mockResolvedValue([]),
   upsertProducts: vi.fn().mockResolvedValue([7]),
   fillProductDescription: vi.fn().mockResolvedValue(undefined),
+  fillProductReleaseDate: vi.fn().mockResolvedValue(undefined),
   linkListingToProduct: vi.fn().mockResolvedValue(undefined),
   markSourceScanned: vi.fn(),
   logRun: vi.fn(),
@@ -167,6 +172,7 @@ test('passa a logRun l istante in cui la run e iniziata', async () => {
     findListingsByTitle: vi.fn().mockResolvedValue([]),
     upsertProducts: vi.fn().mockResolvedValue([]),
     fillProductDescription: vi.fn().mockResolvedValue(undefined),
+    fillProductReleaseDate: vi.fn().mockResolvedValue(undefined),
     linkListingToProduct: vi.fn().mockResolvedValue(undefined),
     markSourceScanned: vi.fn(),
     logRun: vi.fn(),
@@ -185,4 +191,45 @@ test('passa a logRun l istante in cui la run e iniziata', async () => {
   // Il database usa default now() su started_at, che e il timestamp della transazione,
   // quindi senza un istante esplicito la colonna registra la FINE della run.
   expect(store.logRun).toHaveBeenCalledWith(true, report, avvio)
+})
+
+test('una fonte news non porta prezzo e data nell upsert del prodotto', async () => {
+  const store = storeBase()
+  const adapters = {
+    news: async () => [{ externalId: '9', title: 'N', url: 'https://e.com/n', releaseDateRaw: '2026-11-01', priceRaw: '29.99' }],
+    shopify: async () => [], woocommerce: async () => [], wordpress: async () => [], html: async () => [], headless: async () => [],
+  } as any
+  await runCollector({ sources: [src('sN', 'news')], adapters, store })
+  const payload = store.upsertProducts.mock.calls[0][0][0]
+  expect(payload).not.toHaveProperty('release_date')
+  expect(payload).not.toHaveProperty('price')
+  expect(store.fillProductReleaseDate).toHaveBeenCalledWith(7, '2026-11-01')
+})
+
+test('chiama fillProductDescription con la citazione dell’articolo', async () => {
+  const store = storeBase()
+  const adapters = {
+    news: async () => [{ externalId: '9', title: 'N', url: 'https://e.com/n', articleDescription: 'Frase verbatim dell’articolo' }],
+    shopify: async () => [], woocommerce: async () => [], wordpress: async () => [], html: async () => [], headless: async () => [],
+  } as any
+  await runCollector({ sources: [src('sN', 'news')], adapters, store })
+  expect(store.fillProductDescription).toHaveBeenCalledWith(7, 'Frase verbatim dell’articolo')
+})
+
+test('la citazione sopravvive al filtro di cutoff', async () => {
+  const store = storeBase()
+  const adapters = {
+    news: async () => [
+      { externalId: '1', title: 'Vecchio', url: 'https://e.com/1', releaseDateRaw: '2025-01-15' },
+      { externalId: '2', title: 'Fresco', url: 'https://e.com/2', articleDescription: 'Citazione viva' },
+    ],
+    shopify: async () => [], woocommerce: async () => [], wordpress: async () => [], html: async () => [], headless: async () => [],
+  } as any
+  await runCollector({
+    sources: [src('sN', 'news')], adapters, store,
+    now: () => new Date('2026-10-20T00:00:00Z'),
+  })
+  expect(store.fillProductDescription).toHaveBeenCalledTimes(1)
+  expect(store.fillProductDescription).toHaveBeenCalledWith(7, 'Citazione viva')
+  expect(store.fillProductReleaseDate).not.toHaveBeenCalled()
 })

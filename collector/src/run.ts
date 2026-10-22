@@ -49,14 +49,21 @@ export async function runCollector(args: {
     try {
       const raw = await adapters[source.kind](source)
       if (raw.length === 0) zeroed.push(source.id)
-      const rows = raw
-        .map((r) => normalizeListing(source.id, r))
-        .map((row) => (GENERATED_TEXT_KINDS.has(source.kind) ? { ...row, description: null } : row))
-        .filter((row) => row.releaseDate === null || row.releaseDate >= cutoff)
-      await store.upsertListings(rows)
+      // Pairing raw/riga PRIMA del filtro cutoff: un filtro per indice su rows
+      // separate sfalserebbe gli indici e farebbe perdere articleDescription.
+      const paired = raw
+        .map((r) => ({ raw: r, row: normalizeListing(source.id, r) }))
+        .map((p) => (GENERATED_TEXT_KINDS.has(source.kind) ? { ...p, row: { ...p.row, description: null } } : p))
+        .filter((p) => p.row.releaseDate === null || p.row.releaseDate >= cutoff)
+      await store.upsertListings(paired.map((p) => p.row))
 
-      for (const row of rows) {
+      for (const p of paired) {
+        const isNews = source.kind === 'news'
+        const { row } = p
         const matches = await store.findListingsByTitle(normalizeTitle(row.title))
+        // In una run news la riga corrente non porta prezzo, valuta ne data nel
+        // prodotto: quei campi arrivano a product solo dai fill write-once, così
+        // il dato del negozio vince sempre.
         const related: Listing[] = [
           ...matches.map((m) => ({
             sourceId: m.sourceId,
@@ -71,19 +78,30 @@ export async function runCollector(args: {
             imageUrl: m.imageUrl,
             gameId: m.gameId,
           })),
-          row,
+          isNews ? { ...row, releaseDate: null, price: null, currency: null } : row,
         ]
 
         const canonical = canonicalizeProduct(related)
         if (!canonical) continue
 
-        const productIds = await store.upsertProducts([canonical])
+        // In una run news l'upsert del prodotto non porta mai prezzo, valuta ne
+        // data: quei campi arrivano su product solo dai fill write-once, quindi
+        // le chiavi vanno tolte del tutto, l'upsert sostituisce le colonne
+        // presenti nel payload. Le righe listing continuano a portarli.
+        const payload = (isNews
+          ? (({ price, currency, releaseDate, ...rest }) => rest)(canonical)
+          : canonical) as Listing
+        const productIds = await store.upsertProducts([payload])
         const productId = productIds[0]
         if (productId === undefined) continue
 
         // Write-once: lo store aggiorna solo dove la colonna e ancora null,
         // quindi il guard qui sopra serve solo a non sprecare una chiamata.
         if (canonical.description) await store.fillProductDescription(productId, canonical.description)
+        // La citazione verbatim dell'articolo viaggia fuori da row.description
+        // (azzerato per GENERATED_TEXT_KINDS) ed entra solo se ancora assente.
+        if (p.raw.articleDescription) await store.fillProductDescription(productId, p.raw.articleDescription)
+        if (isNews && row.releaseDate) await store.fillProductReleaseDate(productId, row.releaseDate)
 
         const allMatches = await store.findListingsByTitle(normalizeTitle(canonical.title))
         for (const listingRow of allMatches) {
