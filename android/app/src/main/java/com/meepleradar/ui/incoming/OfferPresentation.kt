@@ -1,8 +1,8 @@
 package com.meepleradar.ui.incoming
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.graphics.Color
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.Offer
@@ -13,7 +13,7 @@ import com.meepleradar.ui.theme.BggGoldText
 private val UnknownAvailabilityDark = Color(0xFF38BDF8)
 private val UnknownAvailabilityLight = Color(0xFF0284C7)
 
-fun availabilityLabel(offer: Offer): String? = when (availabilityStatus(offer.availability)) {
+fun availabilityLabel(offer: Offer): String? = when (availabilityStatus(offer.availability, offer.releaseDate)) {
     AvailabilityStatus.AVAILABLE -> "Disponibile"
     AvailabilityStatus.UNAVAILABLE -> "Non disponibile"
     AvailabilityStatus.PREORDER -> "In preordine"
@@ -27,7 +27,7 @@ fun availabilityLabel(offer: Offer): String? = when (availabilityStatus(offer.av
 fun lowestComparableEuroPrice(offers: List<Offer>): Double? = offers
     .asSequence()
     .filter { it.price?.currency == "EUR" }
-    .filter { availabilityStatus(it.availability) !in setOf(AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED) }
+    .filter { availabilityStatus(it.availability, it.releaseDate) !in setOf(AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED) }
     .mapNotNull { it.price?.amount?.takeIf { amount -> amount.isFinite() && amount >= 0.0 } }
     .minOrNull()
 
@@ -36,13 +36,13 @@ fun bestComparableEuroOffers(offers: List<Offer>): Set<Offer> {
     return offers.filter { offer ->
         offer.price?.currency == "EUR" &&
             offer.price.amount == lowestPrice &&
-            availabilityStatus(offer.availability) !in setOf(AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED)
+            availabilityStatus(offer.availability, offer.releaseDate) !in setOf(AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED)
     }.toSet()
 }
 
 fun orderedOffersForDisplay(offers: List<Offer>): List<Offer> = offers.sortedWith(
     compareBy<Offer> {
-        when (availabilityStatus(it.availability)) {
+        when (availabilityStatus(it.availability, it.releaseDate)) {
             AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED -> 1
             else -> 0
         }
@@ -65,7 +65,7 @@ fun bestPricedOffer(offers: List<Offer>): Offer? {
 }
 
 @Composable
-fun availabilityColor(offer: Offer): Color = when (availabilityStatus(offer.availability)) {
+fun availabilityColor(offer: Offer): Color = when (availabilityStatus(offer.availability, offer.releaseDate)) {
     AvailabilityStatus.AVAILABLE -> MaterialTheme.colorScheme.tertiary
     AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED -> MaterialTheme.colorScheme.error
     AvailabilityStatus.PREORDER -> MaterialTheme.colorScheme.primary
@@ -75,7 +75,7 @@ fun availabilityColor(offer: Offer): Color = when (availabilityStatus(offer.avai
 
 @Composable
 fun offerPriceColor(offer: Offer, offers: List<Offer>): Color {
-    return when (availabilityStatus(offer.availability)) {
+    return when (availabilityStatus(offer.availability, offer.releaseDate)) {
         AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED -> MaterialTheme.colorScheme.error
         AvailabilityStatus.PREORDER -> MaterialTheme.colorScheme.primary
         AvailabilityStatus.BACKORDER -> MaterialTheme.colorScheme.secondary
@@ -86,8 +86,8 @@ fun offerPriceColor(offer: Offer, offers: List<Offer>): Color {
                 offer.price?.currency == "EUR" && lowestPrice != null && offer.price.amount == lowestPrice ->
                     MaterialTheme.colorScheme.tertiary
                 offer.price?.currency == "EUR" && lowestPrice != null ->
-                    if (androidx.compose.foundation.isSystemInDarkTheme()) BggGoldDarkText else BggGoldText
-                availabilityStatus(offer.availability) == AvailabilityStatus.AVAILABLE ->
+                    if (isSystemInDarkTheme()) BggGoldDarkText else BggGoldText
+                availabilityStatus(offer.availability, offer.releaseDate) == AvailabilityStatus.AVAILABLE ->
                     MaterialTheme.colorScheme.tertiary
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             }

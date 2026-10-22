@@ -51,6 +51,7 @@ data class Offer(
     val price: Price?,
     val url: String,
     val availability: String?,
+    val releaseDate: LocalDate? = null,
 )
 
 data class IncomingItem(
