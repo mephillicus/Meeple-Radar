@@ -3,7 +3,9 @@ import { extractJson } from './gemini.js'
 // Classifier dei titoli: le negative (recensioni) vincono sempre; senza corpo (solo titolo da
 // Google News) serve una parola positiva; con corpo (feed dei siti) basta l'assenza di negative.
 // Le regex sono senza diacritici perché il confronto avviene su stringa lower senza accenti.
-const NEGATIVE = /recensione|review|recensito|provato|verdetto|voto|opinion/
+// Le negative sono ancorate con \b su entrambi i lati: altrimenti "preview" contiene "review"
+// e "approvato" contiene "provato", e titoli non-recensioni verrebbero scartati.
+const NEGATIVE = /\b(?:recensione|review|recensito|provato|verdetto|voto|opinion)\b/
 const POSITIVE = /uscita|uscira|in uscita|novita|annuncio|annunciano|arriva|arrivo|arrivera|anteprima|programmato|edizione italiana|kickstarter|disponibile|appena uscito|listino/
 
 function stripDiacritics(value: string): string {

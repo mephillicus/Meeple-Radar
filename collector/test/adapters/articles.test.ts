@@ -11,6 +11,9 @@ test.each([
   ['Nuova uscita: il seguito di Cascadia', true, true],
   ['Titolo qualsiasi', false, false],
   ['Titolo qualsiasi', true, true],
+  // Le negative sono ancorate: "preview" non contiene "review" e "approvato" non "provato".
+  ['Preview: Cascadia arriva', true, true],
+  ['Approvato dalla critica', true, true],
 ])('isCandidateHeadline(%o, hasBody=%o) => %o', (title, hasBody, expected) => {
   expect(isCandidateHeadline(title, hasBody)).toBe(expected)
 })
