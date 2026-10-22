@@ -1,5 +1,6 @@
 package com.meepleradar.data.model
 
+import java.time.LocalDate
 import java.util.Locale
 
 enum class AvailabilityStatus {
@@ -11,7 +12,10 @@ enum class AvailabilityStatus {
     UNKNOWN,
 }
 
-fun availabilityStatus(value: String?): AvailabilityStatus {
+fun availabilityStatus(value: String?, releaseDate: LocalDate? = null, today: LocalDate = LocalDate.now()): AvailabilityStatus {
+    if (releaseDate != null && releaseDate.isAfter(today)) {
+        return AvailabilityStatus.PREORDER
+    }
     val token = value
         ?.substringAfterLast('/')
         ?.lowercase(Locale.ROOT)
