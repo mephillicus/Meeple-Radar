@@ -61,7 +61,7 @@ export async function runCollector(args: {
         const isNews = source.kind === 'news'
         const { row } = p
         const matches = await store.findListingsByTitle(normalizeTitle(row.title))
-        // In una run news la riga corrente non porta prezzo, valuta ne data nel
+        // In una run news la riga corrente non porta prezzo né data nel
         // prodotto: quei campi arrivano a product solo dai fill write-once, così
         // il dato del negozio vince sempre.
         const related: Listing[] = [
@@ -84,7 +84,7 @@ export async function runCollector(args: {
         const canonical = canonicalizeProduct(related)
         if (!canonical) continue
 
-        // In una run news l'upsert del prodotto non porta mai prezzo, valuta ne
+        // In una run news l'upsert del prodotto non porta mai prezzo né
         // data: quei campi arrivano su product solo dai fill write-once, quindi
         // le chiavi vanno tolte del tutto, l'upsert sostituisce le colonne
         // presenti nel payload. Le righe listing continuano a portarli.
