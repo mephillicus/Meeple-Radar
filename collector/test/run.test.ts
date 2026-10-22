@@ -201,7 +201,7 @@ test('una fonte news non porta prezzo e data nell upsert del prodotto', async ()
   } as any
   await runCollector({ sources: [src('sN', 'news')], adapters, store })
   const payload = store.upsertProducts.mock.calls[0][0][0]
-  expect(payload).not.toHaveProperty('release_date')
+  expect(payload).not.toHaveProperty('releaseDate')
   expect(payload).not.toHaveProperty('price')
   expect(store.fillProductReleaseDate).toHaveBeenCalledWith(7, '2026-11-01')
 })
