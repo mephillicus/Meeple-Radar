@@ -13,7 +13,7 @@ enum class AvailabilityStatus {
 }
 
 fun availabilityStatus(value: String?, releaseDate: LocalDate? = null, today: LocalDate = LocalDate.now()): AvailabilityStatus {
-    if (releaseDate != null && releaseDate.isAfter(today)) {
+    if (releaseDate != null && !releaseDate.isBefore(today)) {
         return AvailabilityStatus.PREORDER
     }
     val token = value

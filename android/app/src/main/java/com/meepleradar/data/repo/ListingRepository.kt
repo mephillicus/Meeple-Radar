@@ -68,7 +68,7 @@ class DefaultListingRepository(
         val cached = localCacheStore?.load() ?: return emptyList()
         val preorderListings = cached.listings.filter { listing ->
             val date = listing.releaseDate
-            date != null && date.isAfter(today)
+            date != null && !date.isBefore(today)
         }
         if (preorderListings.isEmpty()) return emptyList()
 
@@ -86,7 +86,7 @@ class DefaultListingRepository(
             includeUndated = true,
             includePriceless = true,
             products = products,
-        ).filter { it.releaseDate != null && it.releaseDate.isAfter(today) }
+        ).filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
     }
 
     override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
@@ -113,7 +113,7 @@ class DefaultListingRepository(
             products = products,
         ).filter { item ->
             val date = item.releaseDate
-            val isPreorder = date != null && date.isAfter(today)
+            val isPreorder = date != null && !date.isBefore(today)
             val isTooOld = date != null && date.isBefore(twoMonthsAgo)
             !isPreorder && !isTooOld
         }
