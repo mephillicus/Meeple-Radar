@@ -57,7 +57,7 @@ fun buildIncomingItems(
                     },
                     url = listing.url,
                     availability = listing.availability,
-                    releaseDate = listing.releaseDate,
+                    releaseDate = listing.releaseDate ?: releaseDate,
                 )
             }
             val customDescription = game?.description?.takeIf { it.isNotBlank() }

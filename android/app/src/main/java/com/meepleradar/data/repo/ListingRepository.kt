@@ -69,48 +69,25 @@ class DefaultListingRepository(
     override fun preorderCount(): Int {
         val cached = localCacheStore?.load() ?: return 0
         val today = LocalDate.now()
-        return cached.listings.count { it.releaseDate != null && it.releaseDate.isAfter(today) }
+        val preorderListings = cached.listings.filter { it.releaseDate != null && it.releaseDate.isAfter(today) }
+        return preorderListings.map { keyOf(it) }.toSet().size
     }
 
     override suspend fun preorderItems(today: LocalDate): List<IncomingItem> {
-        val cached = localCacheStore?.load() ?: return emptyList()
-        val preorderListings = cached.listings.filter { listing ->
-            val date = listing.releaseDate
-            date != null && date.isAfter(today)
-        }
-        if (preorderListings.isEmpty()) return emptyList()
-
-        val games = cached.games.associateBy { it.id }
-        val sources = cached.sources.associateBy { it.id }
-        val products = cached.products.associateBy { it.id }
-
-        return buildIncomingItems(
-            listings = preorderListings,
-            games = games,
-            sources = sources,
-            ignoredKeys = emptySet(),
-            today = today,
-            sourceIds = null,
-            includeUndated = false,
-            includePriceless = true,
-            products = products,
-        ).filter { it.releaseDate != null && it.releaseDate.isAfter(today) }
+        val all = incoming(today, includeUndated = false, includePriceless = true, forceRefresh = false)
+        return all.filter { it.releaseDate != null && it.releaseDate.isAfter(today) }
     }
 
     override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
         val cached = localCacheStore?.load() ?: return emptyList()
-        val addedIds = cached.newlyAddedListingIds
         val twoMonthsAgo = today.minusMonths(2)
-
-        val addedListings = cached.listings.filter { it.id in addedIds }
-        if (addedListings.isEmpty()) return emptyList()
 
         val games = cached.games.associateBy { it.id }
         val sources = cached.sources.associateBy { it.id }
         val products = cached.products.associateBy { it.id }
 
-        return buildIncomingItems(
-            listings = addedListings,
+        val allItems = buildIncomingItems(
+            listings = cached.listings,
             games = games,
             sources = sources,
             ignoredKeys = emptySet(),
@@ -119,7 +96,9 @@ class DefaultListingRepository(
             includeUndated = true,
             includePriceless = true,
             products = products,
-        ).filter { item ->
+        )
+
+        return allItems.filter { item ->
             val date = item.releaseDate
             val isPreorder = date != null && date.isAfter(today)
             val isTooOld = date != null && date.isBefore(twoMonthsAgo)
