@@ -656,9 +656,9 @@ private fun SquareSelectButtonsVertical(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier,
+        modifier = modifier.height(64.dp),
     ) {
         Surface(
             shape = RoundedCornerShape(6.dp),
