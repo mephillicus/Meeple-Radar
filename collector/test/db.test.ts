@@ -410,3 +410,68 @@ test('fillProductPublisher aggiorna solo la colonna ancora vuota', async () => {
   expect(eq).toHaveBeenCalledWith('id', 7)
   expect(is).toHaveBeenCalledWith('publisher', null)
 })
+
+test('findUnlinkedProducts seleziona solo product senza game_id, in ordine di id', async () => {
+  const data = [{ id: 3, title: 'X', normalized_title: 'x', release_date: '2026-05-01' }]
+  const range = vi.fn().mockResolvedValue({ data, error: null })
+  const order = vi.fn(() => ({ range }))
+  const is = vi.fn(() => ({ order }))
+  const select = vi.fn(() => ({ is }))
+  const from = vi.fn(() => ({ select }))
+  const store = createSupabaseStore({ from } as any)
+  const rows = await store.findUnlinkedProducts()
+  expect(from).toHaveBeenCalledWith('product')
+  expect(select).toHaveBeenCalledWith('id, title, normalized_title, release_date')
+  expect(is).toHaveBeenCalledWith('game_id', null)
+  expect(order).toHaveBeenCalledWith('id')
+  expect(range).toHaveBeenCalledWith(0, 999)
+  expect(rows).toEqual([{ id: 3, title: 'X', normalizedTitle: 'x', releaseDate: '2026-05-01' }])
+})
+
+test('createGame: payload con chiavi snake_case e campi nullish omessi', async () => {
+  const insert = vi.fn().mockResolvedValue({ data: [{ id: 11 }], error: null })
+  const from = vi.fn(() => ({ insert }))
+  const store = createSupabaseStore({ from } as any)
+  const id = await store.createGame({ name: 'Catan', kind: 'base', bggId: 42, bggRating: null, bggRank: 7 })
+  expect(id).toBe(11)
+  const payload = insert.mock.calls[0][0]
+  expect(payload).toMatchObject({ name: 'Catan', kind: 'base', bgg_id: 42, bgg_rank: 7 })
+  expect(payload).not.toHaveProperty('bgg_rating')
+})
+
+test('createGame: conflito su unique(bgg_id) si riaggancia alla riga esistente', async () => {
+  const insert = vi.fn().mockResolvedValue({ data: null, error: { message: 'duplicate key value violates unique constraint "game_bgg_id_key"' } })
+  const maybeSingle = vi.fn().mockResolvedValue({ data: { id: 5 }, error: null })
+  const eq = vi.fn(() => ({ maybeSingle }))
+  const select = vi.fn(() => ({ eq }))
+  const from = vi.fn(() => ({ insert, select }))
+  const store = createSupabaseStore({ from } as any)
+  const id = await store.createGame({ name: 'Dune', kind: 'base', bggId: 2 })
+  expect(id).toBe(5)
+  expect(eq).toHaveBeenCalledWith('bgg_id', 2)
+})
+
+test('setProductGame: filtro is(game_id, null) e false se non scritto', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [], error: null })
+  const is = vi.fn(() => ({ select }))
+  const eq = vi.fn(() => ({ is }))
+  const update = vi.fn(() => ({ eq }))
+  const from = vi.fn(() => ({ update }))
+  const store = createSupabaseStore({ from } as any)
+  expect(await store.setProductGame(9, 4)).toBe(false)
+  expect(update).toHaveBeenCalledWith({ game_id: 4 })
+  expect(eq).toHaveBeenCalledWith('id', 9)
+  expect(is).toHaveBeenCalledWith('game_id', null)
+})
+
+test('fillListingGame: aggiorna solo listings del prodotto e ritorna il conteggio', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [{ id: 1 }, { id: 2 }], error: null })
+  const is = vi.fn(() => ({ select }))
+  const eq = vi.fn(() => ({ is }))
+  const update = vi.fn(() => ({ eq }))
+  const from = vi.fn(() => ({ update }))
+  const store = createSupabaseStore({ from } as any)
+  expect(await store.fillListingGame(9, 4)).toBe(2)
+  expect(eq).toHaveBeenCalledWith('product_id', 9)
+  expect(is).toHaveBeenCalledWith('game_id', null)
+})

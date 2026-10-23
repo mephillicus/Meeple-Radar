@@ -27,6 +27,11 @@ export interface ListingStore {
   fillProductDescription(productId: number, description: string): Promise<void>
   fillProductReleaseDate(productId: number, iso: string): Promise<void>
   fillProductPublisher(productId: number, publisher: string): Promise<void>
+  findUnlinkedProducts(): Promise<{ id: number; title: string; normalizedTitle: string; releaseDate: string | null }[]>
+  findGameByBggId(bggId: number): Promise<{ id: number } | null>
+  createGame(game: { name: string; kind: 'base' | 'expansion'; bggId: number; bggRating?: number | null; bggRank?: number | null }): Promise<number>
+  setProductGame(productId: number, gameId: number): Promise<boolean>
+  fillListingGame(productId: number, gameId: number): Promise<number>
   purgeStale(before: string): Promise<{ listings: number; products: number }>
 }
 
@@ -34,11 +39,25 @@ type SupabaseLike = { from(table: string): any }
 
 const PURGE_PAGE_SIZE = 1000
 const PURGE_DELETE_BATCH_SIZE = 500
+const UNLINKED_PAGE_SIZE = 1000
 
 export function createSupabaseStore(
   client: SupabaseLike,
   now: () => string = () => new Date().toISOString(),
 ): ListingStore {
+  // Lettore condiviso: createGame ci si riaggancia quando l'insert viene
+  // respinto dal vincolo unique(bgg_id), per leggere la riga che ha vinto.
+  const findGameByBggId = async (bggId: number): Promise<{ id: number } | null> => {
+    const { data, error } = await client
+      .from('game')
+      .select('id')
+      .eq('bgg_id', bggId)
+      .maybeSingle()
+    if (error) throw new Error(`findGameByBggId(${bggId}): ${error.message}`)
+    if (data === null || data === undefined) return null
+    return { id: Number((data as Record<string, unknown>).id) }
+  }
+
   return {
     async upsertSources(sources: Source[]): Promise<void> {
       if (sources.length === 0) return
@@ -193,6 +212,87 @@ export function createSupabaseStore(
         .eq('id', productId)
         .is('publisher', null)
       if (error) throw new Error(`fillProductPublisher(${productId}): ${error.message}`)
+    },
+
+    async findUnlinkedProducts(): Promise<{ id: number; title: string; normalizedTitle: string; releaseDate: string | null }[]> {
+      // Paginazione interna come fetchAll di purgeStale: PostgREST serve al
+      // massimo max-rows righe per richiesta, quindi si avanza range per range.
+      // Una pagina piu corta di UNLINKED_PAGE_SIZE e l'ultima.
+      const rows: { id: number; title: string; normalizedTitle: string; releaseDate: string | null }[] = []
+      let from = 0
+      for (;;) {
+        const { data, error } = await client
+          .from('product')
+          .select('id, title, normalized_title, release_date')
+          .is('game_id', null)
+          .order('id')
+          .range(from, from + UNLINKED_PAGE_SIZE - 1)
+        if (error) throw new Error(`findUnlinkedProducts: ${error.message}`)
+        const page = (data ?? []) as Record<string, unknown>[]
+        rows.push(...page.map((row) => ({
+          id: Number(row.id),
+          title: String(row.title ?? ''),
+          normalizedTitle: String(row.normalized_title ?? ''),
+          releaseDate: row.release_date === null || row.release_date === undefined ? null : String(row.release_date),
+        })))
+        if (page.length < UNLINKED_PAGE_SIZE) break
+        from += page.length
+      }
+      return rows
+    },
+
+    findGameByBggId,
+
+    // Crea il gioco una sola volta per bgg_id: su conflitto del vincolo
+    // unique(bgg_id) non si rilancia subito l'errore, ma si riaggancia alla
+    // riga esistente, cosi il link punta sempre allo stesso gioco.
+    async createGame(game: { name: string; kind: 'base' | 'expansion'; bggId: number; bggRating?: number | null; bggRank?: number | null }): Promise<number> {
+      const payload = {
+        name: game.name,
+        kind: game.kind,
+        bgg_id: game.bggId,
+        ...(game.bggRating != null && { bgg_rating: game.bggRating }),
+        ...(game.bggRank != null && { bgg_rank: game.bggRank }),
+      }
+      const { data, error } = await client.from('game').insert(payload)
+      if (!error) {
+        const row = Array.isArray(data) ? data[0] : data
+        if (row !== null && row !== undefined && row.id !== null && row.id !== undefined) {
+          return Number(row.id)
+        }
+      }
+      // O l'insert e fallito sul vincolo, o supabase-js v2 ha restituito
+      // data: null come sugli altri insert senza .select("id"): in entrambi
+      // i casi l'id si recupera rileggendo la riga per bgg_id.
+      const existing = await findGameByBggId(game.bggId).catch(() => null)
+      if (existing) return existing.id
+      throw new Error(`createGame: ${error ? error.message : 'id non recuperabile dopo insert'}`)
+    },
+
+    // Write-once sul product: il filtro .is("game_id", null) e cio che
+    // rende l'operazione write-once, il primo collegamento prevale.
+    async setProductGame(productId: number, gameId: number): Promise<boolean> {
+      const { data, error } = await client
+        .from('product')
+        .update({ game_id: gameId })
+        .eq('id', productId)
+        .is('game_id', null)
+        .select('id')
+      if (error) throw new Error(`setProductGame(${productId}, ${gameId}): ${error.message}`)
+      return (data ?? []).length > 0
+    },
+
+    // Write-once sulle listing del prodotto: solo le listing ancora senza
+    // game_id vengono agganciate, il primo gioco assegnato prevale.
+    async fillListingGame(productId: number, gameId: number): Promise<number> {
+      const { data, error } = await client
+        .from('listing')
+        .update({ game_id: gameId })
+        .eq('product_id', productId)
+        .is('game_id', null)
+        .select('id')
+      if (error) throw new Error(`fillListingGame(${productId}, ${gameId}): ${error.message}`)
+      return (data ?? []).length
     },
 
     async purgeStale(before: string): Promise<{ listings: number; products: number }> {
