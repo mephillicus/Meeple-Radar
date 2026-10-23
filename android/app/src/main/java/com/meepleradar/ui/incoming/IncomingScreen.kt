@@ -447,21 +447,21 @@ private fun FilterDrawerContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Filtri e Opzioni", style = MaterialTheme.typography.titleLarge)
-            IconButton(onClick = onClose) {
-                Icon(Icons.Filled.Close, contentDescription = "Chiudi")
+            Text("Filtri e Opzioni", style = MaterialTheme.typography.titleMedium)
+            IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Chiudi", modifier = Modifier.size(16.dp))
             }
         }
 
-        HorizontalDivider()
+        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
         // Section 1: Nascondi con FilterChip sulla stessa riga
         Row(
@@ -477,7 +477,7 @@ private fun FilterDrawerContent(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 FilterChip(
                     selected = localHideUndated,
@@ -493,7 +493,7 @@ private fun FilterDrawerContent(
             }
         }
 
-        HorizontalDivider()
+        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
         // Section 2: Tipologia Disponibilità (Tabella 2 colonne con pulsanti verticali a Sx)
         val allAvailability = remember { AvailabilityStatus.entries.toSet() }
@@ -519,7 +519,7 @@ private fun FilterDrawerContent(
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
                 availabilityOptions.chunked(2).forEach { rowOptions ->
                     Row(
@@ -552,7 +552,7 @@ private fun FilterDrawerContent(
             }
         }
 
-        HorizontalDivider()
+        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
         // Section 3: Negozi
         Row(
@@ -573,7 +573,7 @@ private fun FilterDrawerContent(
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             items(sources.chunked(2), key = { row -> row.first().id }) { rowSources ->
                 Row(
@@ -618,7 +618,7 @@ private fun FilterDrawerContent(
             }
         }
 
-        HorizontalDivider()
+        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -627,9 +627,9 @@ private fun FilterDrawerContent(
             OutlinedButton(
                 onClick = onReset,
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(vertical = 4.dp),
             ) {
-                Text("Ripristina")
+                Text("Ripristina", style = MaterialTheme.typography.bodySmall)
             }
             Button(
                 onClick = {
@@ -641,9 +641,9 @@ private fun FilterDrawerContent(
                     )
                 },
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(vertical = 4.dp),
             ) {
-                Text("Applica")
+                Text("Applica", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
