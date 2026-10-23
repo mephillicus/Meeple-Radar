@@ -19,7 +19,7 @@ export const RawProductSchema = z.object({
   // Citazione VERBATIM verificata dal testo dell'articolo news (solo percorso articoli).
   articleDescription: z.string().optional(),
   // Editore della sezione dell'articolo roundup (fonte houseofgames): write-once su product.publisher.
-  publisher: z.string().optional(),
+  publisher: z.string().trim().min(1).nullish(),
 })
 
 export type RawProduct = z.infer<typeof RawProductSchema>
