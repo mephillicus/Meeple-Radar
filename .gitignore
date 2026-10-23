@@ -12,3 +12,7 @@ android/build/
 android/app/build/
 android/.idea/
 *.apk
+
+# BGG ranks (dati grezzi, non versionati)
+boardgames_ranks*.csv
+collector/data/
