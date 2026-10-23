@@ -9,3 +9,10 @@ test('accepts a minimal raw product', () => {
 test('rejects a raw product without a url', () => {
   expect(() => RawProductSchema.parse({ externalId: '1', title: 'X' })).toThrow()
 })
+
+test('accepts an optional publisher', () => {
+  const parsed = RawProductSchema.parse({ externalId: '1', title: 'X', url: 'https://e.com/x', publisher: 'Asmodee' })
+  expect(parsed.publisher).toBe('Asmodee')
+  const without = RawProductSchema.parse({ externalId: '1', title: 'X', url: 'https://e.com/x' })
+  expect(without.publisher).toBeUndefined()
+})

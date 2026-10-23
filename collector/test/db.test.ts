@@ -397,3 +397,16 @@ test('fillProductReleaseDate aggiorna solo la colonna ancora vuota', async () =>
   expect(eq).toHaveBeenCalledWith('id', 7)
   expect(is).toHaveBeenCalledWith('release_date', null)
 })
+
+test('fillProductPublisher aggiorna solo la colonna ancora vuota', async () => {
+  const is = vi.fn().mockReturnValue({ error: null })
+  const eq = vi.fn(() => ({ is }))
+  const update = vi.fn((payload: { publisher: string }) => ({ eq }))
+  const from = vi.fn(() => ({ update }))
+  const store = createSupabaseStore({ from } as any, () => '2026-10-22T00:00:00Z')
+  await store.fillProductPublisher(7, 'Asmodee')
+  expect(from).toHaveBeenCalledWith('product')
+  expect(update.mock.calls[0][0]).toEqual({ publisher: 'Asmodee' })
+  expect(eq).toHaveBeenCalledWith('id', 7)
+  expect(is).toHaveBeenCalledWith('publisher', null)
+})
