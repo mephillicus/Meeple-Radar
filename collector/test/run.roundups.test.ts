@@ -51,6 +51,17 @@ test('roundups: payload editoriale senza prezzo/data, fill publisher e release_d
   expect(store.fillProductDescription).toHaveBeenCalledWith(7, 'Riassunto verbatim.')
 })
 
+test('roundups: un match da fonte diversa non blocca la riga, viene comunque upsertata', async () => {
+  const store = storeBase()
+  store.findListingsByTitle.mockResolvedValue([
+    { id: 3, title: 'G', url: 'https://e.com/g', price: null, currency: null, releaseDate: null, imageUrl: null, gameId: null, sourceId: 's1' },
+  ])
+  const adapters = { roundups: async () => [{ externalId: 'g', title: 'G', url: 'https://www.houseofgames.it/a', publisher: 'PUB' }] } as any
+  await runCollector({ sources: [src('houseofgames', 'roundups')], adapters, store })
+  expect(store.upsertListings).toHaveBeenCalledWith([expect.objectContaining({ title: 'G', sourceId: 'houseofgames' })])
+  expect(store.upsertProducts).toHaveBeenCalledTimes(1)
+})
+
 test('la skip vale solo per roundups: una fonte shopify con lo stesso matching non viene bloccata', async () => {
   const store = storeBase()
   store.findListingsByTitle.mockResolvedValue([
@@ -59,5 +70,6 @@ test('la skip vale solo per roundups: una fonte shopify con lo stesso matching n
   const adapters = { shopify: async () => [{ externalId: '1', title: 'A', url: 'https://e.com/a' }] } as any
   await runCollector({ sources: [src('s1', 'shopify')], adapters, store })
   expect(store.upsertListings).toHaveBeenCalledTimes(1)
+  expect(store.upsertListings).toHaveBeenCalledWith([expect.objectContaining({ title: 'A' })])
   expect(store.upsertProducts).toHaveBeenCalledTimes(1)
 })

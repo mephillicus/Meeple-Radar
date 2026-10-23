@@ -81,6 +81,18 @@ test('lo summary si ferma ai link, alle immagini e al publisher successivo', () 
   expect(games[1]).toMatchObject({ title: 'Gioco Due', publisher: 'ALTRA CASA', dateRaw: undefined, summary: undefined })
 })
 
+test('un link chiude il riassunto ma un paragrafo di testo successivo si riattacca allo stesso gioco', () => {
+  const html = `
+    <p><strong>CASA</strong></p>
+    <ul><li><strong>Gioco (1 Gennaio)</strong></li></ul>
+    <p>Prima parte.</p>
+    <p><a href="https://www.dungeondice.it/p/1">Promo</a></p>
+    <p>Dopo il link.</p>`
+  const games = parseRoundupArticle(html)
+  expect(games).toHaveLength(1)
+  expect(games[0].summary).toBe('Prima parte. Dopo il link.')
+})
+
 test('un li con attributi o un p con testo forte fuori dal contesto non creano publisher', () => {
   const html = `
     <ul><li class="menu-item"><strong>NON UN GIOCO (1 Gennaio)</strong></li></ul>
@@ -89,6 +101,18 @@ test('un li con attributi o un p con testo forte fuori dal contesto non creano p
   expect(games).toHaveLength(1)
   expect(games[0].title).toBe('Gioco Prima Di Ogni Publisher')
   expect(games[0].publisher).toBeUndefined()
+})
+
+test('un p con attributi non apre una sezione publisher: serve un p senza attributi', () => {
+  const html = `
+    <p><strong>CASA VERA</strong></p>
+    <ul><li><strong>Gioco Primo (1 Gennaio)</strong></li></ul>
+    <p class="has-text-align-center"><strong>CASA ATTRIBUTI</strong></p>
+    <ul><li><strong>Gioco Secondo (2 Gennaio)</strong></li></ul>`
+  const games = parseRoundupArticle(html)
+  expect(games).toHaveLength(2)
+  expect(games[0].publisher).toBe('CASA VERA')
+  expect(games[1].publisher).toBe('CASA VERA')
 })
 
 const SOURCE = {
@@ -162,6 +186,43 @@ test('sitemap non raggiungibile lancia; un articolo non fetchabile salta senza f
     sleep: async () => {},
   })
   expect(out).toEqual([])
+})
+
+test('un fetchText che lancia su un articolo non fa cadere la fonte: l\'altro articolo sopravvive', async () => {
+  const sitemapUrl = 'https://www.houseofgames.it/post-sitemap.xml'
+  const settembre = 'https://www.houseofgames.it/giochi-da-tavolo-le-nuove-uscite-di-settembre-2026/'
+  const agosto = 'https://www.houseofgames.it/giochi-da-tavolo-le-nuove-uscite-di-agosto-2026/'
+  const mini = (data: string, title: string) => `<script type="application/ld+json">{"datePublished":"${data}"}</script>
+    <p><strong>CASA</strong></p><ul><li><strong>${title}</strong></li></ul>`
+  const out = await fetchRoundupProducts(SOURCE, undefined, {
+    fetchText: async (u) => {
+      if (u === sitemapUrl) {
+        return `<urlset><url><loc>${settembre}</loc><lastmod>2026-09-03</lastmod></url><url><loc>${agosto}</loc><lastmod>2026-08-04</lastmod></url></urlset>`
+      }
+      if (u === agosto) throw new Error('boom rete')
+      if (u === settembre) return mini('2026-09-03', 'Gioco Settembre')
+      return null
+    },
+    sleep: async () => {},
+  })
+  expect(out).toHaveLength(1)
+  expect(out[0].title).toBe('Gioco Settembre')
+})
+
+test('gameFinder che lancia: la riga resta con i campi dell\'articolo e senza prezzo/gameId', async () => {
+  const sitemapUrl = 'https://www.houseofgames.it/post-sitemap.xml'
+  const url = 'https://www.houseofgames.it/giochi-da-tavolo-le-nuove-uscite-di-settembre-2026/'
+  const page = `<script type="application/ld+json">{"datePublished":"2026-09-03"}</script>
+    <p><strong>CASA</strong></p><ul><li><strong>Gioco Finder Fail (5 Gennaio)</strong></li></ul>`
+  const gameFinder = vi.fn().mockRejectedValue(new Error('boom'))
+  const out = await fetchRoundupProducts(SOURCE, gameFinder, {
+    fetchText: async (u) => (u === sitemapUrl ? sitemapXml : u === url ? page : null),
+    sleep: async () => {},
+  })
+  expect(out).toHaveLength(1)
+  expect(out[0]).toMatchObject({ title: 'Gioco Finder Fail', publisher: 'CASA', releaseDateRaw: '2026-01-05' })
+  expect(out[0]).not.toHaveProperty('priceRaw')
+  expect(out[0]).not.toHaveProperty('gameId')
 })
 
 test('due roundups con lo stesso gioco → una riga sola, vince l\'articolo più recente', async () => {

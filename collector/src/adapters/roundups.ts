@@ -64,6 +64,7 @@ export function parseRoundupArticle(html: string): RoundupGame[] {
     if (el.name === 'p') {
       const kids = node.children()
       if (kids.length === 1 && kids.is('strong') && node.text().trim() === kids.text().trim()) {
+        if (Object.keys(el.attribs).length > 0) continue
         closeSummary()
         const text = kids.text().trim()
         if (text !== '') publisher = text
