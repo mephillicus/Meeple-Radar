@@ -6,6 +6,7 @@ import { fetchGeminiProducts } from './gemini.js'
 import { fetchNewsProducts } from './google-news.js'
 import { fetchWooCommerceProducts } from './woocommerce.js'
 import { fetchWordPressProducts } from './wordpress.js'
+import { fetchRoundupProducts } from './roundups.js'
 import { collectHtmlProducts } from './html/crawl.js'
 import { HTML_SPECS } from './html/specs.js'
 import { HEADLESS_SPECS } from './headless/specs.js'
@@ -29,5 +30,7 @@ export function buildRegistry(http?: HttpClient, gameFinder?: GameFinder): Recor
     gemini: (source) => fetchGeminiProducts(source, gameFinder),
     // Titoli da Google News RSS, poi estrazione dei giochi con Gemini senza ricerca web.
     news: (source) => fetchNewsProducts(source, gameFinder),
+    // Roundup mensili houseofgames: scoperta da sitemap, parsing HTML deterministico.
+    roundups: (source) => fetchRoundupProducts(source, gameFinder),
   }
 }

@@ -1,14 +1,17 @@
 import * as cheerio from 'cheerio'
 import { htmlToText } from '../text.js'
-import type { SitemapEntry } from './sitemap.js'
+import { extractReleaseDate, normalizeTitle } from '../normalize.js'
+import type { GameFinder, RawProduct, Source } from '../types.js'
+import { textFetcher, type TextFetcher } from './http.js'
+import { fetchSitemapEntries, newestFirst, type SitemapEntry } from './sitemap.js'
 
 // Fonte "roundups" di houseofgames.it: ogni mese la redazione pubblica un articolo-elenco
 // "giochi da tavolo: tutte le nuove uscite di {mese}" a struttura regolare (publisher =
 // p con solo strong, gioco = li senza attributi con strong "Titolo (data)", riassunto =
-// paragrafi di solo testo fermati da link o immagini). Discovery dalla sitemap e parsing
-// deterministico con cheerio, senza chiamate LLM: la struttura è fissa e verificabile, e un
-// modello rischierebbe di inventare titoli, date o editori invece di estrarli. Qui entrano
-// solo HTML già scaricato: il fetch delle pagine vive altrove.
+// paragrafi di solo testo fermati da link o immagini). Discovery dalla sitemap, fetch delle
+// pagine articolo con pacing e parsing deterministico con cheerio, senza chiamate LLM: la
+// struttura è fissa e verificabile, e un modello rischierebbe di inventare titoli, date o
+// editori invece di estrarli.
 
 export const ROUNDUP_FLOOR_DATE = '2026-08-01'
 
@@ -92,4 +95,98 @@ export function parseRoundupArticle(html: string): RoundupGame[] {
   }
   closeSummary()
   return games
+}
+
+export type RoundupOptions = {
+  fetchText?: TextFetcher // default textFetcher()
+  sleep?: (ms: number) => Promise<void> // default setTimeout, solo test lo inietta
+}
+
+const ARTICLE_DELAY_MS = 1000
+
+export async function fetchRoundupProducts(
+  source: Source,
+  gameFinder?: GameFinder,
+  options?: RoundupOptions,
+): Promise<RawProduct[]> {
+  const fetchText = options?.fetchText ?? textFetcher()
+  const sleep = options?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+
+  const entries = await fetchSitemapEntries(`${source.baseUrl}/post-sitemap.xml`, fetchText)
+  if (entries.length === 0) throw new Error('sitemap roundups non raggiungibile')
+  const candidates = newestFirst(filterRoundupEntries(entries))
+  console.error(`[roundups] ${entries.length} voci sitemap, ${candidates.length} articoli candidati`)
+
+  const products: RawProduct[] = []
+  for (const [i, entry] of candidates.entries()) {
+    // Pacing tra i fetch articolo: mai prima del primo candidato.
+    if (i > 0) await sleep(ARTICLE_DELAY_MS)
+    try {
+      const html = await fetchText(entry.loc)
+      if (html === null) {
+        console.error(`[roundups] ${entry.loc}: pagina non scaricata, articolo saltato`)
+        continue
+      }
+      // Floor autorevole: anche un lastmod recente non salva un articolo vecchio.
+      const datePublished = extractDatePublished(html)
+      if (datePublished === null || datePublished < ROUNDUP_FLOOR_DATE) {
+        console.error(`[roundups] ${entry.loc}: datePublished assente o pre-floor, articolo saltato`)
+        continue
+      }
+      const games = parseRoundupArticle(html)
+      if (games.length === 0) {
+        console.error(`[roundups] ${entry.loc}: nessun gioco nell'articolo, articolo saltato`)
+        continue
+      }
+      const mapped: RawProduct[] = []
+      for (const g of games) {
+        const product: RawProduct = {
+          externalId: normalizeTitle(g.title).replace(/\s+/g, '-'),
+          title: g.title,
+          url: entry.loc,
+        }
+        if (g.dateRaw) {
+          const iso = extractReleaseDate(`${g.dateRaw} ${datePublished.slice(0, 4)}`)
+          if (iso !== null) product.releaseDateRaw = iso
+        }
+        if (g.summary) product.articleDescription = g.summary
+        if (g.publisher) product.publisher = g.publisher
+        // Come news: i dati di catalogo (il negozio) vincono sull'articolo. Un errore del
+        // catalogo su un gioco non butta via gli altri prodotti già mappati.
+        if (gameFinder) {
+          try {
+            const match = await gameFinder(normalizeTitle(g.title), g.publisher)
+            if (match) {
+              if (match.price !== null) product.priceRaw = String(match.price)
+              if (match.currency !== null) product.currencyRaw = match.currency
+              if (match.releaseDate !== null) product.releaseDateRaw = match.releaseDate
+              if (match.imageUrl !== null) product.imageUrl = match.imageUrl
+              if (match.gameId !== null) product.gameId = match.gameId
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            console.error(`[roundups] gameFinder: ${msg}`)
+          }
+        }
+        mapped.push(product)
+      }
+      products.push(...mapped)
+      console.error(`[roundups] ${mapped.length} giochi dall'articolo`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[roundups] ${entry.loc}: ${msg}, articolo saltato`)
+    }
+  }
+
+  // Dedup finale per titolo normalizzato: i candidati sono dal più recente, quindi
+  // tenendo il primo vince l'articolo più nuovo (come news riga 490-491).
+  const seen = new Set<string>()
+  const deduped = products.filter((p) => {
+    const key = normalizeTitle(p.title)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  console.error(`[roundups] ${deduped.length} prodotti`)
+  return deduped
 }
