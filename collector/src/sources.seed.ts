@@ -18,5 +18,6 @@ export const SOURCES: Source[] = [
   { id: 'horribleguild', name: 'Horrible Guild',       kind: 'html',        baseUrl: 'https://horribleguild.com',        enabled: true },
   { id: 'gateongames',   name: 'GateOnGames',          kind: 'html',        baseUrl: 'https://www.gateongames.com',     enabled: true },
   { id: 'gemini',        name: 'Gemini',               kind: 'gemini',      baseUrl: 'https://generativelanguage.googleapis.com', enabled: false }, // Senza grounding web Gemini risponde solo di memoria (lista vuota o titoli inventati): il passaggio news→Gemini è in google-news; riabilitare solo se serve un estrattore standalone
-  { id: 'google-news',   name: 'Google News',          kind: 'news',        baseUrl: 'https://news.google.com/rss/search', enabled: true }, // RSS delle ricerche in NEWS_QUERIES, poi Gemini estrae i giochi dai titoli
+  { id: 'houseofgames',  name: 'House of Games',       kind: 'roundups',    baseUrl: 'https://www.houseofgames.it', enabled: true }, // Roundup mensili "nuove uscite": scoperta da post-sitemap.xml, parse HTML deterministico (spec docs/superpowers/specs/2026-10-22-hog-roundups-design.md)
+  { id: 'google-news',   name: 'Google News',          kind: 'news',        baseUrl: 'https://news.google.com/rss/search', enabled: false }, // Sostituita da houseofgames/roundups: titoli Google News inutili; riabilitare solo se servisse di nuovo
 ]
