@@ -10,6 +10,18 @@ const INDEX = `<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org
   <sitemap><loc>https://e.com/sitemap-1.xml</loc></sitemap>
 </sitemapindex>`
 
+test('parses entries with loc and lastmod wrapped in CDATA (AIOSEO)', () => {
+  const xml = `<?xml version="1.0"?><urlset>
+    <url>
+      <loc><![CDATA[https://www.houseofgames.it/giochi-da-tavolo-le-nuove-uscite-di-settembre-2026/]]></loc>
+      <lastmod><![CDATA[2026-09-03T06:11:02+00:00]]></lastmod>
+    </url>
+  </urlset>`
+  expect(parseSitemapEntries(xml)).toEqual([
+    { loc: 'https://www.houseofgames.it/giochi-da-tavolo-le-nuove-uscite-di-settembre-2026/', lastmod: '2026-09-03T06:11:02+00:00' },
+  ])
+})
+
 test('parses urls and optional lastmod', () => {
   const e = parseSitemapEntries(URLSET)
   expect(e).toHaveLength(2)

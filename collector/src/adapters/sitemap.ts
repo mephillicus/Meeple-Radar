@@ -3,8 +3,8 @@ import type { TextFetcher } from './http.js'
 export type SitemapEntry = { loc: string; lastmod?: string }
 
 const ENTRY_RE = /<(url|sitemap)\b[^>]*>([\s\S]*?)<\/\1>/gi
-const LOC_RE = /<loc>\s*([^<]*?)\s*<\/loc>/i
-const LASTMOD_RE = /<lastmod>\s*([^<]*?)\s*<\/lastmod>/i
+const LOC_RE = /<loc>\s*(?:<!\[CDATA\[)?\s*([^<]*?)\s*(?:\]\]>)?\s*<\/loc>/i
+const LASTMOD_RE = /<lastmod>\s*(?:<!\[CDATA\[)?\s*([^<]*?)\s*(?:\]\]>)?\s*<\/lastmod>/i
 
 // Il reader Jina AI rende una sitemap come HTML: `<div><a href="URL">URL</a><br><time>LASTMOD</time></div>`.
 const JINA_ENTRY_RE = /<a\s+[^>]*href="([^"]+)"[^>]*>[^<]*<\/a>(?:\s*<br\s*\/?>\s*<time>\s*([^<]*?)\s*<\/time>)?/gi
