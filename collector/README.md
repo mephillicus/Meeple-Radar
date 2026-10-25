@@ -22,6 +22,12 @@ run da `collector/` prova:
 2. `boardgames_ranks.csv` (root di `collector/`)
 3. `../boardgames_ranks.csv` (root del repo)
 
+Su GitHub Actions il workflow scarica automaticamente il CSV da
+`secrets.BGG_RANKS_CSV_URL` in `collector/data/` prima di lanciare
+`npm run collect` (vedi `.github/workflows/collect.yml`). Crea il
+segreto su GitHub con l'URL pubblico del CSV (es.
+`https://www.babayaga.it/wp-content/uploads/2026/10/boardgames_ranks.csv`).
+
 Nessun path esiste → il loader ritorna `null` e la passata di
 arricchimento BGG è saltata: la run resta `ok`, il salto è solo
 segnalato nel report.
