@@ -8,6 +8,12 @@ import { createGameFinder } from './adapters/gemini.js'
 import { SOURCES } from './sources.seed.js'
 import { canonicalizeProduct } from './merge.js'
 import { retentionCutoff } from './retention.js'
+import { loadRanksIndex } from './bgg/csv-ranks.js'
+import { bggSearchUrl, parseGeekItem, parseSearchIds } from './bgg/online.js'
+import { runBggEnrichment, type BggReport } from './bgg/enrich.js'
+import { createSkipStore } from './bgg/skipped.js'
+import { createCurlFetcher } from './adapters/headless/fetch.js'
+import { defaultFetch, USER_AGENT } from './adapters/http.js'
 
 export type Adapter = (source: Source) => Promise<RawProduct[]>
 
@@ -21,6 +27,7 @@ export type RunReport = {
   failures: Record<string, string>
   zeroed: string[]
   purged?: { listings: number; products: number }
+  bgg?: BggReport
 }
 
 export async function runCollector(args: {
@@ -28,8 +35,9 @@ export async function runCollector(args: {
   adapters: Record<SourceKind, Adapter>
   store: ListingStore
   now?: () => Date
+  enrich?: () => Promise<BggReport>
 }): Promise<RunReport> {
-  const { sources, adapters, store, now: nowFn = () => new Date() } = args
+  const { sources, adapters, store, now: nowFn = () => new Date(), enrich } = args
   const perSource: Record<string, number> = {}
   const failures: Record<string, string> = {}
   const zeroed: string[] = []
@@ -126,9 +134,30 @@ export async function runCollector(args: {
     }
   }
 
-  const ok = Object.keys(failures).length === 0
-  const report: RunReport = { ok, perSource, failures, zeroed, purged }
-  await store.logRun(ok, report, startedAt)
+  const report: RunReport = { ok: false, perSource, failures, zeroed, purged }
+
+  if (enrich) {
+    try {
+      report.bgg = await enrich()
+    } catch (err) {
+      // L'arricchimento e' best-effort: l'errore finisce in report.bgg ma non
+      // entra in failures e non tocca ok della run.
+      report.bgg = {
+        candidates: 0,
+        linked: 0,
+        viaCsv: 0,
+        viaSearch: 0,
+        listingsLinked: 0,
+        unresolved: 0,
+        onlineRequests: 0,
+        csvMissing: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+
+  report.ok = Object.keys(failures).length === 0
+  await store.logRun(report.ok, report, startedAt)
   return report
 }
 
@@ -136,10 +165,29 @@ export async function main(): Promise<number> {
   const { supabaseUrl, supabaseServiceKey } = loadConfig(process.env)
   const store = createSupabaseClient(supabaseUrl, supabaseServiceKey)
   await store.upsertSources(SOURCES)
+  const enrich = () =>
+    runBggEnrichment({
+      store,
+      ranks: loadRanksIndex(['data/boardgames_ranks.csv', 'boardgames_ranks.csv', '../boardgames_ranks.csv']),
+      searchIds: async (query: string) => {
+        const html = await createCurlFetcher()(bggSearchUrl(query))
+        return html === null ? null : parseSearchIds(html)
+      },
+      fetchGeekItem: async (id: number) => {
+        const res = await defaultFetch(
+          `https://api.geekdo.com/api/geekitems?objectid=${id}&objecttype=thing`,
+          { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        )
+        return res.status === 200 ? parseGeekItem(await res.text(), id) : null
+      },
+      skipped: createSkipStore('data/bgg-online-skipped.json'),
+    })
+
   const report = await runCollector({
     sources: SOURCES,
     adapters: buildRegistry(undefined, createGameFinder(store)),
     store,
+    enrich,
   })
   console.log(JSON.stringify(report, null, 2))
   return report.ok ? 0 : 1
