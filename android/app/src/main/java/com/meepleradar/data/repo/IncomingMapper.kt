@@ -75,9 +75,8 @@ fun buildIncomingItems(
             )
         }
         .filter {
-            val isNotPast = it.releaseDate == null || !it.releaseDate.isBefore(today)
             val isUndatedAllowed = includeUndated || it.releaseDate != null
             val isPricelessAllowed = includePriceless || it.offers.any { offer -> offer.price != null }
-            isNotPast && isUndatedAllowed && isPricelessAllowed
+            isUndatedAllowed && isPricelessAllowed
         }
         .sortedBy { it.title.lowercase(java.util.Locale.ROOT) }

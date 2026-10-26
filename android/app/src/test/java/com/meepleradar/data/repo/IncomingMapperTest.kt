@@ -127,20 +127,20 @@ class IncomingMapperTest {
     }
 
     @Test
-    fun `releaseDate nel passato sono esclusi ma i senza-data restano`() {
-        val past = listing(id = 1, gameId = 1, releaseDate = today.minusDays(1))
-        val future = listing(id = 2, gameId = 2, releaseDate = today.plusDays(3))
-        val undated = listing(id = 3, gameId = 3, releaseDate = null)
+    fun `tutti i giochi inclusi indipendentemente dalla data passata o futura`() {
+        val past = listing(id = 1, gameId = 1, releaseDate = today.minusDays(1), title = "Alpha")
+        val future = listing(id = 2, gameId = 2, releaseDate = today.plusDays(3), title = "Beta")
+        val undated = listing(id = 3, gameId = 3, releaseDate = null, title = "Zeta")
 
         val items = buildIncomingItems(
             listings = listOf(past, future, undated),
-            games = mapOf(1L to game(1, "Passato"), 2L to game(2, "Futuro"), 3L to game(3, "SenzaData")),
+            games = mapOf(1L to game(1, "Alpha"), 2L to game(2, "Beta"), 3L to game(3, "Zeta")),
             sources = sources("s1"),
             ignoredKeys = emptySet(),
             today = today,
         )
 
-        assertEquals(listOf("game:2", "game:3"), items.map { it.key })
+        assertEquals(listOf("game:1", "game:2", "game:3"), items.map { it.key })
     }
 
     @Test

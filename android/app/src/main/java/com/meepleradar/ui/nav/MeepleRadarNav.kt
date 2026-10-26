@@ -76,7 +76,7 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         selected = currentRoute == ROUTE_INCOMING,
                         onClick = { navController.switchTab(ROUTE_INCOMING) },
                         icon = { Icon(Icons.Filled.Home, contentDescription = null) },
-                        label = { Text("In arrivo") },
+                        label = { Text("Lista") },
                     )
                     val newlyAddedCount by container.repository.newlyAddedCountFlow().collectAsStateWithLifecycle(initialValue = container.repository.newlyAddedCount())
                     NavigationBarItem(

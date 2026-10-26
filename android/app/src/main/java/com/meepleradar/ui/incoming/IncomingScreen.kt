@@ -110,7 +110,7 @@ fun IncomingScreen(
                 selectedAvailability.size < AvailabilityStatus.entries.size
 
             ScreenHeader(
-                title = "In arrivo",
+                title = "Lista",
                 onRefresh = { vm.refresh() },
                 timestampText = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
                 titleContent = {
@@ -119,7 +119,7 @@ fun IncomingScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
-                            text = "In arrivo",
+                            text = "Lista",
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onBackground,
                         )
