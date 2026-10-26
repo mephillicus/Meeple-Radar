@@ -69,13 +69,33 @@ class DefaultListingRepository(
     override fun preorderCount(): Int {
         val cached = localCacheStore?.load() ?: return 0
         val today = LocalDate.now()
-        val preorderListings = cached.listings.filter { it.releaseDate != null && it.releaseDate.isAfter(today) }
+        val preorderListings = cached.listings.filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
         return preorderListings.map { keyOf(it) }.toSet().size
     }
 
     override suspend fun preorderItems(today: LocalDate): List<IncomingItem> {
-        val all = incoming(today, includeUndated = false, includePriceless = true, forceRefresh = false)
-        return all.filter { it.releaseDate != null && it.releaseDate.isAfter(today) }
+        val cached = localCacheStore?.load() ?: return emptyList()
+        val preorderListings = cached.listings.filter { listing ->
+            val date = listing.releaseDate
+            date != null && !date.isBefore(today)
+        }
+        if (preorderListings.isEmpty()) return emptyList()
+
+        val games = cached.games.associateBy { it.id }
+        val sources = cached.sources.associateBy { it.id }
+        val products = cached.products.associateBy { it.id }
+
+        return buildIncomingItems(
+            listings = preorderListings,
+            games = games,
+            sources = sources,
+            ignoredKeys = emptySet(),
+            today = today,
+            sourceIds = null,
+            includeUndated = false,
+            includePriceless = true,
+            products = products,
+        ).filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
     }
 
     override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
@@ -100,7 +120,7 @@ class DefaultListingRepository(
 
         return allItems.filter { item ->
             val date = item.releaseDate
-            val isPreorder = date != null && date.isAfter(today)
+            val isPreorder = date != null && !date.isBefore(today)
             val isTooOld = date != null && date.isBefore(twoMonthsAgo)
             !isPreorder && !isTooOld
         }
