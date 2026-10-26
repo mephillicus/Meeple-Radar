@@ -41,7 +41,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.meepleradar.AppContainer
 import com.meepleradar.ui.components.MeepleVector
-import com.meepleradar.ui.components.NewsIconVector
 import com.meepleradar.ui.detail.DetailScreen
 import com.meepleradar.ui.detail.DetailViewModel
 import com.meepleradar.ui.favorites.FavoritesScreen
@@ -85,7 +84,7 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         onClick = { navController.switchTab(ROUTE_NEWS) },
                         icon = {
                             Box {
-                                Icon(NewsIconVector, contentDescription = null, modifier = Modifier.size(24.dp))
+                                Icon(MeepleVector, contentDescription = null, modifier = Modifier.size(24.dp))
                                 if (newlyAddedCount > 0) {
                                     Surface(
                                         shape = CircleShape,
