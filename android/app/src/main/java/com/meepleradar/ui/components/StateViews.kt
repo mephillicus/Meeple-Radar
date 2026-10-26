@@ -104,6 +104,97 @@ val MeepleVector: ImageVector = ImageVector.Builder(
     build()
 }
 
+val NewsIconVector: ImageVector = ImageVector.Builder(
+    name = "NewsIcon",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 512f,
+    viewportHeight = 512f,
+).run {
+    path(
+        fill = SolidColor(Color.White),
+        stroke = SolidColor(Color(0xFFE2E8F0)),
+        strokeLineWidth = 8f,
+    ) {
+        moveTo(80f, 16f)
+        horizontalLineTo(432f)
+        arcTo(64f, 64f, 0f, false, true, 496f, 80f)
+        verticalLineTo(432f)
+        arcTo(64f, 64f, 0f, false, true, 432f, 496f)
+        horizontalLineTo(80f)
+        arcTo(64f, 64f, 0f, false, true, 16f, 432f)
+        verticalLineTo(80f)
+        arcTo(64f, 64f, 0f, false, true, 80f, 16f)
+        close()
+    }
+    path(
+        fill = SolidColor(Color(0xFFB06543)),
+    ) {
+        moveTo(44f, 289f)
+        horizontalLineTo(104f)
+        verticalLineTo(356f)
+        arcTo(14f, 14f, 0f, false, true, 90f, 370f)
+        horizontalLineTo(58f)
+        arcTo(14f, 14f, 0f, false, true, 44f, 356f)
+        close()
+        moveTo(408f, 289f)
+        horizontalLineTo(468f)
+        verticalLineTo(356f)
+        arcTo(14f, 14f, 0f, false, true, 454f, 370f)
+        horizontalLineTo(422f)
+        arcTo(14f, 14f, 0f, false, true, 408f, 356f)
+        close()
+    }
+    path(
+        fill = SolidColor(Color(0xFFE28965)),
+    ) {
+        moveTo(164f, 260f)
+        horizontalLineTo(348f)
+        arcTo(14f, 14f, 0f, false, true, 362f, 274f)
+        verticalLineTo(274f)
+        arcTo(14f, 14f, 0f, false, true, 348f, 288f)
+        horizontalLineTo(164f)
+        arcTo(14f, 14f, 0f, false, true, 150f, 274f)
+        verticalLineTo(274f)
+        arcTo(14f, 14f, 0f, false, true, 164f, 260f)
+        close()
+    }
+    path(
+        fill = SolidColor(Color(0xFFEF4444)),
+    ) {
+        moveTo(125f, 170f)
+        curveTo(125f, 170f, 80f, 175f, 65f, 220f)
+        verticalLineTo(270f)
+        curveTo(95f, 275f, 125f, 270f, 135f, 255f)
+        close()
+    }
+    path(
+        fill = SolidColor(Color(0xFFFACC15)),
+    ) {
+        moveTo(390f, 175f)
+        curveTo(390f, 175f, 435f, 178f, 448f, 220f)
+        verticalLineTo(290f)
+        curveTo(420f, 295f, 390f, 290f, 380f, 275f)
+        close()
+    }
+    path(
+        fill = SolidColor(Color(0xFFE11D48)),
+    ) {
+        moveTo(160f, 220f)
+        horizontalLineTo(180f)
+        lineTo(210f, 270f)
+        verticalLineTo(220f)
+        horizontalLineTo(225f)
+        verticalLineTo(285f)
+        horizontalLineTo(205f)
+        lineTo(175f, 235f)
+        verticalLineTo(285f)
+        horizontalLineTo(160f)
+        close()
+    }
+    build()
+}
+
 val ScreenContentInsets: WindowInsets
     @Composable get() = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
 
