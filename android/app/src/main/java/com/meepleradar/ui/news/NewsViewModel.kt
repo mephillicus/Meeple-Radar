@@ -71,6 +71,22 @@ class NewsViewModel(
         }
     }
 
+    fun refresh() {
+        _state.value = NewsUiState.Loading
+        viewModelScope.launch {
+            try {
+                repo.incoming(today, forceRefresh = true)
+                rawItems = repo.newsItems(today)
+                rawFavorites = repo.favorites(today).map { it.key }.toSet()
+                updateFilteredState()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = NewsUiState.Error(e.message ?: "Errore di rete")
+            }
+        }
+    }
+
     fun loadSources() {
         viewModelScope.launch {
             try {

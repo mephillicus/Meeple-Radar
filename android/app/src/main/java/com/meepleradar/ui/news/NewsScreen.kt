@@ -95,7 +95,7 @@ fun NewsScreen(
 
             ScreenHeader(
                 title = "Novità",
-                onRefresh = { vm.loadNews() },
+                onRefresh = { vm.refresh() },
                 trailingContent = {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),

@@ -160,7 +160,7 @@ class DefaultListingRepository(
         val ignored = actionsMap.filterValues { it == Action.IGNORED }.keys
         val remoteFavoriteKeys = actionsMap.filterValues { it == Action.FAVORITE }.keys
         val favoriteKeys = favoriteStore.keys() + remoteFavoriteKeys
-        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless, forceRefresh, onProgress).filter { it.key in favoriteKeys }
+        return buildItems(ignored, LocalDate.MIN, sourceIds, includeUndated, includePriceless, forceRefresh, onProgress).filter { it.key in favoriteKeys }
     }
 
     override suspend fun sources(): List<Source> {

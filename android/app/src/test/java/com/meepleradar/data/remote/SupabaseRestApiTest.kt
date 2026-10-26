@@ -120,7 +120,7 @@ class SupabaseRestApiTest {
         assertEquals("POST", call.method)
         assertEquals("$base/rest/v1/user_action", call.url)
         assertEquals("application/json", call.headers["Content-Type"])
-        assertEquals("return=minimal", call.headers["Prefer"])
+        assertEquals("resolution=merge-duplicates,return=minimal", call.headers["Prefer"])
         assertEquals(anon, call.headers["apikey"])
 
         val body = Json.parseToJsonElement(call.body!!).jsonObject

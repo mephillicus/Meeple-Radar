@@ -76,7 +76,7 @@ class SupabaseRestApi(
     override suspend fun insertAction(row: UserActionRow) {
         transport.post(
             url = "$base/rest/v1/user_action",
-            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
             body = json.encodeToString(ActionInsertDto.from(row)),
         )
     }
