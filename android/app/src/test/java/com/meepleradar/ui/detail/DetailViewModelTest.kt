@@ -6,6 +6,8 @@ import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.remote.BggLink
+import com.meepleradar.data.remote.BggSeries
 import com.meepleradar.data.remote.BoardGameDetails
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.data.repo.ListingRepository
@@ -88,13 +90,20 @@ class DetailViewModelTest {
 
     private class FakeImageLookup(
         private val details: BoardGameDetails? = null,
+        private val series: BggSeries? = null,
         private val failure: Throwable? = null,
+        private val seriesFailure: Throwable? = null,
     ) : BoardGameImageLookup {
         override suspend fun findImage(title: String, bggId: Int?): String? = null
 
         override suspend fun findDetails(title: String, bggId: Int?): BoardGameDetails? {
             failure?.let { throw it }
             return details
+        }
+
+        override suspend fun findSeries(bggId: Int): BggSeries? {
+            seriesFailure?.let { throw it }
+            return series
         }
     }
 
@@ -174,6 +183,116 @@ class DetailViewModelTest {
         assertEquals(null, repo.requestedSourceIds)
         assertEquals(details, state.boardGameDetails)
         assertEquals(false, state.isLoadingDetails)
+    }
+
+    @Test
+    fun `carica serie per gioco base con espansioni`() = runTest(dispatcher) {
+        val details = BoardGameDetails(
+            bggId = 173346,
+            imageUrl = null,
+            description = null,
+            yearPublished = 2015,
+            minPlayers = 2,
+            maxPlayers = 2,
+            playingTime = 30,
+            minAge = 10,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            expansions = listOf(BggLink(2001, "Pantheon", "https://boardgamegeek.com/boardgame/2001")),
+        )
+        val series = BggSeries(
+            bases = emptyList(),
+            expansions = listOf(BggLink(2001, "Pantheon", "https://boardgamegeek.com/boardgame/2001")),
+            siblings = emptyList(),
+        )
+
+        val item = item("game:5", emptyList()).copy(game = com.meepleradar.data.model.Game(5, "7 Wonders Duel", "base", 173346, null, null, null))
+        val repo = FakeRepo(listOf(item))
+        val viewModel = DetailViewModel(
+            repo = repo,
+            key = "game:5",
+            today = today,
+            imageLookup = FakeImageLookup(details = details, series = series),
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as DetailUiState.Content
+        assertEquals(series, state.series)
+        assertEquals(false, state.isLoadingSeries)
+    }
+
+    @Test
+    fun `carica serie per espansione con gioco base e siblings`() = runTest(dispatcher) {
+        val details = BoardGameDetails(
+            bggId = 309116,
+            imageUrl = null,
+            description = null,
+            yearPublished = 2020,
+            minPlayers = 2,
+            maxPlayers = 2,
+            playingTime = 30,
+            minAge = 10,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            expands = listOf(BggLink(173346, "7 Wonders Duel", "https://boardgamegeek.com/boardgame/173346")),
+        )
+        val series = BggSeries(
+            bases = listOf(BggLink(173346, "7 Wonders Duel", "https://boardgamegeek.com/boardgame/173346")),
+            expansions = emptyList(),
+            siblings = listOf(BggLink(2001, "Pantheon", "https://boardgamegeek.com/boardgame/2001")),
+        )
+
+        val item = item("game:6", emptyList()).copy(game = com.meepleradar.data.model.Game(6, "Agora", "expansion", 309116, null, null, null))
+        val repo = FakeRepo(listOf(item))
+        val viewModel = DetailViewModel(
+            repo = repo,
+            key = "game:6",
+            today = today,
+            imageLookup = FakeImageLookup(details = details, series = series),
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as DetailUiState.Content
+        assertEquals(series, state.series)
+        assertEquals(false, state.isLoadingSeries)
+    }
+
+    @Test
+    fun `errore nel caricamento della serie lascia la sezione assente senza bloccare i dettagli`() = runTest(dispatcher) {
+        val details = BoardGameDetails(
+            bggId = 173346,
+            imageUrl = null,
+            description = "Desc",
+            yearPublished = 2015,
+            minPlayers = 2,
+            maxPlayers = 2,
+            playingTime = 30,
+            minAge = 10,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+        )
+
+        val item = item("game:5", emptyList()).copy(game = com.meepleradar.data.model.Game(5, "7 Wonders Duel", "base", 173346, null, null, null))
+        val repo = FakeRepo(listOf(item))
+        val viewModel = DetailViewModel(
+            repo = repo,
+            key = "game:5",
+            today = today,
+            imageLookup = FakeImageLookup(details = details, seriesFailure = IllegalStateException("BGG error")),
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as DetailUiState.Content
+        assertEquals(details, state.boardGameDetails)
+        assertEquals(null, state.series)
+        assertEquals("BGG error", state.seriesError)
+        assertEquals(false, state.isLoadingSeries)
     }
 
     @Test

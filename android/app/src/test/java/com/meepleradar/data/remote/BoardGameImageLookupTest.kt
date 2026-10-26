@@ -111,6 +111,109 @@ class BoardGameImageLookupTest {
     }
 
     @Test
+    fun `findSeries per gioco base estrae le espansioni da geekitems`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("objectid=173346") -> """
+                    {
+                      "item": {
+                        "id": 173346,
+                        "name": "7 Wonders Duel",
+                        "links": {
+                          "boardgameexpansion": [
+                            {
+                              "objecttype": "thing",
+                              "objectid": 2001,
+                              "name": "7 Wonders Duel: Pantheon",
+                              "canonical_link": "/boardgameexpansion/2001/7-wonders-duel-pantheon"
+                            },
+                            {
+                              "objecttype": "thing",
+                              "objectid": 2002,
+                              "name": "7 Wonders Duel: Agora",
+                              "canonical_link": "/boardgameexpansion/2002/7-wonders-duel-agora"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                """.trimIndent()
+                else -> error("URL inaspettata: $url")
+            }
+        }
+
+        val lookup = BoardGameGeekImageLookup(transport)
+        val series = lookup.findSeries(173346)
+
+        assertTrue(series != null)
+        assertEquals(0, series!!.bases.size)
+        assertEquals(2, series.expansions.size)
+        assertEquals(2001, series.expansions[0].bggId)
+        assertEquals("7 Wonders Duel: Pantheon", series.expansions[0].name)
+        assertEquals("https://boardgamegeek.com/boardgameexpansion/2001/7-wonders-duel-pantheon", series.expansions[0].url)
+    }
+
+    @Test
+    fun `findSeries per espansione recupera gioco base e siblings`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("objectid=2002") -> """
+                    {
+                      "item": {
+                        "id": 2002,
+                        "name": "7 Wonders Duel: Agora",
+                        "links": {
+                          "expandsboardgame": [
+                            {
+                              "objecttype": "thing",
+                              "objectid": 173346,
+                              "name": "7 Wonders Duel",
+                              "canonical_link": "/boardgame/173346/7-wonders-duel"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                """.trimIndent()
+                url.contains("objectid=173346") -> """
+                    {
+                      "item": {
+                        "id": 173346,
+                        "name": "7 Wonders Duel",
+                        "links": {
+                          "boardgameexpansion": [
+                            {
+                              "objecttype": "thing",
+                              "objectid": 2001,
+                              "name": "7 Wonders Duel: Pantheon",
+                              "canonical_link": "/boardgameexpansion/2001/7-wonders-duel-pantheon"
+                            },
+                            {
+                              "objecttype": "thing",
+                              "objectid": 2002,
+                              "name": "7 Wonders Duel: Agora",
+                              "canonical_link": "/boardgameexpansion/2002/7-wonders-duel-agora"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                """.trimIndent()
+                else -> error("URL inaspettata: $url")
+            }
+        }
+
+        val lookup = BoardGameGeekImageLookup(transport)
+        val series = lookup.findSeries(2002)
+
+        assertTrue(series != null)
+        assertEquals(1, series!!.bases.size)
+        assertEquals("7 Wonders Duel", series.bases[0].name)
+        assertEquals(1, series.siblings.size)
+        assertEquals("7 Wonders Duel: Pantheon", series.siblings[0].name)
+    }
+
+    @Test
     fun `ricerca fuzzy con accenti e nomi alternativi trova il gioco corretto`() = runTest {
         val transport = FakeTransport { url ->
             when {

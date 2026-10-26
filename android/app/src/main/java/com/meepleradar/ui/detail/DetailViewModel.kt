@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Offer
+import com.meepleradar.data.remote.BggSeries
 import com.meepleradar.data.remote.BoardGameDetails
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.data.repo.ListingRepository
@@ -29,6 +30,9 @@ sealed interface DetailUiState {
         val boardGameDetails: BoardGameDetails? = null,
         val isLoadingDetails: Boolean = false,
         val detailsError: String? = null,
+        val series: BggSeries? = null,
+        val isLoadingSeries: Boolean = false,
+        val seriesError: String? = null,
     ) : DetailUiState
 }
 
@@ -64,9 +68,10 @@ class DetailViewModel(
                     isLoadingDetails = imageLookup != null,
                 )
                 val lookup = imageLookup ?: return@launch
+                var details: BoardGameDetails? = null
                 try {
                     val customDesc = item.customDescription ?: item.game?.description
-                    var details = lookup.findDetails(item.title, item.game?.bggId)
+                    details = lookup.findDetails(item.title, item.game?.bggId)
                     if (details == null && item.game != null) {
                         details = BoardGameDetails(
                             bggId = item.game.bggId ?: 0,
@@ -93,6 +98,24 @@ class DetailViewModel(
                             isLoadingDetails = false,
                             detailsError = e.message ?: DETAILS_ERROR,
                         )
+                    }
+                }
+
+                val validBggId = (item.game?.bggId ?: details?.bggId)?.takeIf { it > 0 }
+                if (validBggId != null) {
+                    updateContent { it.copy(isLoadingSeries = true) }
+                    try {
+                        val seriesData = lookup.findSeries(validBggId)
+                        updateContent { it.copy(series = seriesData, isLoadingSeries = false) }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        updateContent {
+                            it.copy(
+                                isLoadingSeries = false,
+                                seriesError = e.message,
+                            )
+                        }
                     }
                 }
             } catch (e: CancellationException) {

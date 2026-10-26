@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.Offer
+import com.meepleradar.data.remote.BggLink
 import com.meepleradar.data.remote.BoardGameDetails
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.ui.components.EmptyView
@@ -61,10 +62,10 @@ import com.meepleradar.ui.components.GameCover
 import com.meepleradar.ui.components.LoadingView
 import com.meepleradar.ui.components.RatingBadge
 import com.meepleradar.ui.components.ScreenContentInsets
-import com.meepleradar.ui.incoming.dateLabel
 import com.meepleradar.ui.incoming.availabilityColor
 import com.meepleradar.ui.incoming.availabilityLabel
 import com.meepleradar.ui.incoming.bestComparableEuroOffers
+import com.meepleradar.ui.incoming.dateLabel
 import com.meepleradar.ui.incoming.offerPriceColor
 import com.meepleradar.ui.incoming.priceLabel
 import java.util.Locale
@@ -161,6 +162,10 @@ private fun DetailContent(content: DetailUiState.Content, imageLookup: BoardGame
 
         item {
             BoardGameSpecs(content)
+        }
+
+        item {
+            SeriesCard(content)
         }
 
         item {
@@ -375,6 +380,115 @@ private fun BoardGameSpecs(content: DetailUiState.Content) {
 }
 
 @Composable
+private fun SeriesCard(content: DetailUiState.Content) {
+    val uriHandler = LocalUriHandler.current
+    val series = content.series
+    val hasData = series != null && (series.expansions.isNotEmpty() || series.bases.isNotEmpty() || series.siblings.isNotEmpty())
+
+    if (!content.isLoadingSeries && !hasData) return
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Espansioni e serie", style = MaterialTheme.typography.titleLarge)
+
+            if (content.isLoadingSeries) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        "Caricamento espansioni e serie…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else if (series != null) {
+                if (series.expansions.isNotEmpty()) {
+                    Text(
+                        text = "Espansioni (${series.expansions.size})",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    BggLinkList(links = series.expansions, onOpen = { url -> uriHandler.openUri(url) })
+                }
+
+                if (series.bases.isNotEmpty()) {
+                    Text(
+                        text = "Espande",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    BggLinkList(links = series.bases, onOpen = { url -> uriHandler.openUri(url) })
+                }
+
+                if (series.siblings.isNotEmpty()) {
+                    if (series.bases.isNotEmpty()) {
+                        HorizontalDivider()
+                    }
+                    Text(
+                        text = "Altre espansioni della serie",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    BggLinkList(links = series.siblings, onOpen = { url -> uriHandler.openUri(url) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BggLinkList(links: List<BggLink>, onOpen: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        links.forEach { link ->
+            val hasUrl = !link.url.isNullOrBlank()
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (hasUrl) {
+                            Modifier.clickable { onOpen(link.url) }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = link.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (hasUrl) {
+                        Text(
+                            text = "↗",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SpecQuickGrid(game: com.meepleradar.data.model.Game?, details: BoardGameDetails?) {
     val bggId = details?.bggId ?: game?.bggId
     val rating = game?.bggRating
@@ -517,7 +631,7 @@ private fun OfferRow(offer: Offer, allOffers: List<Offer>, isBestOffer: Boolean,
                             color = stockColor,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                         )
-                        }
+                    }
                 }
             }
 

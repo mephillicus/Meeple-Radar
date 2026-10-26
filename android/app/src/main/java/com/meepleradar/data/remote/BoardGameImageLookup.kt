@@ -15,10 +15,24 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.xml.sax.InputSource
 
+data class BggLink(
+    val bggId: Int,
+    val name: String,
+    val url: String?,
+)
+
+data class BggSeries(
+    val bases: List<BggLink>,
+    val expansions: List<BggLink>,
+    val siblings: List<BggLink>,
+)
+
 interface BoardGameImageLookup {
     suspend fun findImage(title: String, bggId: Int?): String?
 
     suspend fun findDetails(title: String, bggId: Int?): BoardGameDetails? = null
+
+    suspend fun findSeries(bggId: Int): BggSeries? = null
 }
 
 data class BoardGameDetails(
@@ -33,6 +47,8 @@ data class BoardGameDetails(
     val designers: List<String>,
     val categories: List<String>,
     val mechanics: List<String>,
+    val expansions: List<BggLink> = emptyList(),
+    val expands: List<BggLink> = emptyList(),
 )
 
 class BoardGameGeekImageLookup(
@@ -99,6 +115,34 @@ class BoardGameGeekImageLookup(
             bestDetails
         }
     }
+
+    override suspend fun findSeries(bggId: Int): BggSeries? = runCatching {
+        if (bggId <= 0) return null
+        val details = detailsCache[bggId] ?: semaphore.withPermit {
+            detailsCache[bggId] ?: detailsFromThing(bggId).also { detailsCache[bggId] = it }
+        } ?: return null
+
+        if (details.expands.isNotEmpty()) {
+            val bases = details.expands
+            val siblings = mutableListOf<BggLink>()
+            for (base in bases.take(2)) {
+                val baseDetails = detailsCache[base.bggId] ?: semaphore.withPermit {
+                    detailsCache[base.bggId] ?: detailsFromThing(base.bggId).also { detailsCache[base.bggId] = it }
+                }
+                baseDetails?.expansions?.forEach { exp ->
+                    if (exp.bggId != bggId) {
+                        siblings.add(exp)
+                    }
+                }
+            }
+            val dedupSiblings = siblings.distinctBy { it.bggId }
+            BggSeries(bases = bases, expansions = emptyList(), siblings = dedupSiblings)
+        } else if (details.expansions.isNotEmpty()) {
+            BggSeries(bases = emptyList(), expansions = details.expansions, siblings = emptyList())
+        } else {
+            null
+        }
+    }.getOrNull()
 
     private suspend fun findById(id: Int?): String? =
         id?.let { detailsFromThing(it)?.imageUrl }
@@ -220,7 +264,7 @@ class BoardGameGeekImageLookup(
             }
         }.getOrNull()
 
-        if (bggDetails != null && (!bggDetails.description.isNullOrBlank() || !bggDetails.imageUrl.isNullOrBlank())) {
+        if (bggDetails != null && (!bggDetails.description.isNullOrBlank() || !bggDetails.imageUrl.isNullOrBlank() || bggDetails.expansions.isNotEmpty() || bggDetails.expands.isNotEmpty())) {
             return bggDetails
         }
 
@@ -265,9 +309,28 @@ class BoardGameGeekImageLookup(
                 ?.distinct()
         }.getOrNull() ?: emptyList()
 
+        fun parseBggLinks(key: String): List<BggLink> = runCatching {
+            links?.get(key)?.jsonArray?.mapNotNull { el ->
+                val obj = el.jsonObject
+                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val objectId = obj["objectid"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+                val canonical = obj["canonical_link"]?.jsonPrimitive?.contentOrNull
+                val url = when {
+                    canonical.isNullOrBlank() -> "https://boardgamegeek.com/boardgame/$objectId"
+                    canonical.startsWith("http://") || canonical.startsWith("https://") -> canonical
+                    canonical.startsWith("/") -> "https://boardgamegeek.com$canonical"
+                    else -> "https://boardgamegeek.com/$canonical"
+                }
+                BggLink(bggId = objectId, name = name, url = url)
+            }?.distinctBy { it.bggId }
+        }.getOrNull() ?: emptyList()
+
         val designers = parseLinks("boardgamedesigner")
         val categories = parseLinks("boardgamecategory")
         val mechanics = parseLinks("boardgamemechanic")
+
+        val expansions = parseBggLinks("boardgameexpansion")
+        val expands = parseBggLinks("expandsboardgame")
 
         return BoardGameDetails(
             bggId = id,
@@ -281,6 +344,8 @@ class BoardGameGeekImageLookup(
             designers = designers,
             categories = categories,
             mechanics = mechanics,
+            expansions = expansions,
+            expands = expands,
         )
     }
 
@@ -311,6 +376,16 @@ class BoardGameGeekImageLookup(
                 .mapNotNull { it.attributes?.getNamedItem("value")?.nodeValue }
                 .distinct()
 
+        fun bggLinks(type: String): List<BggLink> =
+            (0 until children.length).mapNotNull { children.item(it) }
+                .filter { it.nodeName == "link" && it.attributes?.getNamedItem("type")?.nodeValue == type }
+                .mapNotNull { node ->
+                    val bggId = node.attributes?.getNamedItem("id")?.nodeValue?.toIntOrNull() ?: return@mapNotNull null
+                    val name = node.attributes?.getNamedItem("value")?.nodeValue ?: return@mapNotNull null
+                    BggLink(bggId = bggId, name = name, url = "https://boardgamegeek.com/boardgame/$bggId")
+                }
+                .distinctBy { it.bggId }
+
         val image = (0 until children.length).mapNotNull { children.item(it) }
             .firstOrNull { it.nodeName == "image" }
             ?.textContent
@@ -329,6 +404,8 @@ class BoardGameGeekImageLookup(
             designers = names("boardgamedesigner"),
             categories = names("boardgamecategory"),
             mechanics = names("boardgamemechanic"),
+            expansions = bggLinks("boardgameexpansion"),
+            expands = bggLinks("boardgameexpansion"), // or expandsboardgame in xml
         )
     }
 
