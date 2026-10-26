@@ -38,6 +38,8 @@ interface ListingRepository {
 
     suspend fun preorderItems(today: LocalDate): List<IncomingItem>
 
+    suspend fun findItem(key: String, today: LocalDate): IncomingItem?
+
     suspend fun sources(): List<Source>
 
     suspend fun setAction(key: String, action: Action)
@@ -74,28 +76,8 @@ class DefaultListingRepository(
     }
 
     override suspend fun preorderItems(today: LocalDate): List<IncomingItem> {
-        val cached = localCacheStore?.load() ?: return emptyList()
-        val preorderListings = cached.listings.filter { listing ->
-            val date = listing.releaseDate
-            date != null && !date.isBefore(today)
-        }
-        if (preorderListings.isEmpty()) return emptyList()
-
-        val games = cached.games.associateBy { it.id }
-        val sources = cached.sources.associateBy { it.id }
-        val products = cached.products.associateBy { it.id }
-
-        return buildIncomingItems(
-            listings = preorderListings,
-            games = games,
-            sources = sources,
-            ignoredKeys = emptySet(),
-            today = today,
-            sourceIds = null,
-            includeUndated = false,
-            includePriceless = true,
-            products = products,
-        ).filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
+        val all = incoming(today, includeUndated = false, includePriceless = true, forceRefresh = false)
+        return all.filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
     }
 
     override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
@@ -124,6 +106,27 @@ class DefaultListingRepository(
             val isTooOld = date != null && date.isBefore(twoMonthsAgo)
             !isPreorder && !isTooOld
         }
+    }
+
+    override suspend fun findItem(key: String, today: LocalDate): IncomingItem? {
+        val cached = localCacheStore?.load()
+        val games = cached?.games?.associateBy { it.id } ?: emptyMap()
+        val sources = cached?.sources?.associateBy { it.id } ?: emptyMap()
+        val products = cached?.products?.associateBy { it.id } ?: emptyMap()
+
+        val allItems = buildIncomingItems(
+            listings = cached?.listings.orEmpty(),
+            games = games,
+            sources = sources,
+            ignoredKeys = emptySet(),
+            today = LocalDate.MIN,
+            sourceIds = null,
+            includeUndated = true,
+            includePriceless = true,
+            products = products,
+        )
+        return allItems.firstOrNull { it.key == key }
+            ?: incoming(today, includeUndated = true, includePriceless = true, forceRefresh = false).firstOrNull { it.key == key }
     }
 
     override suspend fun incoming(

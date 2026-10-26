@@ -71,6 +71,8 @@ class FavoritesViewModelTest {
         override suspend fun newsItems(today: LocalDate): List<IncomingItem> = emptyList()
 
         override suspend fun preorderItems(today: LocalDate): List<IncomingItem> = emptyList()
+
+        override suspend fun findItem(key: String, today: LocalDate): IncomingItem? = favoriteItems.firstOrNull { it.key == key }
     }
 
     private fun item(key: String) = IncomingItem(

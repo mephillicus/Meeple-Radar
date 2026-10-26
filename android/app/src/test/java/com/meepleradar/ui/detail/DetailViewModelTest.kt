@@ -78,6 +78,12 @@ class DetailViewModelTest {
         override suspend fun newsItems(today: LocalDate): List<IncomingItem> = emptyList()
 
         override suspend fun preorderItems(today: LocalDate): List<IncomingItem> = emptyList()
+
+        override suspend fun findItem(key: String, today: LocalDate): IncomingItem? {
+            failure?.let { throw it }
+            requestedSourceIds = null
+            return items.firstOrNull { it.key == key } ?: incoming(today).firstOrNull { it.key == key }
+        }
     }
 
     private class FakeImageLookup(

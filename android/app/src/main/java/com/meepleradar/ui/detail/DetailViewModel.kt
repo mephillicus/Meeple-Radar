@@ -50,7 +50,7 @@ class DetailViewModel(
         _state.value = DetailUiState.Loading
         viewModelScope.launch {
             try {
-                val item = repo.incoming(today).firstOrNull { it.key == key }
+                val item = repo.findItem(key, today)
                 if (item == null) {
                     _state.value = DetailUiState.NotFound
                     return@launch
