@@ -2,6 +2,7 @@ package com.meepleradar.ui.news
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Source
@@ -18,7 +19,7 @@ import kotlinx.coroutines.launch
 sealed interface NewsUiState {
     object Loading : NewsUiState
     data class Error(val message: String) : NewsUiState
-    data class Content(val items: List<IncomingItem>) : NewsUiState
+    data class Content(val items: List<IncomingItem>, val favorites: Set<String>) : NewsUiState
 }
 
 class NewsViewModel(
@@ -48,6 +49,7 @@ class NewsViewModel(
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private var rawItems: List<IncomingItem> = emptyList()
+    private var rawFavorites: Set<String> = emptySet()
 
     init {
         loadSources()
@@ -59,6 +61,7 @@ class NewsViewModel(
         viewModelScope.launch {
             try {
                 rawItems = repo.newsItems(today)
+                rawFavorites = repo.favorites(today).map { it.key }.toSet()
                 updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
@@ -105,6 +108,42 @@ class NewsViewModel(
         updateFilteredState()
     }
 
+    fun toggleFavorite(item: IncomingItem) {
+        val content = _state.value as? NewsUiState.Content ?: return
+        val wasFavorite = item.key in content.favorites
+        val action = if (wasFavorite) Action.UNFAVORITED else Action.FAVORITE
+
+        viewModelScope.launch {
+            try {
+                repo.setAction(item.key, action)
+                rawFavorites = if (wasFavorite) {
+                    rawFavorites - item.key
+                } else {
+                    rawFavorites + item.key
+                }
+                updateFilteredState()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = NewsUiState.Error(e.message ?: "Errore di rete")
+            }
+        }
+    }
+
+    fun ignore(item: IncomingItem) {
+        viewModelScope.launch {
+            try {
+                repo.setAction(item.key, Action.IGNORED)
+                rawItems = rawItems.filterNot { it.key == item.key }
+                updateFilteredState()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = NewsUiState.Error(e.message ?: "Errore di rete")
+            }
+        }
+    }
+
     private fun updateFilteredState() {
         val sourceIds = _selectedSources.value
         val hideUndated = _hideUndated.value
@@ -135,6 +174,6 @@ class NewsViewModel(
             sourceMatch && dateMatch && priceMatch && availabilityMatch && searchMatch
         }
 
-        _state.value = NewsUiState.Content(filtered)
+        _state.value = NewsUiState.Content(filtered, rawFavorites)
     }
 }
