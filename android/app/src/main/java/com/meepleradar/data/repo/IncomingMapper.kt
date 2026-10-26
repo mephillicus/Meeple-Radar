@@ -80,8 +80,4 @@ fun buildIncomingItems(
             val isPricelessAllowed = includePriceless || it.offers.any { offer -> offer.price != null }
             isNotPast && isUndatedAllowed && isPricelessAllowed
         }
-        .sortedWith(
-            compareBy<IncomingItem> { if (it.kind == ItemKind.UPCOMING) 0 else 1 }
-                .thenBy { it.releaseDate ?: LocalDate.MAX }
-                .thenBy { it.title },
-        )
+        .sortedBy { it.title.lowercase(java.util.Locale.ROOT) }

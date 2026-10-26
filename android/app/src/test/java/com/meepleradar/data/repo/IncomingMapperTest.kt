@@ -178,7 +178,7 @@ class IncomingMapperTest {
     }
 
     @Test
-    fun `ordinamento upcoming per data crescente poi undated per titolo`() {
+    fun `ordinamento alfabetico per titolo`() {
         val later = listing(id = 1, gameId = 1, releaseDate = today.plusDays(10))
         val sooner = listing(id = 2, gameId = 2, releaseDate = today.plusDays(2))
         val zeta = listing(id = 3, gameId = 3, releaseDate = null)
@@ -197,9 +197,7 @@ class IncomingMapperTest {
             today = today,
         )
 
-        assertEquals(listOf("Sooner", "Later", "Alpha", "Zeta"), items.map { it.title })
-        assertEquals(ItemKind.UPCOMING, items[0].kind)
-        assertEquals(ItemKind.NEW_UNDATED, items[2].kind)
+        assertEquals(listOf("Alpha", "Later", "Sooner", "Zeta"), items.map { it.title })
     }
 
     @Test
