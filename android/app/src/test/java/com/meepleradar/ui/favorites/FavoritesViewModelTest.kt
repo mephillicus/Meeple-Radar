@@ -62,6 +62,8 @@ class FavoritesViewModelTest {
 
         override fun lastDbModifiedTimestamp(): Long = 0L
 
+        override fun lastDbModifiedTimestampFlow(): StateFlow<Long> = MutableStateFlow(0L)
+
         override fun newlyAddedCount(): Int = 0
 
         override fun newlyAddedCountFlow(): StateFlow<Int> = MutableStateFlow(0)

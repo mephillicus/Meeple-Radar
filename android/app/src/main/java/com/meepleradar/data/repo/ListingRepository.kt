@@ -46,6 +46,8 @@ interface ListingRepository {
 
     fun lastDbModifiedTimestamp(): Long
 
+    fun lastDbModifiedTimestampFlow(): StateFlow<Long>
+
     fun newlyAddedCount(): Int
 
     fun newlyAddedCountFlow(): StateFlow<Int>
@@ -60,9 +62,11 @@ class DefaultListingRepository(
 ) : ListingRepository {
 
     private val _newlyAddedCount = MutableStateFlow(localCacheStore?.load()?.newlyAddedCount ?: 0)
+    private val _lastModifiedTimestamp = MutableStateFlow(localCacheStore?.load()?.lastModifiedTimestamp ?: 0L)
 
-    override fun lastDbModifiedTimestamp(): Long =
-        localCacheStore?.load()?.lastModifiedTimestamp ?: 0L
+    override fun lastDbModifiedTimestamp(): Long = _lastModifiedTimestamp.value
+
+    override fun lastDbModifiedTimestampFlow(): StateFlow<Long> = _lastModifiedTimestamp.asStateFlow()
 
     override fun newlyAddedCount(): Int = _newlyAddedCount.value
 
@@ -179,15 +183,13 @@ class DefaultListingRepository(
             Action.IGNORED -> favoriteStore.setFavorite(key, false)
         }
 
-        runCatching {
-            val row = when (kind) {
-                "game" -> UserActionRow(gameId = id, listingId = null, action = action)
-                "listing" -> UserActionRow(gameId = null, listingId = id, action = action)
-                "product" -> UserActionRow(gameId = null, listingId = null, action = action, productId = id)
-                else -> throw IllegalArgumentException("chiave non valida: $key")
-            }
-            api.insertAction(row)
+        val row = when (kind) {
+            "game" -> UserActionRow(gameId = id, listingId = null, action = action)
+            "listing" -> UserActionRow(gameId = null, listingId = id, action = action)
+            "product" -> UserActionRow(gameId = null, listingId = null, action = action, productId = id)
+            else -> throw IllegalArgumentException("chiave non valida: $key")
         }
+        api.insertAction(row)
     }
 
     private suspend fun buildItems(
@@ -224,6 +226,7 @@ class DefaultListingRepository(
                 )
                 cached = updatedDb
                 _newlyAddedCount.value = updatedDb.newlyAddedCount
+                _lastModifiedTimestamp.value = updatedDb.lastModifiedTimestamp
             }
         } else {
             remoteListings = cached.listings
