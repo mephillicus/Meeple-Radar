@@ -5,6 +5,7 @@ import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
+import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
@@ -219,6 +220,62 @@ class IncomingMapperTest {
         assertEquals("Citadels", items[0].title)
         assertEquals(2, items[0].offers.size)
         assertEquals(Price(35.0, "EUR"), bestEurPrice(items[0].offers))
+    }
+
+    @Test
+    fun `mantiene il titolo del product per la ricerca BGG anche se il game collegato ha un nome diverso`() {
+        val productTitle = "Dune: La Guerra per Arrakis – La Guerra del Deserto"
+        val listing = listing(id = 1, title = productTitle, gameId = 5).copy(productId = 10L)
+        val items = buildIncomingItems(
+            listings = listOf(listing),
+            games = mapOf(5L to game(5, "Dune")),
+            sources = sources("s1"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(10L to Product(10L, productTitle, null, null)),
+        )
+
+        assertEquals("Dune", items.single().title)
+        assertEquals(productTitle, items.single().lookupTitle)
+    }
+
+    @Test
+    fun `mostra il prezzo product solo se il link punta al publisher dichiarato`() {
+        val product = Product(
+            id = 10,
+            title = "Dune",
+            imageUrl = null,
+            releaseDate = null,
+            url = "https://www.asmodee.it/prodotto/dune",
+            price = 49.9,
+            currency = "EUR",
+            publisher = "Asmodee",
+        )
+        val listing = listing(id = 1).copy(productId = product.id)
+        val items = buildIncomingItems(
+            listings = listOf(listing),
+            games = emptyMap(),
+            sources = sources("s1"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(product.id to product),
+        )
+
+        assertEquals(2, items.single().offers.size)
+        assertEquals("Asmodee", items.single().offers.last().sourceName)
+        assertEquals(Price(49.9, "EUR"), items.single().offers.last().price)
+        assertEquals("https://www.asmodee.it/prodotto/dune", items.single().offers.last().url)
+
+        val unrelatedLink = product.copy(url = "https://news.example.com/dune")
+        val withoutPublisherLink = buildIncomingItems(
+            listings = listOf(listing),
+            games = emptyMap(),
+            sources = sources("s1"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(product.id to unrelatedLink),
+        )
+        assertEquals(1, withoutPublisherLink.single().offers.size)
     }
 
     @Test

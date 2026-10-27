@@ -136,9 +136,13 @@ private data class GameDto(
 private data class ProductDto(
     val id: Long,
     val title: String? = null,
+    val url: String? = null,
+    val price: JsonElement? = null,
+    val currency: String? = null,
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
     @SerialName("description") val description: String? = null,
+    val publisher: String? = null,
 ) {
     fun toDomain() = Product(
         id = id,
@@ -146,6 +150,10 @@ private data class ProductDto(
         imageUrl = imageUrl,
         releaseDate = releaseDate.asLocalDateOrNull(),
         description = description,
+        url = url,
+        price = price.asDoubleOrNull(),
+        currency = currency,
+        publisher = publisher,
     )
 }
 

@@ -16,15 +16,34 @@ test('parseSearchIds: base + expansion, distinti e in ordine', () => {
 })
 
 test('parseGeekItem: forma reale con nomi alternativi italiani', () => {
-  const json = JSON.stringify({ item: {
-    name: "The Werewolves of Miller's Hollow", subtype: 'boardgame', yearpublished: 2001,
+  const json = JSON.stringify({
+    item: {
+      name: "The Werewolves of Miller's Hollow", subtype: 'boardgame', yearpublished: 2001,
+    },
     alternatenames: [{ nameid: '1190942', name: 'Lupi Mannari di Roccascura' }],
-  } })
+  })
   const item = parseGeekItem(json, 25821)
   expect(item).toMatchObject({ bggId: 25821, subtype: 'boardgame', yearpublished: 2001 })
   expect(item?.alternateNames).toEqual(['Lupi Mannari di Roccascura'])
   expect(parseGeekItem('non-json', 1)).toBeNull()
   expect(parseGeekItem('{}', 1)).toBeNull()
+})
+
+test('parseGeekItem: legge il titolo italiano dalla posizione restituita da Geekdo', () => {
+  const json = JSON.stringify({
+    item: {
+      name: 'Dune: War for Arrakis – The Spacing Guild',
+      subtype: 'boardgameexpansion',
+      yearpublished: 2024,
+    },
+    alternatenames: [
+      { nameid: '2562395', name: 'Dune: La Guerra per Arrakis – La Gilda Spaziale' },
+    ],
+  })
+
+  const item = parseGeekItem(json, 370796)!
+
+  expect(resolveGate('Dune: La Guerra per Arrakis – La Gilda Spaziale', null, [item])?.bggId).toBe(370796)
 })
 
 test('resolveGate: singolo match esatto vince', () => {

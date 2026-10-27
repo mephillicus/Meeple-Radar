@@ -96,7 +96,7 @@ class SupabaseRestApiTest {
     @Test
     fun `products costruisce url select star con header apikey e bearer`() = runTest {
         val body = listingJson(
-            """{"id":10,"title":"Citadels","image_url":"https://img","release_date":"2026-12-01"}""",
+            """{"id":10,"title":"Citadels","url":"https://www.asmodee.it/citadels","price":"39.90","currency":"EUR","publisher":"Asmodee","image_url":"https://img","release_date":"2026-12-01"}""",
         )
         val transport = FakeTransport(mapOf("$base/rest/v1/product?select=*" to body))
         val products = SupabaseRestApi(base, anon, transport, json).products()
@@ -108,6 +108,10 @@ class SupabaseRestApiTest {
         assertEquals(10L, products[0].id)
         assertEquals("Citadels", products[0].title)
         assertEquals(java.time.LocalDate.of(2026, 12, 1), products[0].releaseDate)
+        assertEquals("https://www.asmodee.it/citadels", products[0].url)
+        assertEquals(39.9, products[0].price!!, 1e-9)
+        assertEquals("EUR", products[0].currency)
+        assertEquals("Asmodee", products[0].publisher)
     }
 
     @Test

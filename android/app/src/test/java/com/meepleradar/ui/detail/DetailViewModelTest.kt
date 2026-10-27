@@ -6,6 +6,7 @@ import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.local.BggSelectionStore
 import com.meepleradar.data.remote.BggLink
 import com.meepleradar.data.remote.BggSeries
 import com.meepleradar.data.remote.BoardGameDetails
@@ -93,17 +94,49 @@ class DetailViewModelTest {
         private val series: BggSeries? = null,
         private val failure: Throwable? = null,
         private val seriesFailure: Throwable? = null,
+        private val candidates: List<BoardGameDetails> = emptyList(),
     ) : BoardGameImageLookup {
+        var requestedTitle: String? = null
+        var requestedBggId: Int? = null
+        var requestedDetailsById: Int? = null
+        var requestedCandidatesTitle: String? = null
+
         override suspend fun findImage(title: String, bggId: Int?): String? = null
 
         override suspend fun findDetails(title: String, bggId: Int?): BoardGameDetails? {
+            requestedTitle = title
+            requestedBggId = bggId
             failure?.let { throw it }
             return details
+        }
+
+        override suspend fun findDetailsById(bggId: Int): BoardGameDetails? {
+            requestedDetailsById = bggId
+            return details?.takeIf { it.bggId == bggId }
+        }
+
+        override suspend fun findCandidates(title: String, bggId: Int?): List<BoardGameDetails> {
+            requestedCandidatesTitle = title
+            return candidates
         }
 
         override suspend fun findSeries(bggId: Int): BggSeries? {
             seriesFailure?.let { throw it }
             return series
+        }
+    }
+
+    private class FakeBggSelectionStore : BggSelectionStore {
+        private val selections = mutableMapOf<String, Int>()
+
+        override fun getBggId(itemKey: String): Int? = selections[itemKey]
+
+        override fun saveBggId(itemKey: String, bggId: Int) {
+            selections[itemKey] = bggId
+        }
+
+        override fun removeBggId(itemKey: String) {
+            selections.remove(itemKey)
         }
     }
 
@@ -183,6 +216,99 @@ class DetailViewModelTest {
         assertEquals(null, repo.requestedSourceIds)
         assertEquals(details, state.boardGameDetails)
         assertEquals(false, state.isLoadingDetails)
+    }
+
+    @Test
+    fun `usa il titolo originale del product per cercare i dettagli BGG`() = runTest(dispatcher) {
+        val productTitle = "Dune: La Guerra per Arrakis – La Guerra del Deserto"
+        val item = item("product:10", emptyList()).copy(
+            title = "Dune",
+            game = com.meepleradar.data.model.Game(5, "Dune", "base", 283355, null, null, null),
+            lookupTitle = productTitle,
+        )
+        val lookup = FakeImageLookup()
+        val viewModel = DetailViewModel(
+            repo = FakeRepo(listOf(item)),
+            key = "product:10",
+            today = today,
+            imageLookup = lookup,
+        )
+
+        advanceUntilIdle()
+
+        assertEquals(productTitle, lookup.requestedTitle)
+        assertEquals(283355, lookup.requestedBggId)
+        assertTrue(viewModel.state.value is DetailUiState.Content)
+    }
+
+    @Test
+    fun `mostra candidati BGG e salva la selezione manuale per i caricamenti successivi`() = runTest(dispatcher) {
+        val title = "Dune: La Guerra per Arrakis – La Guerra del Deserto"
+        val candidate = BoardGameDetails(
+            bggId = 421183,
+            imageUrl = null,
+            description = "Espansione",
+            yearPublished = 2024,
+            minPlayers = null,
+            maxPlayers = null,
+            playingTime = null,
+            minAge = null,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            primaryName = "Dune: War for Arrakis – Desert War",
+        )
+        val product = item("product:421183", emptyList()).copy(
+            title = "Dune",
+            game = com.meepleradar.data.model.Game(5, "Dune", "base", 283355, null, null, null),
+            lookupTitle = title,
+        )
+        val store = FakeBggSelectionStore()
+        val lookup = FakeImageLookup(candidates = listOf(candidate))
+        val viewModel = DetailViewModel(
+            repo = FakeRepo(listOf(product)),
+            key = product.key,
+            today = today,
+            imageLookup = lookup,
+            bggSelectionStore = store,
+        )
+
+        advanceUntilIdle()
+
+        val unresolved = viewModel.state.value as DetailUiState.Content
+        assertEquals(listOf(candidate), unresolved.bggCandidates)
+        assertEquals(title, lookup.requestedCandidatesTitle)
+        assertEquals(null, unresolved.boardGameDetails)
+
+        viewModel.selectBggCandidate(candidate)
+        advanceUntilIdle()
+        assertEquals(421183, store.getBggId(product.key))
+        assertEquals(candidate, (viewModel.state.value as DetailUiState.Content).boardGameDetails)
+
+        val reopenedLookup = FakeImageLookup(details = candidate)
+        val reopened = DetailViewModel(
+            repo = FakeRepo(listOf(product)),
+            key = product.key,
+            today = today,
+            imageLookup = reopenedLookup,
+            bggSelectionStore = store,
+        )
+        advanceUntilIdle()
+
+        assertEquals(421183, reopenedLookup.requestedDetailsById)
+        assertEquals(null, reopenedLookup.requestedBggId)
+        assertEquals(candidate, (reopened.state.value as DetailUiState.Content).boardGameDetails)
+
+        reopenedLookup.requestedDetailsById = null
+        reopened.removeManualBggSelection()
+        advanceUntilIdle()
+
+        val corrected = reopened.state.value as DetailUiState.Content
+        assertEquals(null, store.getBggId(product.key))
+        assertEquals(null, reopenedLookup.requestedDetailsById)
+        assertEquals(283355, reopenedLookup.requestedBggId)
+        assertEquals(true, corrected.bggCandidates.isEmpty())
+        assertEquals(null, corrected.manualBggId)
     }
 
     @Test

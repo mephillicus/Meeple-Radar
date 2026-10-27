@@ -223,6 +223,7 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                                 repo = container.repository,
                                 key = key,
                                 imageLookup = container.boardGameImageLookup,
+                                bggSelectionStore = container.bggSelectionStore,
                             )
                         }
                     },

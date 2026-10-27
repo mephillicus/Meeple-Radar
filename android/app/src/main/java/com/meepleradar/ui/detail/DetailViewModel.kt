@@ -2,6 +2,7 @@ package com.meepleradar.ui.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meepleradar.data.local.BggSelectionStore
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Offer
@@ -33,6 +34,9 @@ sealed interface DetailUiState {
         val series: BggSeries? = null,
         val isLoadingSeries: Boolean = false,
         val seriesError: String? = null,
+        val bggCandidates: List<BoardGameDetails> = emptyList(),
+        val isLoadingBggCandidates: Boolean = false,
+        val manualBggId: Int? = null,
     ) : DetailUiState
 }
 
@@ -41,6 +45,7 @@ class DetailViewModel(
     private val key: String,
     private val today: LocalDate = LocalDate.now(),
     private val imageLookup: BoardGameImageLookup? = null,
+    private val bggSelectionStore: BggSelectionStore = NoOpBggSelectionStore,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
@@ -71,37 +76,43 @@ class DetailViewModel(
                 var details: BoardGameDetails? = null
                 try {
                     val customDesc = item.customDescription ?: item.game?.description
-                    details = lookup.findDetails(item.title, item.game?.bggId)
-                    if (details == null && item.game != null) {
-                        details = BoardGameDetails(
-                            bggId = item.game.bggId ?: 0,
-                            imageUrl = item.game.imageUrl,
-                            description = customDesc,
-                            yearPublished = null,
-                            minPlayers = null,
-                            maxPlayers = null,
-                            playingTime = null,
-                            minAge = null,
-                            designers = emptyList(),
-                            categories = emptyList(),
-                            mechanics = emptyList(),
-                        )
-                    } else if (!customDesc.isNullOrBlank() && details != null) {
+                    val title = item.lookupTitle ?: item.title
+                    val savedBggId = bggSelectionStore.getBggId(key)
+                    details = if (savedBggId != null) {
+                        lookup.findDetailsById(savedBggId)
+                    } else {
+                        lookup.findDetails(title, item.game?.bggId)
+                    }
+                    if (!customDesc.isNullOrBlank() && details != null) {
                         details = details.copy(description = customDesc)
                     }
-                    updateContent { it.copy(boardGameDetails = details, isLoadingDetails = false) }
+                    updateContent {
+                        it.copy(
+                            boardGameDetails = details,
+                            isLoadingDetails = false,
+                            isLoadingBggCandidates = details == null && savedBggId == null,
+                            manualBggId = savedBggId,
+                        )
+                    }
+                    if (details == null && savedBggId == null) {
+                        val candidates = lookup.findCandidates(title, item.game?.bggId)
+                        updateContent {
+                            it.copy(bggCandidates = candidates, isLoadingBggCandidates = false)
+                        }
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     updateContent {
                         it.copy(
                             isLoadingDetails = false,
+                            isLoadingBggCandidates = false,
                             detailsError = e.message ?: DETAILS_ERROR,
                         )
                     }
                 }
 
-                val validBggId = (item.game?.bggId ?: details?.bggId)?.takeIf { it > 0 }
+                val validBggId = details?.bggId?.takeIf { it > 0 }
                 if (validBggId != null) {
                     updateContent { it.copy(isLoadingSeries = true) }
                     try {
@@ -126,6 +137,43 @@ class DetailViewModel(
         }
     }
 
+    fun selectBggCandidate(candidate: BoardGameDetails) {
+        val content = _state.value as? DetailUiState.Content ?: return
+        bggSelectionStore.saveBggId(key, candidate.bggId)
+        val customDesc = content.item.customDescription ?: content.item.game?.description
+        val selected = if (customDesc.isNullOrBlank()) candidate else candidate.copy(description = customDesc)
+        updateContent {
+            it.copy(
+                boardGameDetails = selected,
+                bggCandidates = emptyList(),
+                isLoadingBggCandidates = false,
+                isLoadingSeries = imageLookup != null,
+                series = null,
+                seriesError = null,
+                manualBggId = candidate.bggId,
+            )
+        }
+        val lookup = imageLookup ?: return
+        viewModelScope.launch {
+            try {
+                val series = lookup.findSeries(candidate.bggId)
+                updateContent { it.copy(series = series, isLoadingSeries = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateContent {
+                    it.copy(isLoadingSeries = false, seriesError = e.message)
+                }
+            }
+        }
+    }
+
+    fun removeManualBggSelection() {
+        if (_state.value !is DetailUiState.Content) return
+        bggSelectionStore.removeBggId(key)
+        refresh()
+    }
+
     fun toggleFavorite() {
         val content = _state.value as? DetailUiState.Content ?: return
         val action = if (content.isFavorite) Action.UNFAVORITED else Action.FAVORITE
@@ -139,6 +187,12 @@ class DetailViewModel(
                 _state.value = DetailUiState.Error(e.message ?: DEFAULT_ERROR)
             }
         }
+    }
+
+    private object NoOpBggSelectionStore : BggSelectionStore {
+        override fun getBggId(itemKey: String): Int? = null
+        override fun saveBggId(itemKey: String, bggId: Int) = Unit
+        override fun removeBggId(itemKey: String) = Unit
     }
 
     fun ignore(onIgnored: () -> Unit) {

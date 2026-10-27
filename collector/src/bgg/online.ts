@@ -33,18 +33,20 @@ export function parseGeekItem(json: string, bggId: number): GeekItem | null {
     const parsed = JSON.parse(json)
     if (!parsed || typeof parsed !== 'object' || !parsed.item) return null
     const item = parsed.item
-    const alternateNames: string[] = []
-    if (Array.isArray(item.alternatenames)) {
-      for (const alt of item.alternatenames) {
-        if (alt && typeof alt.name === 'string' && alt.name.length > 0) {
-          alternateNames.push(alt.name)
+    const alternateNames = new Set<string>()
+    for (const names of [item.alternatenames, parsed.alternatenames]) {
+      if (Array.isArray(names)) {
+        for (const alt of names) {
+          if (alt && typeof alt.name === 'string' && alt.name.length > 0) {
+            alternateNames.add(alt.name)
+          }
         }
       }
     }
     return {
       bggId,
       name: item.name,
-      alternateNames,
+      alternateNames: [...alternateNames],
       subtype: item.subtype,
       yearpublished: item.yearpublished ?? null,
     }

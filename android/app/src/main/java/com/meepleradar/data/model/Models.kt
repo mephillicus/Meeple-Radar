@@ -41,6 +41,10 @@ data class Product(
     val imageUrl: String?,
     val releaseDate: LocalDate?,
     val description: String? = null,
+    val url: String? = null,
+    val price: Double? = null,
+    val currency: String? = null,
+    val publisher: String? = null,
 )
 
 data class Price(val amount: Double, val currency: String)
@@ -63,4 +67,5 @@ data class IncomingItem(
     val game: Game?,
     val offers: List<Offer>,
     val customDescription: String? = null,
+    val lookupTitle: String? = null,
 )

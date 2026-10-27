@@ -2,6 +2,7 @@ package com.meepleradar
 
 import android.content.Context
 import com.meepleradar.data.local.SharedPreferencesFavoriteStore
+import com.meepleradar.data.local.SharedPreferencesBggSelectionStore
 import com.meepleradar.data.local.SharedPreferencesLocalCacheStore
 import com.meepleradar.data.remote.BoardGameGeekImageLookup
 import com.meepleradar.data.remote.BoardGameImageLookup
@@ -26,6 +27,7 @@ class AppContainer(context: Context) {
         transport = transport,
         geekGroupApi = geekGroupApi,
     )
+    val bggSelectionStore = SharedPreferencesBggSelectionStore(context.applicationContext)
 
     private val api: SupabaseApi = SupabaseRestApi(
         baseUrl = BuildConfig.SUPABASE_URL,

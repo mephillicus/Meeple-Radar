@@ -229,12 +229,16 @@ class BoardGameImageLookupTest {
                     {
                       "item": {
                         "id": 389407,
+                        "name": "Aye, Dark Overlord! Red Box",
                         "imageurl": "https://cf.geekdo-images.com/luxastra.jpg",
                         "description": "Luxastra edition.",
                         "yearpublished": 2023,
                         "minplayers": 4,
                         "maxplayers": 6
-                      }
+                      },
+                      "alternatenames": [
+                        {"name": "Sì, Oscuro Signore! Set Rosso"}
+                      ]
                     }
                 """.trimIndent()
                 else -> error("URL non previsto: $url")
@@ -247,6 +251,126 @@ class BoardGameImageLookupTest {
         assertEquals("https://cf.geekdo-images.com/luxastra.jpg", details?.imageUrl)
         assertEquals(2023, details?.yearPublished)
         assertEquals(4, details?.minPlayers)
+    }
+
+    @Test
+    fun `la ricerca include espansioni BGG e preferisce il titolo localizzato esatto`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("/search/boardgame?") -> """
+                    <a href="/boardgame/283355/dune">Dune</a>
+                    <a href="/boardgame/367150/dune-war-for-arrakis">Dune: War for Arrakis</a>
+                    <a href="/boardgameexpansion/421183/dune-war-for-arrakis-desert-war">Desert War</a>
+                """.trimIndent()
+                url.contains("objectid=283355") -> """{"item":{"name":"Dune","description":"Dune."}}"""
+                url.contains("objectid=367150") -> """
+                    {"item":{"name":"Dune: War for Arrakis","description":"Dune: War for Arrakis."}}
+                """.trimIndent()
+                url.contains("objectid=421183") -> """
+                    {"item":{"name":"Dune: War for Arrakis – Desert War","description":"Dune expansion.","subtype":"boardgameexpansion","links":{"expandsboardgame":[{"name":"Dune: War for Arrakis","objectid":367150}]}},"alternatenames":[{"name":"Dune: Guerre sur Arrakis – La Guerre du désert"}]}
+                """.trimIndent()
+                else -> error("URL BGG non prevista: $url")
+            }
+        }
+
+        val details = BoardGameGeekImageLookup(transport)
+            .findDetails("Dune: La Guerra per Arrakis – La Guerra del Deserto", null)
+
+        assertEquals(421183, details?.bggId)
+    }
+
+    @Test
+    fun `trova Desert War passando dalla lista espansioni del gioco base`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("/search/boardgame?") -> """
+                    <a href="/boardgame/283355/dune">Dune</a>
+                """.trimIndent()
+                url.contains("/search?query=Dune%20La%20Guerra%20per%20Arrakis") -> """
+                    <items>
+                      <item type="boardgame" id="367150">
+                        <name type="primary" value="Dune: War for Arrakis"/>
+                        <name type="alternate" value="Dune: La Guerra per Arrakis"/>
+                      </item>
+                    </items>
+                """.trimIndent()
+                url.contains("/search?") -> "<items/>"
+                url.contains("objectid=283355") -> """{"item":{"name":"Dune","description":"The Dune game.","yearpublished":"2019"}}"""
+                url.contains("objectid=367150") -> """
+                    {"item":{"name":"Dune: War for Arrakis","description":"Base game.","links":{"boardgameexpansion":[{"name":"Dune: War for Arrakis – The Spacing Guild","objectid":"370796"},{"name":"Dune: War for Arrakis – Desert War","objectid":"421183"}]}},"alternatenames":[{"name":"Dune: La Guerra per Arrakis"}]}
+                """.trimIndent()
+                url.contains("objectid=370796") -> """
+                    {"item":{"name":"Dune: War for Arrakis – The Spacing Guild","description":"Expansion.","subtype":"boardgameexpansion","links":{"expandsboardgame":[{"name":"Dune: War for Arrakis","objectid":"367150"}]}},"alternatenames":[{"name":"Dune: La Guerra per Arrakis – La Gilda Spaziale"}]}
+                """.trimIndent()
+                url.contains("objectid=421183") -> """
+                    {"item":{"name":"Dune: War for Arrakis – Desert War","description":"Expansion.","subtype":"boardgameexpansion","links":{"expandsboardgame":[{"name":"Dune: War for Arrakis","objectid":"367150"}]}},"alternatenames":[{"name":"Dune: Guerre sur Arrakis – La Guerre du désert"}]}
+                """.trimIndent()
+                else -> error("URL BGG non prevista: $url")
+            }
+        }
+
+        val lookup = BoardGameGeekImageLookup(transport)
+        val title = "Dune: La Guerra per Arrakis – La Guerra del Deserto"
+        val details = lookup.findDetails(title, 283355)
+        val candidates = lookup.findCandidates(title, 283355)
+        val candidatesFromBaseId = lookup.findCandidates(title, 367150)
+
+        assertEquals(421183, details?.bggId)
+        assertTrue(candidates.any { it.bggId == 421183 })
+        assertTrue(candidates.none { it.bggId == 283355 })
+        assertTrue(candidatesFromBaseId.any { it.bggId == 421183 })
+    }
+
+    @Test
+    fun `non accetta un ID BGG gia associato se il titolo non corrisponde`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("objectid=283355") -> """
+                    {"item":{"name":"Dune","description":"The Dune game.","yearpublished":"2019"}}
+                """.trimIndent()
+                url.contains("/search/boardgame?") -> """
+                    <a href="/boardgame/283355/dune">Dune</a>
+                    <a href="/boardgame/367150/dune-war-for-arrakis">Dune: War for Arrakis</a>
+                    <a href="/boardgameexpansion/421183/dune-war-for-arrakis-desert-war">Desert War</a>
+                """.trimIndent()
+                url.contains("objectid=367150") -> """
+                    {"item":{"name":"Dune: War for Arrakis","description":"Base game."}}
+                """.trimIndent()
+                url.contains("objectid=421183") -> """
+                    {"item":{"name":"Dune: War for Arrakis – Desert War","description":"Expansion.","subtype":"boardgameexpansion","links":{"expandsboardgame":[{"name":"Dune: War for Arrakis","objectid":"367150"}]}},"alternatenames":[{"name":"Dune: Guerre sur Arrakis – La Guerre du désert"}]}
+                """.trimIndent()
+                else -> error("URL BGG non prevista: $url")
+            }
+        }
+
+        val details = BoardGameGeekImageLookup(transport).findDetails(
+            "Dune: La Guerra per Arrakis – La Guerra del Deserto",
+            283355,
+        )
+
+        assertEquals(421183, details?.bggId)
+    }
+
+    @Test
+    fun `la ricerca sceglie La Gilda Spaziale invece del gioco base`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("/search/boardgame?") -> """
+                    <a href="/boardgame/367150/dune-war-for-arrakis">Dune: War for Arrakis</a>
+                    <a href="/boardgame/370796/dune-war-for-arrakis-the-spacing-guild">The Spacing Guild</a>
+                """.trimIndent()
+                url.contains("objectid=367150") -> """{"item":{"name":"Dune: War for Arrakis","description":"Dune: War for Arrakis."}}"""
+                url.contains("objectid=370796") -> """
+                    {"item":{"name":"Dune: War for Arrakis – The Spacing Guild","description":"Dune expansion.","subtype":"boardgameexpansion","links":{"expandsboardgame":[{"name":"Dune: War for Arrakis","objectid":367150}]},"alternatenames":[{"name":"Dune: La Guerra per Arrakis – La Gilda Spaziale"}]}}
+                """.trimIndent()
+                else -> error("URL BGG non prevista: $url")
+            }
+        }
+
+        val details = BoardGameGeekImageLookup(transport)
+            .findDetails("Dune: La Guerra per Arrakis – La Gilda Spaziale", null)
+
+        assertEquals(370796, details?.bggId)
     }
 
     @Test

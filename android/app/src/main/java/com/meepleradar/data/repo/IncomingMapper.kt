@@ -59,7 +59,7 @@ fun buildIncomingItems(
                     availability = listing.availability,
                     releaseDate = listing.releaseDate ?: releaseDate,
                 )
-            }
+            } + listOfNotNull(product?.publisherOffer(releaseDate))
             val customDescription = game?.description?.takeIf { it.isNotBlank() }
                 ?: product?.description?.takeIf { it.isNotBlank() }
                 ?: groupListings.firstNotNullOfOrNull { it.description?.takeIf(String::isNotBlank) }
@@ -72,6 +72,7 @@ fun buildIncomingItems(
                 game = game,
                 offers = offers,
                 customDescription = customDescription,
+                lookupTitle = product?.title?.takeIf(String::isNotBlank) ?: groupListings.first().title,
             )
         }
         .filter {
@@ -80,3 +81,28 @@ fun buildIncomingItems(
             isUndatedAllowed && isPricelessAllowed
         }
         .sortedBy { it.title.lowercase(java.util.Locale.ROOT) }
+
+private fun Product.publisherOffer(releaseDate: LocalDate?): Offer? {
+    val offerUrl = url ?: return null
+    val offerPrice = price ?: return null
+    val offerCurrency = currency?.takeIf(String::isNotBlank) ?: return null
+    val offerPublisher = publisher?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    if (!offerPrice.isFinite()) return null
+    val host = try {
+        java.net.URI(offerUrl).host
+    } catch (_: java.net.URISyntaxException) {
+        null
+    }?.removePrefix("www.")?.lowercase(java.util.Locale.ROOT) ?: return null
+    val publisherTokens = offerPublisher.lowercase(java.util.Locale.ROOT)
+        .split(Regex("[^\\p{L}\\p{N}]+"))
+        .filter { it.length >= 4 }
+    if (publisherTokens.none { token -> host.contains(token) }) return null
+    return Offer(
+        sourceId = "product:$id",
+        sourceName = offerPublisher,
+        price = Price(offerPrice, offerCurrency),
+        url = offerUrl,
+        availability = null,
+        releaseDate = releaseDate,
+    )
+}

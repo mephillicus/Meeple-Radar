@@ -31,6 +31,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -141,14 +143,24 @@ fun DetailScreen(
                     onRetry = { vm.refresh() },
                 )
 
-                is DetailUiState.Content -> DetailContent(current, imageLookup)
+                is DetailUiState.Content -> DetailContent(
+                    current,
+                    imageLookup,
+                    vm::selectBggCandidate,
+                    vm::removeManualBggSelection,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun DetailContent(content: DetailUiState.Content, imageLookup: BoardGameImageLookup) {
+private fun DetailContent(
+    content: DetailUiState.Content,
+    imageLookup: BoardGameImageLookup,
+    onSelectBggCandidate: (BoardGameDetails) -> Unit,
+    onRemoveManualBggSelection: () -> Unit,
+) {
     val uriHandler = LocalUriHandler.current
     val bestOffers = remember(content.offers) { bestComparableEuroOffers(content.offers) }
 
@@ -161,7 +173,7 @@ private fun DetailContent(content: DetailUiState.Content, imageLookup: BoardGame
         }
 
         item {
-            BoardGameSpecs(content)
+            BoardGameSpecs(content, onSelectBggCandidate, onRemoveManualBggSelection)
         }
 
         item {
@@ -285,7 +297,11 @@ private fun DetailHeader(content: DetailUiState.Content, imageLookup: BoardGameI
 }
 
 @Composable
-private fun BoardGameSpecs(content: DetailUiState.Content) {
+private fun BoardGameSpecs(
+    content: DetailUiState.Content,
+    onSelectBggCandidate: (BoardGameDetails) -> Unit,
+    onRemoveManualBggSelection: () -> Unit,
+) {
     val uriHandler = LocalUriHandler.current
     val details = content.boardGameDetails
     val game = content.item.game
@@ -328,54 +344,123 @@ private fun BoardGameSpecs(content: DetailUiState.Content) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            } else if (details == null && game?.bggRating == null) {
+            } else if (details == null) {
                 Text(
                     "Specifiche BGG non trovate per questo gioco.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                BggCandidateSelector(
+                    candidates = content.bggCandidates,
+                    isLoading = content.isLoadingBggCandidates,
+                    error = content.detailsError,
+                    onSelect = onSelectBggCandidate,
+                )
+                if (game?.bggRating != null) SpecQuickGrid(game = game, details = null)
             } else {
-                // Quick Spec Stat Badges
                 SpecQuickGrid(game = game, details = details)
 
-                if (details != null) {
-                    GameSpecificationRows(details)
+                GameSpecificationRows(details)
 
-                    details.description?.let { description ->
-                        val plainText = Html.fromHtml(description, Html.FROM_HTML_MODE_COMPACT)
-                            .toString()
-                            .trim()
-                        if (plainText.isNotBlank()) {
-                            HorizontalDivider()
-                            Text(
-                                text = "Descrizione",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            Text(
-                                text = plainText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = if (showFullDescription) Int.MAX_VALUE else 4,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (plainText.length > 180) {
-                                TextButton(
-                                    onClick = { showFullDescription = !showFullDescription },
-                                    contentPadding = PaddingValues(0.dp),
-                                ) {
-                                    Text(
-                                        text = if (showFullDescription) "Mostra meno" else "Leggi tutto...",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
+                details.description?.let { description ->
+                    val plainText = Html.fromHtml(description, Html.FROM_HTML_MODE_COMPACT)
+                        .toString()
+                        .trim()
+                    if (plainText.isNotBlank()) {
+                        HorizontalDivider()
+                        Text(
+                            text = "Descrizione",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = plainText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = if (showFullDescription) Int.MAX_VALUE else 4,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (plainText.length > 180) {
+                            TextButton(
+                                onClick = { showFullDescription = !showFullDescription },
+                                contentPadding = PaddingValues(0.dp),
+                            ) {
+                                Text(
+                                    text = if (showFullDescription) "Mostra meno" else "Leggi tutto...",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
                             }
+                        }
+                    }
+                    if (content.manualBggId != null) {
+                        TextButton(onClick = onRemoveManualBggSelection) {
+                            Text("Rimuovi selezione manuale")
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BggCandidateSelector(
+    candidates: List<BoardGameDetails>,
+    isLoading: Boolean,
+    error: String?,
+    onSelect: (BoardGameDetails) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    if (error != null) {
+        Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+    when {
+        isLoading -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text(
+                "Ricerca corrispondenze BGG…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        candidates.isNotEmpty() -> Box {
+            Button(onClick = { expanded = true }) {
+                Text("Seleziona corrispondenza BGG")
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                candidates.forEach { candidate ->
+                    val name = candidate.primaryName
+                        ?: candidate.alternateNames.firstOrNull()
+                        ?: "Gioco BGG"
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = buildString {
+                                    append(name)
+                                    candidate.yearPublished?.let { append(" ($it)") }
+                                    append(" · BGG #${candidate.bggId}")
+                                },
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelect(candidate)
+                        },
+                    )
+                }
+            }
+        }
+        !isLoading && error == null -> Text(
+            "Nessuna corrispondenza BGG vicina trovata.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
