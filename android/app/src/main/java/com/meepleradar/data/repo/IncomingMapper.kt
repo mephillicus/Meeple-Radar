@@ -63,6 +63,14 @@ fun buildIncomingItems(
             val customDescription = game?.description?.takeIf { it.isNotBlank() }
                 ?: product?.description?.takeIf { it.isNotBlank() }
                 ?: groupListings.firstNotNullOfOrNull { it.description?.takeIf(String::isNotBlank) }
+            val bggSelectionKeys = buildList {
+                add(key)
+                groupListings.forEach { listing ->
+                    listing.gameId?.let { add("game:$it") }
+                    listing.productId?.let { add("product:$it") }
+                    add("listing:${listing.id}")
+                }
+            }.distinct()
             IncomingItem(
                 key = key,
                 title = game?.name ?: product?.title ?: groupListings.first().title,
@@ -73,6 +81,7 @@ fun buildIncomingItems(
                 offers = offers,
                 customDescription = customDescription,
                 lookupTitle = product?.title?.takeIf(String::isNotBlank) ?: groupListings.first().title,
+                bggSelectionKeys = bggSelectionKeys,
             )
         }
         .filter {

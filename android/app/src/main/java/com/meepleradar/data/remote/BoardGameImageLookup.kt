@@ -36,6 +36,8 @@ interface BoardGameImageLookup {
 
     suspend fun findCandidates(title: String, bggId: Int?): List<BoardGameDetails> = emptyList()
 
+    suspend fun searchCandidates(query: String): List<BoardGameDetails> = emptyList()
+
     suspend fun findSeries(bggId: Int): BggSeries? = null
 }
 
@@ -166,6 +168,18 @@ class BoardGameGeekImageLookup(
                 .sortedByDescending { (_, score) -> score }
                 .take(MAX_MANUAL_CANDIDATES)
                 .map { (details, _) -> details }
+        }
+
+    override suspend fun searchCandidates(query: String): List<BoardGameDetails> =
+        semaphore.withPermit {
+            if (query.isBlank()) return@withPermit emptyList()
+            val ids = (
+                searchBggIds(query, query, null) +
+                    searchBggHtmlIds(query, null)
+                ).distinct().take(MAX_MANUAL_SEARCH_RESULTS)
+            ids.mapNotNull { id ->
+                detailsCache[id] ?: detailsFromThing(id)?.also { detailsCache[id] = it }
+            }
         }
 
     override suspend fun findSeries(bggId: Int): BggSeries? = runCatching {
@@ -568,8 +582,9 @@ class BoardGameGeekImageLookup(
     private companion object {
         const val BGG_API = "https://boardgamegeek.com/xmlapi2"
         const val MAX_NAME_MATCHES = 3
-        const val MAX_CANDIDATE_SEARCH_IDS = 10
-        const val MAX_MANUAL_CANDIDATES = 8
+        const val MAX_CANDIDATE_SEARCH_IDS = 30
+        const val MAX_MANUAL_CANDIDATES = 30
+        const val MAX_MANUAL_SEARCH_RESULTS = 50
         const val MIN_NAME_MATCH_SCORE = 8000
         const val MIN_EXPANSION_PARENT_SCORE = 6000
         val GAME_TYPES = setOf("boardgame", "boardgameexpansion")

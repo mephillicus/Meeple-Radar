@@ -220,6 +220,7 @@ class IncomingMapperTest {
         assertEquals("Citadels", items[0].title)
         assertEquals(2, items[0].offers.size)
         assertEquals(Price(35.0, "EUR"), bestEurPrice(items[0].offers))
+        assertEquals(listOf("product:10", "listing:1", "listing:2"), items[0].bggSelectionKeys)
     }
 
     @Test

@@ -95,11 +95,13 @@ class DetailViewModelTest {
         private val failure: Throwable? = null,
         private val seriesFailure: Throwable? = null,
         private val candidates: List<BoardGameDetails> = emptyList(),
+        private val searchedCandidates: List<BoardGameDetails> = emptyList(),
     ) : BoardGameImageLookup {
         var requestedTitle: String? = null
         var requestedBggId: Int? = null
         var requestedDetailsById: Int? = null
         var requestedCandidatesTitle: String? = null
+        var requestedSearchQuery: String? = null
 
         override suspend fun findImage(title: String, bggId: Int?): String? = null
 
@@ -118,6 +120,11 @@ class DetailViewModelTest {
         override suspend fun findCandidates(title: String, bggId: Int?): List<BoardGameDetails> {
             requestedCandidatesTitle = title
             return candidates
+        }
+
+        override suspend fun searchCandidates(query: String): List<BoardGameDetails> {
+            requestedSearchQuery = query
+            return searchedCandidates
         }
 
         override suspend fun findSeries(bggId: Int): BggSeries? {
@@ -243,9 +250,9 @@ class DetailViewModelTest {
 
     @Test
     fun `mostra candidati BGG e salva la selezione manuale per i caricamenti successivi`() = runTest(dispatcher) {
-        val title = "Dune: La Guerra per Arrakis – La Guerra del Deserto"
+        val title = "Arkham Horror: Il gioco di carte - Tracce verso il nulla"
         val candidate = BoardGameDetails(
-            bggId = 421183,
+            bggId = 476751,
             imageUrl = null,
             description = "Espansione",
             yearPublished = 2024,
@@ -256,12 +263,13 @@ class DetailViewModelTest {
             designers = emptyList(),
             categories = emptyList(),
             mechanics = emptyList(),
-            primaryName = "Dune: War for Arrakis – Desert War",
+            primaryName = "Arkham Horror: The Card Game – The Path to Carcosa",
         )
-        val product = item("product:421183", emptyList()).copy(
-            title = "Dune",
-            game = com.meepleradar.data.model.Game(5, "Dune", "base", 283355, null, null, null),
+        val product = item("product:26731", emptyList()).copy(
+            title = "Arkham Horror: Il gioco di carte",
+            game = com.meepleradar.data.model.Game(5, "Arkham Horror", "base", 476751, null, null, null),
             lookupTitle = title,
+            bggSelectionKeys = listOf("product:26731", "listing:146379"),
         )
         val store = FakeBggSelectionStore()
         val lookup = FakeImageLookup(candidates = listOf(candidate))
@@ -282,20 +290,24 @@ class DetailViewModelTest {
 
         viewModel.selectBggCandidate(candidate)
         advanceUntilIdle()
-        assertEquals(421183, store.getBggId(product.key))
+        val stableSelectionKey = "title:arkhamhorrorilgiocodicartetracceversoilnulla"
+        assertEquals(476751, store.getBggId("product:26731"))
+        assertEquals(476751, store.getBggId("listing:146379"))
+        assertEquals(476751, store.getBggId(stableSelectionKey))
         assertEquals(candidate, (viewModel.state.value as DetailUiState.Content).boardGameDetails)
 
+        val reopenedProduct = product.copy(key = "listing:146379")
         val reopenedLookup = FakeImageLookup(details = candidate)
         val reopened = DetailViewModel(
-            repo = FakeRepo(listOf(product)),
-            key = product.key,
+            repo = FakeRepo(listOf(reopenedProduct)),
+            key = reopenedProduct.key,
             today = today,
             imageLookup = reopenedLookup,
             bggSelectionStore = store,
         )
         advanceUntilIdle()
 
-        assertEquals(421183, reopenedLookup.requestedDetailsById)
+        assertEquals(476751, reopenedLookup.requestedDetailsById)
         assertEquals(null, reopenedLookup.requestedBggId)
         assertEquals(candidate, (reopened.state.value as DetailUiState.Content).boardGameDetails)
 
@@ -304,11 +316,47 @@ class DetailViewModelTest {
         advanceUntilIdle()
 
         val corrected = reopened.state.value as DetailUiState.Content
-        assertEquals(null, store.getBggId(product.key))
+        assertEquals(null, store.getBggId("product:26731"))
+        assertEquals(null, store.getBggId("listing:146379"))
+        assertEquals(null, store.getBggId(stableSelectionKey))
         assertEquals(null, reopenedLookup.requestedDetailsById)
-        assertEquals(283355, reopenedLookup.requestedBggId)
+        assertEquals(476751, reopenedLookup.requestedBggId)
         assertEquals(true, corrected.bggCandidates.isEmpty())
         assertEquals(null, corrected.manualBggId)
+    }
+
+    @Test
+    fun `ricerca manualmente su BGG quando la lista automatica non basta`() = runTest(dispatcher) {
+        val candidate = BoardGameDetails(
+            bggId = 421183,
+            imageUrl = null,
+            description = null,
+            yearPublished = 2024,
+            minPlayers = null,
+            maxPlayers = null,
+            playingTime = null,
+            minAge = null,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            primaryName = "Dune: War for Arrakis – Desert War",
+        )
+        val lookup = FakeImageLookup(searchedCandidates = listOf(candidate))
+        val viewModel = DetailViewModel(
+            repo = FakeRepo(listOf(item("product:421183", emptyList()))),
+            key = "product:421183",
+            today = today,
+            imageLookup = lookup,
+        )
+
+        advanceUntilIdle()
+        viewModel.searchBggCandidates("  Dune Desert War  ")
+        advanceUntilIdle()
+
+        val content = viewModel.state.value as DetailUiState.Content
+        assertEquals("Dune Desert War", lookup.requestedSearchQuery)
+        assertEquals(listOf(candidate), content.bggCandidates)
+        assertEquals(false, content.isSearchingBgg)
     }
 
     @Test

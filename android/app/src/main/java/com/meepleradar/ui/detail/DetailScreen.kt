@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -51,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -148,6 +151,7 @@ fun DetailScreen(
                     imageLookup,
                     vm::selectBggCandidate,
                     vm::removeManualBggSelection,
+                    vm::searchBggCandidates,
                 )
             }
         }
@@ -160,6 +164,7 @@ private fun DetailContent(
     imageLookup: BoardGameImageLookup,
     onSelectBggCandidate: (BoardGameDetails) -> Unit,
     onRemoveManualBggSelection: () -> Unit,
+    onSearchBggCandidates: (String) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val bestOffers = remember(content.offers) { bestComparableEuroOffers(content.offers) }
@@ -173,7 +178,12 @@ private fun DetailContent(
         }
 
         item {
-            BoardGameSpecs(content, onSelectBggCandidate, onRemoveManualBggSelection)
+            BoardGameSpecs(
+                content,
+                onSelectBggCandidate,
+                onRemoveManualBggSelection,
+                onSearchBggCandidates,
+            )
         }
 
         item {
@@ -301,6 +311,7 @@ private fun BoardGameSpecs(
     content: DetailUiState.Content,
     onSelectBggCandidate: (BoardGameDetails) -> Unit,
     onRemoveManualBggSelection: () -> Unit,
+    onSearchBggCandidates: (String) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val details = content.boardGameDetails
@@ -354,7 +365,10 @@ private fun BoardGameSpecs(
                     candidates = content.bggCandidates,
                     isLoading = content.isLoadingBggCandidates,
                     error = content.detailsError,
+                    isSearching = content.isSearchingBgg,
+                    searchError = content.bggSearchError,
                     onSelect = onSelectBggCandidate,
+                    onSearch = onSearchBggCandidates,
                 )
                 if (game?.bggRating != null) SpecQuickGrid(game = game, details = null)
             } else {
@@ -409,13 +423,75 @@ private fun BggCandidateSelector(
     candidates: List<BoardGameDetails>,
     isLoading: Boolean,
     error: String?,
+    isSearching: Boolean,
+    searchError: String?,
     onSelect: (BoardGameDetails) -> Unit,
+    onSearch: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     if (error != null) {
         Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Surface(
+            modifier = Modifier.weight(1f).height(40.dp),
+            shape = CircleShape,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            color = MaterialTheme.colorScheme.surface,
+        ) {
+            BasicTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.labelSmall.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                ),
+                singleLine = true,
+                decorationBox = { innerTextField ->
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                "Cerca su BGG",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+        }
+        Button(
+            onClick = { onSearch(searchQuery) },
+            enabled = searchQuery.isNotBlank() && !isSearching,
+            shape = CircleShape,
+        ) {
+            Text("Cerca")
+        }
+    }
+    if (searchError != null) {
+        Text(searchError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
     when {
+        isSearching -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text(
+                "Ricerca su BoardGameGeek…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         isLoading -> Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -431,7 +507,11 @@ private fun BggCandidateSelector(
             Button(onClick = { expanded = true }) {
                 Text("Seleziona corrispondenza BGG")
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.heightIn(max = 56.dp * 8),
+            ) {
                 candidates.forEach { candidate ->
                     val name = candidate.primaryName
                         ?: candidate.alternateNames.firstOrNull()

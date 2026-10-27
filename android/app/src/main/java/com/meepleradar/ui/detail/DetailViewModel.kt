@@ -10,7 +10,9 @@ import com.meepleradar.data.remote.BggSeries
 import com.meepleradar.data.remote.BoardGameDetails
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.data.repo.ListingRepository
+import java.text.Normalizer
 import java.time.LocalDate
+import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +39,8 @@ sealed interface DetailUiState {
         val bggCandidates: List<BoardGameDetails> = emptyList(),
         val isLoadingBggCandidates: Boolean = false,
         val manualBggId: Int? = null,
+        val isSearchingBgg: Boolean = false,
+        val bggSearchError: String? = null,
     ) : DetailUiState
 }
 
@@ -77,7 +81,10 @@ class DetailViewModel(
                 try {
                     val customDesc = item.customDescription ?: item.game?.description
                     val title = item.lookupTitle ?: item.title
-                    val savedBggId = bggSelectionStore.getBggId(key)
+                    val selectionKey = selectionKeyFor(title)
+                    val bggSelectionKeys = (item.bggSelectionKeys + key).distinct()
+                    val savedBggId = bggSelectionKeys.firstNotNullOfOrNull(bggSelectionStore::getBggId)
+                        ?: bggSelectionStore.getBggId(selectionKey)
                     details = if (savedBggId != null) {
                         lookup.findDetailsById(savedBggId)
                     } else {
@@ -139,7 +146,10 @@ class DetailViewModel(
 
     fun selectBggCandidate(candidate: BoardGameDetails) {
         val content = _state.value as? DetailUiState.Content ?: return
-        bggSelectionStore.saveBggId(key, candidate.bggId)
+        val title = content.item.lookupTitle ?: content.item.title
+        val selectionKeys = (content.item.bggSelectionKeys + key).distinct()
+        selectionKeys.forEach { bggSelectionStore.saveBggId(it, candidate.bggId) }
+        bggSelectionStore.saveBggId(selectionKeyFor(title), candidate.bggId)
         val customDesc = content.item.customDescription ?: content.item.game?.description
         val selected = if (customDesc.isNullOrBlank()) candidate else candidate.copy(description = customDesc)
         updateContent {
@@ -168,10 +178,51 @@ class DetailViewModel(
         }
     }
 
+    fun searchBggCandidates(query: String) {
+        val lookup = imageLookup ?: return
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isEmpty()) return
+
+        updateContent {
+            it.copy(isSearchingBgg = true, bggSearchError = null)
+        }
+        viewModelScope.launch {
+            try {
+                val candidates = lookup.searchCandidates(normalizedQuery)
+                updateContent {
+                    it.copy(
+                        bggCandidates = candidates,
+                        isSearchingBgg = false,
+                        bggSearchError = null,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateContent {
+                    it.copy(
+                        isSearchingBgg = false,
+                        bggSearchError = e.message ?: DETAILS_ERROR,
+                    )
+                }
+            }
+        }
+    }
+
     fun removeManualBggSelection() {
-        if (_state.value !is DetailUiState.Content) return
-        bggSelectionStore.removeBggId(key)
+        val content = _state.value as? DetailUiState.Content ?: return
+        val title = content.item.lookupTitle ?: content.item.title
+        bggSelectionStore.removeBggId(selectionKeyFor(title))
+        (content.item.bggSelectionKeys + key).distinct().forEach(bggSelectionStore::removeBggId)
         refresh()
+    }
+
+    private fun selectionKeyFor(title: String): String {
+        val normalized = Normalizer.normalize(title, Normalizer.Form.NFD)
+            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
+            .lowercase(Locale.ROOT)
+            .filter(Char::isLetterOrDigit)
+        return "title:$normalized"
     }
 
     fun toggleFavorite() {

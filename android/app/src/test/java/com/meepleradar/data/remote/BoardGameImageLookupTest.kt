@@ -280,6 +280,31 @@ class BoardGameImageLookupTest {
     }
 
     @Test
+    fun `ricerca manuale BGG trova espansione tramite query dedicata`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("/search?query=Desert%20War") -> """
+                    <items>
+                      <item type="boardgameexpansion" id="421183">
+                        <name type="primary" value="Dune: War for Arrakis – Desert War"/>
+                      </item>
+                    </items>
+                """.trimIndent()
+                url.contains("/search/boardgame?") -> ""
+                url.contains("objectid=421183") ->
+                    """{"item":{"name":"Dune: War for Arrakis – Desert War","description":"Expansion.","yearpublished":"2024"}}"""
+                else -> error("URL BGG non prevista: $url")
+            }
+        }
+
+        val candidates = BoardGameGeekImageLookup(transport).searchCandidates("Desert War")
+
+        assertEquals(1, candidates.size)
+        assertEquals(421183, candidates.single().bggId)
+        assertEquals("Dune: War for Arrakis – Desert War", candidates.single().primaryName)
+    }
+
+    @Test
     fun `trova Desert War passando dalla lista espansioni del gioco base`() = runTest {
         val transport = FakeTransport { url ->
             when {

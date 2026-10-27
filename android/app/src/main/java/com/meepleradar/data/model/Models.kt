@@ -68,4 +68,5 @@ data class IncomingItem(
     val offers: List<Offer>,
     val customDescription: String? = null,
     val lookupTitle: String? = null,
+    val bggSelectionKeys: List<String> = emptyList(),
 )
