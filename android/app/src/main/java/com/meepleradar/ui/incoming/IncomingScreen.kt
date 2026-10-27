@@ -92,7 +92,6 @@ fun IncomingScreen(
     val hideUndated by vm.hideUndated.collectAsStateWithLifecycle()
     val hidePriceless by vm.hidePriceless.collectAsStateWithLifecycle()
     val selectedAvailability by vm.selectedAvailability.collectAsStateWithLifecycle()
-    val lastModifiedTimestamp by vm.lastModifiedTimestamp.collectAsStateWithLifecycle()
     val syncProgress by vm.syncProgress.collectAsStateWithLifecycle()
     val searchQueryState by vm.searchQuery.collectAsStateWithLifecycle()
 
@@ -112,7 +111,6 @@ fun IncomingScreen(
             ScreenHeader(
                 title = "Lista",
                 onRefresh = { vm.refresh() },
-                timestampText = "Aggiornato: ${formatTimestamp(lastModifiedTimestamp)}",
                 titleContent = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -412,14 +410,6 @@ fun SyncProgressCard(progress: SyncProgressState.Progress, modifier: Modifier = 
             )
         }
     }
-}
-
-private fun formatTimestamp(timestamp: Long): String {
-    if (timestamp <= 0L) return "in attesa..."
-    val instant = java.time.Instant.ofEpochMilli(timestamp)
-    val localDateTime = java.time.LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
-    val formatter = java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm", java.util.Locale.ITALIAN)
-    return localDateTime.format(formatter)
 }
 
 @Composable
