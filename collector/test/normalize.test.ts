@@ -45,6 +45,25 @@ test('htmlToText restituisce null per testo vuoto o solo spazi', () => {
   expect(htmlToText('<p></p>   \n')).toBeNull()
 })
 
+test('normalizeListing decodifica le entità HTML nel titolo', () => {
+  const row = normalizeListing('littlerocket', {
+    externalId: '1', title: 'BLACK DRAGON&#8217;S GUILD', url: 'https://e.com/b',
+  })
+  expect(row.title).toBe('BLACK DRAGON’S GUILD')
+  const dash = normalizeListing('giochiuniti', {
+    externalId: '2', title: 'Hidden Games &#8211; Un Piano Perfetto', url: 'https://e.com/h',
+  })
+  expect(dash.title).toBe('Hidden Games – Un Piano Perfetto')
+  const apos = normalizeListing('littlerocket', {
+    externalId: '3', title: "GOT LCG - RITUALS OF R&#039;HLLOR", url: 'https://e.com/r',
+  })
+  expect(apos.title).toBe("GOT LCG - RITUALS OF R'HLLOR")
+  const amp = normalizeListing('littlerocket', {
+    externalId: '4', title: 'SIMPLE & MADAMA', url: 'https://e.com/s',
+  })
+  expect(amp.title).toBe('SIMPLE & MADAMA')
+})
+
 test('normalizeListing porta descriptionRaw nella descrizione come testo pulito', () => {
   const row = normalizeListing('cranio', {
     externalId: '1', title: 'Azul', url: 'https://e.com/a',

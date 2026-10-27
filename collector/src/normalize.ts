@@ -1,5 +1,5 @@
 import type { Listing, RawProduct } from './types.js'
-import { htmlToText } from './text.js'
+import { decodeHtml, htmlToText } from './text.js'
 
 export function normalizeTitle(title: string): string {
   return title.toLowerCase().replace(/[^\w\s]/gu, '').replace(/\s+/g, ' ').trim()
@@ -121,7 +121,10 @@ export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
   return {
     sourceId,
     externalId: raw.externalId,
-    title: raw.title,
+    // Le fonti WordPress-family (woocommerce) e i JSON-LD (html) consegnano titoli
+    // con entità HTML (&#8217; &#039; &#8211;): decodificate qui, choke point unico,
+    // perché normalized_title e' la chiave di upsert e match.
+    title: decodeHtml(raw.title),
     url: raw.url,
     price: toPrice(raw.priceRaw, raw.minorUnitRaw),
     currency: raw.currencyRaw ? raw.currencyRaw.toUpperCase() : null,
