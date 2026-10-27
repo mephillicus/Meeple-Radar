@@ -55,6 +55,7 @@ data class BoardGameDetails(
     val expands: List<BggLink> = emptyList(),
     val primaryName: String? = null,
     val alternateNames: List<String> = emptyList(),
+    val englishName: String? = primaryName,
 )
 
 class BoardGameGeekImageLookup(

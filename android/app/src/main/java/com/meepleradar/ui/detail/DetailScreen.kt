@@ -360,7 +360,7 @@ private fun BoardGameSpecs(
             } else {
                 SpecQuickGrid(game = game, details = details)
 
-                GameSpecificationRows(details)
+                GameSpecificationRows(details, content.item.title)
 
                 details.description?.let { description ->
                     val plainText = Html.fromHtml(description, Html.FROM_HTML_MODE_COMPACT)
@@ -644,16 +644,54 @@ private fun SpecQuickGrid(game: com.meepleradar.data.model.Game?, details: Board
 }
 
 @Composable
-private fun GameSpecificationRows(details: BoardGameDetails) {
-    listOf(
-        "Autori" to details.designers,
-        "Categorie" to details.categories,
-        "Meccaniche" to details.mechanics,
-    ).filter { it.second.isNotEmpty() }.forEach { (label, entries) ->
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+private fun GameSpecificationRows(details: BoardGameDetails, gameTitle: String) {
+    details.englishName?.takeIf { it.isNotBlank() && it.lowercase(Locale.ROOT) != gameTitle.lowercase(Locale.ROOT) }?.let { engName ->
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Nome in inglese", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             Text(
-                entries.joinToString(" · "),
+                engName,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    val authorsText = details.designers.joinToString(" · ")
+    val categoriesText = details.categories.joinToString(" · ")
+
+    if (authorsText.isNotBlank() || categoriesText.isNotBlank()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (authorsText.isNotBlank()) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Autori", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        authorsText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (categoriesText.isNotBlank()) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Categorie", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        categoriesText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
+    if (details.mechanics.isNotEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Meccaniche", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(
+                details.mechanics.joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
