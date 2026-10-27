@@ -1,9 +1,12 @@
 package com.meepleradar.ui.nav
 
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,6 +45,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.meepleradar.AppContainer
 import com.meepleradar.ui.components.MeepleVector
+import com.meepleradar.ui.components.NewsIconVector
 import com.meepleradar.ui.detail.DetailScreen
 import com.meepleradar.ui.detail.DetailViewModel
 import com.meepleradar.ui.favorites.FavoritesScreen
@@ -71,83 +76,99 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxSize(),
         bottomBar = {
             if (currentRoute != ROUTE_DETAIL) {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = currentRoute == ROUTE_INCOMING,
-                        onClick = { navController.switchTab(ROUTE_INCOMING) },
-                        icon = { Icon(Icons.Filled.Home, contentDescription = null) },
-                        label = { Text("Lista") },
-                    )
-                    val newlyAddedCount by container.repository.newlyAddedCountFlow().collectAsStateWithLifecycle(initialValue = container.repository.newlyAddedCount())
-                    NavigationBarItem(
-                        selected = currentRoute == ROUTE_NEWS,
-                        onClick = { navController.switchTab(ROUTE_NEWS) },
-                        icon = {
-                            Box {
-                                Icon(MeepleVector, contentDescription = null, modifier = Modifier.size(24.dp))
-                                if (newlyAddedCount > 0) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.tertiary,
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .offset(x = 10.dp, y = (-4).dp),
-                                    ) {
-                                        Text(
-                                            text = "$newlyAddedCount",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontSize = 9.sp,
-                                            color = MaterialTheme.colorScheme.onTertiary,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                        )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                ) {
+                    NavigationBar {
+                        NavigationBarItem(
+                            selected = currentRoute == ROUTE_INCOMING,
+                            onClick = { navController.switchTab(ROUTE_INCOMING) },
+                            icon = { Icon(Icons.Filled.Home, contentDescription = null) },
+                            label = { Text("Lista") },
+                        )
+                        val newlyAddedCount by container.repository.newlyAddedCountFlow().collectAsStateWithLifecycle(initialValue = container.repository.newlyAddedCount())
+                        NavigationBarItem(
+                            selected = currentRoute == ROUTE_NEWS,
+                            onClick = { navController.switchTab(ROUTE_NEWS) },
+                            icon = {
+                                Box {
+                                    Icon(NewsIconVector, contentDescription = null, modifier = Modifier.size(24.dp))
+                                    if (newlyAddedCount > 0) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.tertiary,
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 10.dp, y = (-4).dp),
+                                        ) {
+                                            Text(
+                                                text = "$newlyAddedCount",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 9.sp,
+                                                color = MaterialTheme.colorScheme.onTertiary,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        label = { Text("Novità") },
-                    )
-                    val preorderCount = container.repository.preorderCount()
-                    NavigationBarItem(
-                        selected = currentRoute == ROUTE_PREORDERS,
-                        onClick = { navController.switchTab(ROUTE_PREORDERS) },
-                        icon = {
-                            Box {
-                                Icon(
-                                    imageVector = MeepleVector,
-                                    contentDescription = null,
-                                    tint = Color(0xFF3B82F6),
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .blur(1.dp),
-                                )
-                                if (preorderCount > 0) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.primary,
+                            },
+                            label = { Text("Novità") },
+                        )
+                        val preorderCount = container.repository.preorderCount()
+                        NavigationBarItem(
+                            selected = currentRoute == ROUTE_PREORDERS,
+                            onClick = { navController.switchTab(ROUTE_PREORDERS) },
+                            icon = {
+                                Box {
+                                    Icon(
+                                        imageVector = MeepleVector,
+                                        contentDescription = null,
+                                        tint = Color(0xFF3B82F6),
                                         modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .offset(x = 10.dp, y = (-4).dp),
-                                    ) {
-                                        Text(
-                                            text = "$preorderCount",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontSize = 9.sp,
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                        )
+                                            .size(24.dp)
+                                            .blur(1.dp),
+                                    )
+                                    if (preorderCount > 0) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 10.dp, y = (-4).dp),
+                                        ) {
+                                            Text(
+                                                text = "$preorderCount",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 9.sp,
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        },
-                        label = { Text("Preordini") },
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == ROUTE_FAVORITES,
-                        onClick = { navController.switchTab(ROUTE_FAVORITES) },
-                        icon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
-                        label = { Text("Preferiti") },
+                            },
+                            label = { Text("Preordini") },
+                        )
+                        NavigationBarItem(
+                            selected = currentRoute == ROUTE_FAVORITES,
+                            onClick = { navController.switchTab(ROUTE_FAVORITES) },
+                            icon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
+                            label = { Text("Preferiti") },
+                        )
+                    }
+
+                    Text(
+                        text = "Aggiornato: ${formatTimestamp(container.repository.lastDbModifiedTimestamp())}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        textAlign = TextAlign.Start,
                     )
                 }
             }
@@ -223,7 +244,6 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                                 repo = container.repository,
                                 key = key,
                                 imageLookup = container.boardGameImageLookup,
-                                bggSelectionStore = container.bggSelectionStore,
                             )
                         }
                     },
@@ -236,6 +256,14 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+private fun formatTimestamp(timestamp: Long): String {
+    if (timestamp <= 0L) return "in attesa..."
+    val instant = java.time.Instant.ofEpochMilli(timestamp)
+    val localDateTime = java.time.LocalDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm", java.util.Locale.ITALIAN)
+    return localDateTime.format(formatter)
 }
 
 private fun NavHostController.switchTab(route: String) {
