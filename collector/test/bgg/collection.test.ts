@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { parseCollectionXml } from '../../src/bgg/collection.js'
+import { parseCollectionXml, fetchExpandsBggId } from '../../src/bgg/collection.js'
 
 test('estrae giochi posseduti e wishlist dalla collection XML', () => {
   const xml = `<?xml version="1.0"?>
@@ -24,4 +24,23 @@ test('estrae giochi posseduti e wishlist dalla collection XML', () => {
 
 test('collection vuota restituisce array vuoto', () => {
   expect(parseCollectionXml('<?xml version="1.0"?><boardgames username="prova" version="1"><totalitems>0</totalitems></boardgames>')).toEqual([])
+})
+
+const hasToken = typeof process.env.BGG_API_TOKEN === 'string' && process.env.BGG_API_TOKEN.length > 0
+const testBgg = hasToken ? test : test.skip
+
+testBgg('estrae il gioco base da un espansione tramite thing', async () => {
+  const baseId = await fetchExpandsBggId(309116) // 7 Wonders Duel: Agora -> 7 Wonders Duel
+  expect(baseId).toBeGreaterThan(0)
+})
+
+test('senza token restituisce null senza chiamare la rete', async () => {
+  const orig = process.env.BGG_API_TOKEN
+  process.env.BGG_API_TOKEN = ''
+  try {
+    const res = await fetchExpandsBggId(309116)
+    expect(res).toBeNull()
+  } finally {
+    process.env.BGG_API_TOKEN = orig
+  }
 })
