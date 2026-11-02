@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import type { Listing, Source } from './types.js'
+import type { CollectionItem } from './bgg/collection.js'
 import { normalizeTitle } from './normalize.js'
 
 export interface ListingRow {
@@ -32,6 +33,8 @@ export interface ListingStore {
   createGame(game: { name: string; kind: 'base' | 'expansion'; bggId: number; bggRating?: number | null; bggRank?: number | null }): Promise<number>
   setProductGame(productId: number, gameId: number): Promise<boolean>
   fillListingGame(productId: number, gameId: number): Promise<number>
+  upsertCollectionItem(rows: CollectionItem[]): Promise<void>
+  collectionOwnedBggIds(): Promise<Set<number>>
   purgeStale(before: string): Promise<{ listings: number; products: number }>
 }
 
@@ -293,6 +296,31 @@ export function createSupabaseStore(
         .select('id')
       if (error) throw new Error(`fillListingGame(${productId}, ${gameId}): ${error.message}`)
       return (data ?? []).length
+    },
+
+    async upsertCollectionItem(rows: CollectionItem[]): Promise<void> {
+      if (rows.length === 0) return
+      const payload = rows.map((r) => ({
+        bgg_id: r.bggId,
+        name: r.name,
+        kind: r.kind,
+        owned: r.owned,
+        wishlist: r.wishlist,
+        synced_at: now(),
+      }))
+      const { error } = await client
+        .from('collection_item')
+        .upsert(payload, { onConflict: 'bgg_id' })
+      if (error) throw new Error(`upsert collection_item: ${error.message}`)
+    },
+
+    async collectionOwnedBggIds(): Promise<Set<number>> {
+      const { data, error } = await client
+        .from('collection_item')
+        .select('bgg_id')
+        .eq('owned', true)
+      if (error) throw new Error(`collectionOwnedBggIds: ${error.message}`)
+      return new Set(((data ?? []) as Record<string, unknown>[]).map((row) => Number(row.bgg_id)))
     },
 
     async purgeStale(before: string): Promise<{ listings: number; products: number }> {

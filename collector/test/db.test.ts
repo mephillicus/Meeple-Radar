@@ -475,3 +475,31 @@ test('fillListingGame: aggiorna solo listings del prodotto e ritorna il conteggi
   expect(eq).toHaveBeenCalledWith('product_id', 9)
   expect(is).toHaveBeenCalledWith('game_id', null)
 })
+
+test('upsertCollectionItem scrive su collection_item con onConflict bgg_id', async () => {
+  const upsert = vi.fn().mockResolvedValue({ error: null })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-11-02T00:00:00Z')
+  await store.upsertCollectionItem([{ bggId: 173346, name: '7 Wonders Duel', kind: 'base', owned: true, wishlist: false }])
+  expect(from).toHaveBeenCalledWith('collection_item')
+  expect(upsert.mock.calls[0][1]).toMatchObject({ onConflict: 'bgg_id' })
+  const payload = upsert.mock.calls[0][0][0]
+  expect(payload.bgg_id).toBe(173346)
+  expect(payload.name).toBe('7 Wonders Duel')
+  expect(payload.kind).toBe('base')
+  expect(payload.owned).toBe(true)
+  expect(payload.wishlist).toBe(false)
+  expect(payload.synced_at).toBe('2026-11-02T00:00:00Z')
+})
+
+test('collectionOwnedBggIds restituisce i bgg_id dei giochi posseduti', async () => {
+  const eq = vi.fn(() => Promise.resolve({ data: [{ bgg_id: 173346 }, { bgg_id: 309116 }], error: null }))
+  const select = vi.fn(() => ({ eq }))
+  const from = vi.fn(() => ({ select }))
+  const store = createSupabaseStore({ from } as any)
+  const ids = await store.collectionOwnedBggIds()
+  expect(from).toHaveBeenCalledWith('collection_item')
+  expect(select).toHaveBeenCalledWith('bgg_id')
+  expect(eq).toHaveBeenCalledWith('owned', true)
+  expect(ids).toEqual(new Set([173346, 309116]))
+})
