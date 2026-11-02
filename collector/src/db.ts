@@ -35,6 +35,9 @@ export interface ListingStore {
   fillListingGame(productId: number, gameId: number): Promise<number>
   upsertCollectionItem(rows: CollectionItem[]): Promise<void>
   collectionOwnedBggIds(): Promise<Set<number>>
+  findExpansionGamesWithBase(): Promise<{ id: number; expands_bgg_id: number }[]>
+  hasUserActionOnGame(gameId: number): Promise<boolean>
+  insertUserAction(gameId: number, action: 'favorite' | 'ignored' | 'unfavorite'): Promise<void>
   purgeStale(before: string): Promise<{ listings: number; products: number }>
 }
 
@@ -321,6 +324,36 @@ export function createSupabaseStore(
         .eq('owned', true)
       if (error) throw new Error(`collectionOwnedBggIds: ${error.message}`)
       return new Set(((data ?? []) as Record<string, unknown>[]).map((row) => Number(row.bgg_id)))
+    },
+
+    async findExpansionGamesWithBase(): Promise<{ id: number; expands_bgg_id: number }[]> {
+      const { data, error } = await client
+        .from('game')
+        .select('id, expands_bgg_id')
+        .eq('kind', 'expansion')
+        .not('expands_bgg_id', 'is', null)
+      if (error) throw new Error(`findExpansionGamesWithBase: ${error.message}`)
+      return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+        id: Number(row.id),
+        expands_bgg_id: Number(row.expands_bgg_id),
+      }))
+    },
+
+    async hasUserActionOnGame(gameId: number): Promise<boolean> {
+      const { data, error } = await client
+        .from('user_action')
+        .select('id')
+        .eq('game_id', gameId)
+        .limit(1)
+      if (error) throw new Error(`hasUserActionOnGame(${gameId}): ${error.message}`)
+      return (data ?? []).length > 0
+    },
+
+    async insertUserAction(gameId: number, action: 'favorite' | 'ignored' | 'unfavorite'): Promise<void> {
+      const { error } = await client
+        .from('user_action')
+        .insert({ game_id: gameId, listing_id: null, action })
+      if (error) throw new Error(`insertUserAction(${gameId}, ${action}): ${error.message}`)
     },
 
     async purgeStale(before: string): Promise<{ listings: number; products: number }> {

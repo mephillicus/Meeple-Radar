@@ -1,5 +1,5 @@
-import { expect, test } from 'vitest'
-import { parseCollectionXml, fetchExpandsBggId } from '../../src/bgg/collection.js'
+import { expect, test, vi } from 'vitest'
+import { parseCollectionXml, fetchExpandsBggId, runAutoFavorites } from '../../src/bgg/collection.js'
 
 test('estrae giochi posseduti e wishlist dalla collection XML', () => {
   const xml = `<?xml version="1.0"?>
@@ -43,4 +43,24 @@ test('senza token restituisce null senza chiamare la rete', async () => {
   } finally {
     process.env.BGG_API_TOKEN = orig
   }
+})
+
+test('runAutoFavorites inserisce favorite solo per espansioni di giochi posseduti senza azione utente', async () => {
+  const findExpansions = vi.fn().mockResolvedValue([
+    { id: 10, expands_bgg_id: 173346 }, // posseduto, nessuna azione -> favorite
+    { id: 11, expands_bgg_id: 999999 }, // non posseduto -> skipped
+    { id: 12, expands_bgg_id: 173346 }, // posseduto ma ha azione utente -> skipped
+  ])
+  const hasAction = vi.fn((gameId: number) => Promise.resolve(gameId === 12))
+  const insertAction = vi.fn().mockResolvedValue(undefined)
+  const store = {
+    findExpansionGamesWithBase: findExpansions,
+    hasUserActionOnGame: hasAction,
+    insertUserAction: insertAction,
+  } as any
+  const result = await runAutoFavorites(store, new Set([173346]))
+  expect(result).toEqual({ inserted: 1, skipped: 2 })
+  expect(insertAction).toHaveBeenCalledWith(10, 'favorite')
+  expect(insertAction).not.toHaveBeenCalledWith(11, 'favorite')
+  expect(insertAction).not.toHaveBeenCalledWith(12, 'favorite')
 })

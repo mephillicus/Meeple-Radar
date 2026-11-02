@@ -16,6 +16,8 @@ export type BggReport = {
   onlineRequests: number
   csvMissing: boolean
   error?: string
+  collection?: { synced: number; owned: number; wishlist: number; error?: string }
+  autofavorite?: { inserted: number; skipped: number; error?: string }
 }
 
 export const ONLINE_BUDGET = 10

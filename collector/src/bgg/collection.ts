@@ -1,4 +1,5 @@
 import { USER_AGENT, FETCH_TIMEOUT_MS } from '../adapters/http.js'
+import type { ListingStore } from '../db.js'
 
 export type CollectionItem = {
   bggId: number
@@ -92,4 +93,33 @@ export async function fetchExpandsBggId(bggId: number): Promise<number | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * Passata auto-preferiti: per ogni espansione il cui gioco base e posseduto
+  * dall'utente, inserisce user_action favorite se l'utente non ha gi una
+  * azione su quel gioco (scrittura write-una-volta, mai sovrascrive).
+ * Best-effort: errori non bloccano il flusso (gestiti dal chiamante).
+ */
+export async function runAutoFavorites(
+  store: ListingStore,
+  ownedBggIds: Set<number>,
+): Promise<{ inserted: number; skipped: number }> {
+  let inserted = 0
+  let skipped = 0
+  const expansions = await store.findExpansionGamesWithBase()
+  for (const g of expansions) {
+    if (!ownedBggIds.has(g.expands_bgg_id)) {
+      skipped++
+      continue
+    }
+    const hasAction = await store.hasUserActionOnGame(g.id)
+    if (hasAction) {
+      skipped++
+      continue
+    }
+    await store.insertUserAction(g.id, 'favorite')
+    inserted++
+  }
+  return { inserted, skipped }
 }

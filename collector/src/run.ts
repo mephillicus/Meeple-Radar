@@ -36,8 +36,15 @@ export async function runCollector(args: {
   store: ListingStore
   now?: () => Date
   enrich?: () => Promise<BggReport>
+  collection?: () => Promise<{
+    synced: number
+    owned: number
+    wishlist: number
+    autofavorite: { inserted: number; skipped: number }
+    error?: string
+  }>
 }): Promise<RunReport> {
-  const { sources, adapters, store, now: nowFn = () => new Date(), enrich } = args
+  const { sources, adapters, store, now: nowFn = () => new Date(), enrich, collection } = args
   const perSource: Record<string, number> = {}
   const failures: Record<string, string> = {}
   const zeroed: string[] = []
@@ -152,6 +159,47 @@ export async function runCollector(args: {
         onlineRequests: 0,
         csvMissing: false,
         error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+
+  if (collection) {
+    try {
+      const coll = await collection()
+      const prev = (report.bgg ?? {}) as BggReport
+      report.bgg = {
+        candidates: prev.candidates,
+        linked: prev.linked,
+        viaCsv: prev.viaCsv,
+        viaSearch: prev.viaSearch,
+        listingsLinked: prev.listingsLinked,
+        unresolved: prev.unresolved,
+        onlineRequests: prev.onlineRequests,
+        csvMissing: prev.csvMissing,
+        error: prev.error,
+        collection: { synced: coll.synced, owned: coll.owned, wishlist: coll.wishlist, error: coll.error },
+        autofavorite: coll.autofavorite
+          ? { inserted: coll.autofavorite.inserted, skipped: coll.autofavorite.skipped }
+          : undefined,
+      }
+    } catch (err) {
+      const prev = (report.bgg ?? {}) as BggReport
+      report.bgg = {
+        candidates: prev.candidates,
+        linked: prev.linked,
+        viaCsv: prev.viaCsv,
+        viaSearch: prev.viaSearch,
+        listingsLinked: prev.listingsLinked,
+        unresolved: prev.unresolved,
+        onlineRequests: prev.onlineRequests,
+        csvMissing: prev.csvMissing,
+        error: prev.error,
+        collection: {
+          synced: 0,
+          owned: 0,
+          wishlist: 0,
+          error: err instanceof Error ? err.message : String(err),
+        },
       }
     }
   }

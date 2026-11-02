@@ -133,6 +133,9 @@ const storeBase = () => ({
   markSourceScanned: vi.fn(),
   logRun: vi.fn(),
   purgeStale: vi.fn().mockResolvedValue({ listings: 0, products: 0 }),
+  findExpansionGamesWithBase: vi.fn().mockResolvedValue([]),
+  hasUserActionOnGame: vi.fn().mockResolvedValue(false),
+  insertUserAction: vi.fn().mockResolvedValue(undefined),
 } as any)
 
 test('chiama fillProductDescription con la descrizione del prodotto canonico', async () => {
@@ -232,4 +235,23 @@ test('la citazione sopravvive al filtro di cutoff', async () => {
   expect(store.fillProductDescription).toHaveBeenCalledTimes(1)
   expect(store.fillProductDescription).toHaveBeenCalledWith(7, 'Citazione viva')
   expect(store.fillProductReleaseDate).not.toHaveBeenCalled()
+})
+
+test('report.bgg.collection e autofavorite vengono scritti dal callback collection', async () => {
+  const store = storeBase()
+  const adapters = {
+    shopify: async () => [], woocommerce: async () => [], wordpress: async () => [],
+    html: async () => [], headless: async () => [],
+  } as any
+  const collection = vi.fn().mockResolvedValue({
+    synced: 70, owned: 30, wishlist: 5,
+    autofavorite: { inserted: 2, skipped: 1 },
+  })
+  const report = await runCollector({
+    sources: [src('s1','shopify')], adapters, store,
+    collection,
+  })
+  expect(collection).toHaveBeenCalledTimes(1)
+  expect(report.bgg?.collection).toEqual({ synced: 70, owned: 30, wishlist: 5 })
+  expect(report.bgg?.autofavorite).toEqual({ inserted: 2, skipped: 1 })
 })
