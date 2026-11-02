@@ -122,8 +122,8 @@ class DetailViewModelTest {
             return candidates
         }
 
-        override suspend fun searchCandidates(query: String): List<BoardGameDetails> {
-            requestedSearchQuery = query
+        override suspend fun searchCandidates(title: String, bggId: Int?): List<BoardGameDetails> {
+            requestedSearchQuery = title
             return searchedCandidates
         }
 

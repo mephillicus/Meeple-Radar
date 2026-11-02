@@ -36,7 +36,7 @@ interface BoardGameImageLookup {
 
     suspend fun findCandidates(title: String, bggId: Int?): List<BoardGameDetails> = emptyList()
 
-    suspend fun searchCandidates(query: String): List<BoardGameDetails> = emptyList()
+    suspend fun searchCandidates(title: String, bggId: Int? = null): List<BoardGameDetails> = findCandidates(title, bggId)
 
     suspend fun findSeries(bggId: Int): BggSeries? = null
 }
@@ -58,6 +58,8 @@ data class BoardGameDetails(
     val primaryName: String? = null,
     val alternateNames: List<String> = emptyList(),
     val englishName: String? = primaryName,
+    val bggRating: Double? = null,
+    val bggRank: Int? = null,
 )
 
 class BoardGameGeekImageLookup(
@@ -83,104 +85,66 @@ class BoardGameGeekImageLookup(
     }
 
     override suspend fun findDetails(title: String, bggId: Int?): BoardGameDetails? {
+        val candidates = findCandidates(title, bggId)
+        return candidates.firstOrNull()
+    }
+
+    override suspend fun findDetailsById(bggId: Int): BoardGameDetails? {
+        if (bggId <= 0) return null
+        detailsCache[bggId]?.let { return it }
         return semaphore.withPermit {
-            val knownDetails = bggId?.let { id ->
-                detailsCache[id] ?: detailsFromThing(id)?.also { detailsCache[id] = it }
-            }
-            if (knownDetails != null &&
-                (knownDetails.hasNoNames() || scoreMatch(title, knownDetails) >= MIN_NAME_MATCH_SCORE)
-            ) {
-                return@withPermit knownDetails
-            }
-
-            val ids = findIdsByName(title, bggId).take(MAX_NAME_MATCHES)
-            var bestDetails: BoardGameDetails? = null
-            var bestScore = -100000
-
-            for (id in ids.distinct()) {
-                val details = detailsCache[id] ?: detailsFromThing(id)
-                if (details != null) detailsCache[id] = details
-                if (details != null) {
-                    val score = scoreMatch(title, details)
-                    if (score >= MIN_NAME_MATCH_SCORE && score > bestScore) {
-                        bestScore = score
-                        bestDetails = details
-                    }
-                    if (details.expansions.isNotEmpty() && score >= MIN_EXPANSION_PARENT_SCORE) {
-                        for (expansion in details.expansions) {
-                            val expansionDetails = detailsCache[expansion.bggId]
-                                ?: detailsFromThing(expansion.bggId)
-                            if (expansionDetails != null) {
-                                detailsCache[expansion.bggId] = expansionDetails
-                                val expansionScore = scoreMatch(title, expansionDetails)
-                                if (expansionScore >= MIN_NAME_MATCH_SCORE && expansionScore > bestScore) {
-                                    bestScore = expansionScore
-                                    bestDetails = expansionDetails
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            bestDetails
+            detailsCache[bggId] ?: detailsFromThing(bggId).also { detailsCache[bggId] = it }
         }
     }
 
-    override suspend fun findDetailsById(bggId: Int): BoardGameDetails? =
-        detailsCache[bggId] ?: semaphore.withPermit {
-            detailsCache[bggId] ?: detailsFromThing(bggId)?.also { detailsCache[bggId] = it }
+    override suspend fun findCandidates(title: String, bggId: Int?): List<BoardGameDetails> {
+        val candidateIds = mutableListOf<Int>()
+        val foundIds = findIdsByName(title, null)
+        for (id in foundIds) {
+            if (id !in candidateIds) {
+                candidateIds.add(id)
+            }
         }
 
-    override suspend fun findCandidates(title: String, bggId: Int?): List<BoardGameDetails> =
-        semaphore.withPermit {
-            val baseTitle = title.replace(Regex("\\(.*?\\)"), "")
-                .split(Regex("\\s+[-–—]\\s+"), limit = 2)
-                .first()
-                .trim()
-            val ids = mutableListOf<Int>()
-            bggId?.let(ids::add)
-            ids += findIdsByName(title, bggId)
-            if (normalize(baseTitle) != normalize(title)) {
-                ids += findIdsByName(baseTitle, bggId)
+        if (bggId != null && bggId > 0) {
+            val bggIdDetails = detailsCache[bggId] ?: semaphore.withPermit {
+                detailsCache[bggId] ?: detailsFromThing(bggId).also { detailsCache[bggId] = it }
             }
-
-            val candidates = linkedMapOf<Int, BoardGameDetails>()
-            for (id in ids.distinct().take(MAX_CANDIDATE_SEARCH_IDS)) {
-                val details = detailsCache[id] ?: detailsFromThing(id)?.also { detailsCache[id] = it }
-                if (details != null) {
-                    if (id == bggId && scoreMatch(baseTitle, details) < MIN_EXPANSION_PARENT_SCORE) {
-                        continue
-                    }
-                    candidates[id] = details
-                    if (scoreMatch(baseTitle, details) >= MIN_EXPANSION_PARENT_SCORE) {
-                        for (expansion in details.expansions) {
-                            val expansionDetails = detailsCache[expansion.bggId]
-                                ?: detailsFromThing(expansion.bggId)?.also { detailsCache[expansion.bggId] = it }
-                            if (expansionDetails != null) candidates[expansion.bggId] = expansionDetails
-                        }
-                    }
+            if (bggIdDetails != null) {
+                val validationScore = scoreMatch(title, bggIdDetails)
+                if (validationScore >= 8000) {
+                    if (bggId !in candidateIds) candidateIds.add(0, bggId)
                 }
             }
-
-            candidates.values
-                .map { details -> details to scoreMatch(title, details) }
-                .filter { (_, score) -> score > 0 }
-                .sortedByDescending { (_, score) -> score }
-                .take(MAX_MANUAL_CANDIDATES)
-                .map { (details, _) -> details }
         }
 
-    override suspend fun searchCandidates(query: String): List<BoardGameDetails> =
-        semaphore.withPermit {
-            if (query.isBlank()) return@withPermit emptyList()
-            val ids = (
-                searchBggIds(query, query, null) +
-                    searchBggHtmlIds(query, null)
-                ).distinct().take(MAX_MANUAL_SEARCH_RESULTS)
-            ids.mapNotNull { id ->
-                detailsCache[id] ?: detailsFromThing(id)?.also { detailsCache[id] = it }
+        val baseCandidateIds = candidateIds.toList()
+        for (id in baseCandidateIds) {
+            val d = detailsCache[id] ?: semaphore.withPermit {
+                detailsCache[id] ?: detailsFromThing(id).also { detailsCache[id] = it }
+            }
+            d?.expansions?.forEach { exp ->
+                if (exp.bggId !in candidateIds) {
+                    candidateIds.add(exp.bggId)
+                }
             }
         }
+
+        val evaluated = mutableListOf<Pair<BoardGameDetails, Int>>()
+        for (id in candidateIds.take(MAX_CANDIDATE_SEARCH_IDS)) {
+            val details = detailsCache[id] ?: semaphore.withPermit {
+                detailsCache[id] ?: detailsFromThing(id).also { detailsCache[id] = it }
+            }
+            if (details != null) {
+                val score = scoreMatch(title, details)
+                if (score > -10000) {
+                    evaluated.add(details to score)
+                }
+            }
+        }
+
+        return evaluated.sortedByDescending { it.second }.map { it.first }
+    }
 
     override suspend fun findSeries(bggId: Int): BggSeries? = runCatching {
         if (bggId <= 0) return null
@@ -211,47 +175,71 @@ class BoardGameGeekImageLookup(
     }.getOrNull()
 
     private fun scoreMatch(targetTitle: String, details: BoardGameDetails): Int {
-        val matchTitle = targetTitle.replace(Regex("\\(.*?\\)"), "").trim()
-        val normTarget = normalize(matchTitle)
+        val normTarget = normalize(targetTitle)
         if (normTarget.isEmpty()) return 0
-        val targetWords = significantWords(matchTitle).toSet()
-        val baseWords = details.expands
-            .flatMap { significantWords(it.name) }
-            .toSet()
-        val expansionBonus = if (details.expands.isNotEmpty() && targetWords.size > baseWords.size) 1000 else 0
+
+        val targetIsExpansion = targetTitle.contains("–") || targetTitle.contains("-") || targetTitle.contains("expansion") || targetTitle.contains("espansione") || targetTitle.contains("gilda") || targetTitle.contains("deserto") || targetTitle.contains("pantheon") || targetTitle.contains("agora")
+        val candidateIsExpansion = details.expands.isNotEmpty()
+
+        if (targetIsExpansion && !candidateIsExpansion) {
+            return -100000
+        }
 
         val candidateNames = mutableListOf<String>()
         details.primaryName?.let { candidateNames.add(it) }
         candidateNames.addAll(details.alternateNames)
 
-        var maxScore = -10000
+        var maxScore = -100000
 
         for (candName in candidateNames) {
             val normCand = normalize(candName)
             if (normCand.isEmpty()) continue
 
-            val candWords = significantWords(candName).map(::canonicalWord).toSet()
-            val matchedWords = targetWords.map(::canonicalWord).count { it in candWords }
-            val score = when {
+            var score = when {
                 normCand == normTarget -> 10000
-                normCand.contains(normTarget) -> 9000 + normTarget.length
-                targetWords.isNotEmpty() -> matchedWords * 10000 / targetWords.size
+                normTarget.contains(normCand) && normCand.length >= 8 -> 5000 + normCand.length
+                normCand.contains(normTarget) && normCand.length >= 8 -> 4000 + normCand.length
                 else -> 0
             }
-            maxScore = maxOf(maxScore, score + expansionBonus)
+
+            val targetWords = targetTitle.lowercase(Locale.ROOT)
+                .split(Regex("[^\\p{L}\\p{N}]+"))
+                .filter { it.length >= 3 && normalize(it) !in COMMON_WORDS }
+                .map { normalize(it) }
+                .toSet()
+
+            val candWords = candName.lowercase(Locale.ROOT)
+                .split(Regex("[^\\p{L}\\p{N}]+"))
+                .filter { it.length >= 3 && normalize(it) !in COMMON_WORDS }
+                .map { normalize(it) }
+                .toSet()
+
+            if (targetWords.isNotEmpty() && candWords.isNotEmpty()) {
+                val common = targetWords.intersect(candWords)
+                val overlapRatio = common.size.toDouble() / targetWords.size
+                val wordScore = (overlapRatio * 5000).toInt()
+                score = maxOf(score, wordScore)
+
+                val missingWords = targetWords - candWords
+                if (missingWords.isNotEmpty()) {
+                    score -= missingWords.size * 800
+                }
+            }
+
+            maxScore = maxOf(maxScore, score)
         }
 
-        if (maxScore < 0 && !details.description.isNullOrBlank()) {
+        if (maxScore < 1000 && !details.description.isNullOrBlank()) {
             val normDesc = normalize(details.description)
             val targetWords = targetTitle.lowercase(Locale.ROOT)
                 .split(Regex("[^\\p{L}\\p{N}]+"))
                 .filter { it.length >= 4 && normalize(it) !in COMMON_WORDS }
                 .map { normalize(it) }
 
-            var descScore = 0
+            var descScore = 100
             for (word in targetWords) {
                 if (normDesc.contains(word)) {
-                    descScore += 100
+                    descScore += 200
                 }
             }
             maxScore = maxOf(maxScore, descScore)
@@ -259,24 +247,6 @@ class BoardGameGeekImageLookup(
 
         return maxScore
     }
-
-    private fun significantWords(value: String): List<String> =
-        value.lowercase(Locale.ROOT)
-            .split(Regex("[^\\p{L}\\p{N}]+"))
-            .filter { it.length >= 3 && normalize(it) !in COMMON_WORDS }
-            .map { normalize(it) }
-
-    private fun canonicalWord(word: String): String = when (word) {
-        "guerra" -> "war"
-        "deserto" -> "desert"
-        "gilda" -> "guild"
-        "spaziale" -> "space"
-        "spacing" -> "space"
-        else -> word
-    }
-
-    private fun BoardGameDetails.hasNoNames(): Boolean =
-        primaryName.isNullOrBlank() && alternateNames.isEmpty()
 
     private suspend fun findById(id: Int?): String? =
         id?.let { detailsFromThing(it)?.imageUrl }
@@ -291,20 +261,65 @@ class BoardGameGeekImageLookup(
     private suspend fun findIdsByName(title: String, excludedId: Int?): List<Int> {
         if (title.isBlank()) return emptyList()
 
-        val clean = title.replace(Regex("\\(.*?\\)"), "").trim()
-        val query = if (clean.isBlank()) title else clean
-        val titleParts = query.split(Regex("\\s+[-–—]\\s+"), limit = 2)
-        val baseTitle = titleParts.first()
-        val subtitle = titleParts.getOrNull(1)?.trim()
-        val relatedBaseIds = if (baseTitle != query) {
-            (searchBggIds(baseTitle, title, excludedId) + searchBggHtmlIds(baseTitle, excludedId))
-        } else {
-            emptyList()
+        val queries = translateSearchQuery(title)
+        val allIds = mutableListOf<Int>()
+
+        for (q in queries) {
+            val htmlIds = searchBggHtmlIds(q, excludedId)
+            for (id in htmlIds) {
+                if (id !in allIds) allIds.add(id)
+            }
+            val apiIds = searchBggIds(q, excludedId)
+            for (id in apiIds) {
+                if (id !in allIds) allIds.add(id)
+            }
         }
-        val apiIds = (listOf(query, subtitle).filterNotNull().distinct())
-            .flatMap { searchBggIds(it, title, excludedId) }
-        val htmlIds = searchBggHtmlIds(query, excludedId)
-        return (relatedBaseIds + apiIds + htmlIds).distinct()
+
+        return allIds
+    }
+
+    private fun translateSearchQuery(italianTitle: String): List<String> {
+        val clean = italianTitle.replace(Regex("\\(.*?\\)"), "").trim()
+
+        val translations = mapOf(
+            "la guerra per arrakis" to "war for arrakis",
+            "guerra per arrakis" to "war for arrakis",
+            "la gilda spaziale" to "the spacing guild",
+            "gilda spaziale" to "spacing guild",
+            "la guerra del deserto" to "desert war",
+            "guerra del deserto" to "desert war",
+            "contrabbandieri" to "smugglers",
+            "il grande giubileo" to "the grand jubilee",
+            "i re del mare" to "kings of the sea",
+            "set rosso" to "red box",
+            "set" to "set",
+            "rosso" to "red",
+        )
+
+        var translated = clean.lowercase(Locale.ROOT)
+        for ((itKey, enVal) in translations) {
+            translated = translated.replace(itKey, enVal)
+        }
+
+        val queries = mutableListOf<String>()
+        queries.add(clean)
+        if (translated != clean.lowercase(Locale.ROOT)) {
+            queries.add(translated)
+        }
+
+        if (clean.contains(Regex("[-–—:]"))) {
+            val parts = clean.split(Regex("[-–—:]")).map { it.trim() }.filter { it.isNotBlank() }
+            if (parts.size >= 2) {
+                val mainPart = parts[0]
+                val subPart = parts.subList(1, parts.size).joinToString(" ")
+                val mainTrans = translations.entries.fold(mainPart.lowercase(Locale.ROOT)) { acc, (k, v) -> acc.replace(k, v) }
+                val subTrans = translations.entries.fold(subPart.lowercase(Locale.ROOT)) { acc, (k, v) -> acc.replace(k, v) }
+                queries.add("$mainTrans $subTrans")
+                queries.add(subTrans)
+            }
+        }
+
+        return queries.distinct()
     }
 
     private suspend fun searchBggHtmlIds(query: String, excludedId: Int?): List<Int> {
@@ -314,15 +329,15 @@ class BoardGameGeekImageLookup(
         val searchUrl = "https://boardgamegeek.com/search/boardgame?q=${java.net.URLEncoder.encode(cleanQuery, "UTF-8")}"
         val htmlText = runCatching { transport.get(searchUrl, XML_HEADERS) }.getOrNull() ?: return emptyList()
 
-        val regex = Regex("""/boardgame(?:expansion)?/(\d+)/""")
+        val regex = Regex("""/boardgame(expansion)?/(\d+)/""")
         return regex.findAll(htmlText)
-            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .mapNotNull { it.groupValues[2].toIntOrNull() }
             .filterNot { it == excludedId }
             .distinct()
             .toList()
     }
 
-    private suspend fun searchBggIds(query: String, originalTitle: String, excludedId: Int?): List<Int> {
+    private suspend fun searchBggIds(query: String, excludedId: Int?): List<Int> {
         val cleanQuery = query.replace(Regex("[^\\p{L}\\p{N}\\s]"), " ").trim().replace(Regex("\\s+"), " ")
         if (cleanQuery.isBlank()) return emptyList()
 
@@ -333,50 +348,9 @@ class BoardGameGeekImageLookup(
         val xmlText = runCatching { transport.get(searchUrl, XML_HEADERS) }.getOrNull() ?: return emptyList()
         val document = runCatching { parseXml(xmlText) }.getOrNull() ?: return emptyList()
 
-        val normOriginal = normalize(originalTitle)
-        val normQuery = normalize(query)
         val items = document.getElementsByTagName("item")
             .let { nodes -> (0 until nodes.length).mapNotNull { nodes.item(it) } }
             .filter { it.attributes?.getNamedItem("type")?.nodeValue in GAME_TYPES }
-
-        val candidates = mutableListOf<Pair<Int, Int>>()
-
-        for (item in items) {
-            val id = item.attributes?.getNamedItem("id")?.nodeValue?.toIntOrNull() ?: continue
-            if (id == excludedId) continue
-
-            val names = item.childNodes
-            val nameList = (0 until names.length).mapNotNull { names.item(it) }
-                .filter { it.nodeName == "name" }
-                .mapNotNull { it.attributes?.getNamedItem("value")?.nodeValue }
-
-            var bestScore = 0
-            for (name in nameList) {
-                val normName = normalize(name)
-                val exactScore = when {
-                    normName == normOriginal -> 10000
-                    normName == normQuery -> 9000
-                    normOriginal.isNotEmpty() && normName.isNotEmpty() && normOriginal.contains(normName) -> 500 + normName.length
-                    normOriginal.isNotEmpty() && normName.isNotEmpty() && normName.contains(normOriginal) -> 400 + normOriginal.length
-                    normQuery.length >= 4 && normName.contains(normQuery) -> 300 + normName.length
-                    normQuery.length >= 4 && normQuery.contains(normName) -> 200 + normName.length
-                    else -> 0
-                }
-                    val queryWords = significantWords(originalTitle).map(::canonicalWord).toSet()
-                    val nameWords = significantWords(name).map(::canonicalWord).toSet()
-                    val tokenScore = if (queryWords.isEmpty()) 0 else
-                        queryWords.intersect(nameWords).size * 1000 / queryWords.size
-                val score = maxOf(exactScore, tokenScore)
-                bestScore = maxOf(bestScore, score)
-            }
-
-            if (bestScore > 0) {
-                candidates.add(id to bestScore)
-            }
-        }
-
-        val matched = candidates.sortedByDescending { it.second }.map { it.first }.distinct()
-        if (matched.isNotEmpty()) return matched
 
         return items.mapNotNull { it.attributes?.getNamedItem("id")?.nodeValue?.toIntOrNull() }
             .filterNot { it == excludedId }
@@ -445,7 +419,9 @@ class BoardGameGeekImageLookup(
             links?.get(key)?.jsonArray?.mapNotNull { el ->
                 val obj = el.jsonObject
                 val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val objectId = obj["objectid"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+                val objectId = obj["objectid"]?.jsonPrimitive?.intOrNull
+                    ?: obj["objectid"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+                    ?: return@mapNotNull null
                 val canonical = obj["canonical_link"]?.jsonPrimitive?.contentOrNull
                 val url = when {
                     canonical.isNullOrBlank() -> "https://boardgamegeek.com/boardgame/$objectId"
@@ -460,16 +436,11 @@ class BoardGameGeekImageLookup(
         val designers = parseLinks("boardgamedesigner")
         val categories = parseLinks("boardgamecategory")
         val mechanics = parseLinks("boardgamemechanic")
-        val alternateNames = (
-            parseLinks("boardgamename") +
-                listOfNotNull(root["alternatenames"], item["alternatenames"])
-                    .flatMap { names ->
-                        runCatching {
-                            names.jsonArray
-                                .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
-                        }.getOrNull().orEmpty()
-                    }
-            ).distinct()
+        val altNamesFromLinks = parseLinks("boardgamename")
+        val altNamesFromJsonArray = runCatching {
+            item["alternatenames"]?.jsonArray?.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+        }.getOrNull().orEmpty()
+        val alternateNames = (altNamesFromLinks + altNamesFromJsonArray).distinct()
 
         val expansions = parseBggLinks("boardgameexpansion")
         val expands = parseBggLinks("expandsboardgame")
@@ -497,6 +468,7 @@ class BoardGameGeekImageLookup(
         val url = endpoint("thing") {
             addQueryParameter("id", id.toString())
             addQueryParameter("type", "boardgame,boardgameexpansion")
+            addQueryParameter("stats", "1")
         }
         val document = parseXml(transport.get(url, XML_HEADERS))
         val item = document.getElementsByTagName("item").item(0) ?: return null
@@ -544,6 +516,19 @@ class BoardGameGeekImageLookup(
             .filter { it.nodeName == "name" && it.attributes?.getNamedItem("type")?.nodeValue == "alternate" }
             .mapNotNull { it.attributes?.getNamedItem("value")?.nodeValue }
 
+        val statistics = (0 until children.length).mapNotNull { children.item(it) }
+            .firstOrNull { it.nodeName == "statistics" }?.childNodes
+        val ratings = statistics?.let { nodes -> (0 until nodes.length).mapNotNull { nodes.item(it) }.firstOrNull { it.nodeName == "ratings" }?.childNodes }
+        val average = ratings?.let { nodes -> (0 until nodes.length).mapNotNull { nodes.item(it) }.firstOrNull { it.nodeName == "average" } }
+            ?.attributes?.getNamedItem("value")?.nodeValue?.toDoubleOrNull()
+
+        val ranksNode = ratings?.let { nodes -> (0 until nodes.length).mapNotNull { nodes.item(it) }.firstOrNull { it.nodeName == "ranks" } }
+        val rank = ranksNode?.childNodes?.let { nodes ->
+            (0 until nodes.length).mapNotNull { nodes.item(it) }
+                .firstOrNull { it.attributes?.getNamedItem("name")?.nodeValue == "boardgame" }
+                ?.attributes?.getNamedItem("value")?.nodeValue?.toIntOrNull()
+        }
+
         return BoardGameDetails(
             bggId = id,
             imageUrl = image,
@@ -560,6 +545,8 @@ class BoardGameGeekImageLookup(
             expands = bggLinks("boardgameexpansion"),
             primaryName = primaryName,
             alternateNames = alternateNames,
+            bggRating = average,
+            bggRank = rank,
         )
     }
 
@@ -583,10 +570,6 @@ class BoardGameGeekImageLookup(
         const val BGG_API = "https://boardgamegeek.com/xmlapi2"
         const val MAX_NAME_MATCHES = 3
         const val MAX_CANDIDATE_SEARCH_IDS = 30
-        const val MAX_MANUAL_CANDIDATES = 30
-        const val MAX_MANUAL_SEARCH_RESULTS = 50
-        const val MIN_NAME_MATCH_SCORE = 8000
-        const val MIN_EXPANSION_PARENT_SCORE = 6000
         val GAME_TYPES = setOf("boardgame", "boardgameexpansion")
         val XML_HEADERS = mapOf("Accept" to "application/xml", "User-Agent" to "MeepleRadar/1.0")
         val JSON_HEADERS = mapOf("Accept" to "application/json", "User-Agent" to "MeepleRadar/1.0")
