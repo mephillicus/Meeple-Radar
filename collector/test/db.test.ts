@@ -55,6 +55,34 @@ test('upsertListings scrive i campi valorizzati, così un prezzo aggiornato prev
   expect(payload).not.toHaveProperty('image_url')
 })
 
+// Una fonte a data autorevole (es. dvgiochi "DA DEFINIRE") che non riporta più
+// la data chiede esplicitamente di azzerarla: il valore vecchio non deve
+// sopravvivere per sempre.
+test('upsertListings azzera release_date quando la fonte autorevole non la riporta più', async () => {
+  const upsert = vi.fn().mockResolvedValue({ error: null })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-11-05T00:00:00Z')
+  await store.upsertListings([
+    { sourceId: 'dvgiochi', externalId: 'villa', title: 'Villa', url: 'https://www.dvgiochi.com/catalogo/villa/',
+      price: null, currency: null, availability: null, releaseDate: null, description: null, imageUrl: null, gameId: null,
+      clearReleaseDate: true },
+  ])
+  expect(upsert.mock.calls[0][0][0]).toHaveProperty('release_date', null)
+})
+
+test('upsertProducts azzera release_date quando il canonico lo chiede', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [{ id: 3211 }], error: null })
+  const upsert = vi.fn().mockReturnValue({ select })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-11-05T00:00:00Z')
+  await store.upsertProducts([
+    { sourceId: 'dvgiochi', externalId: 'villa', title: 'Villa', url: 'https://www.dvgiochi.com/catalogo/villa/',
+      price: null, currency: null, availability: null, releaseDate: null, description: null, imageUrl: null, gameId: null,
+      clearReleaseDate: true },
+  ])
+  expect(upsert.mock.calls[0][0][0]).toHaveProperty('release_date', null)
+})
+
 test('findListingsByTitle fetches the listing columns including source_id and filters by normalizeTitle', async () => {
   const all = [
     { id: 1, title: 'Carcassonne', normalized_title: 'carcassonne', url: 'https://e.com/c', price: 19.99, currency: 'EUR', release_date: '2026-11-10', image_url: 'https://e.com/i.jpg', game_id: 7, source_id: 'ghenos', product_id: null },

@@ -34,7 +34,7 @@ export function canonicalizeProduct(listings: Listing[]): Listing | null {
   const description =
     chooseCanonicalField(listings.map((l) => l.description), (v) => !!v) ?? null
 
-  return {
+  const canonical: Listing = {
     sourceId: listings[0].sourceId,
     externalId: listings[0].externalId,
     title,
@@ -47,4 +47,9 @@ export function canonicalizeProduct(listings: Listing[]): Listing | null {
     imageUrl,
     gameId,
   }
+  // Nessuna fonte porta una data e almeno una fonte autorevole dichiara la
+  // propria assenza ("DA DEFINIRE"): il prodotto chiede di azzerare il vecchio
+  // valore invece di conservarlo all'infinito.
+  canonical.clearReleaseDate = releaseDate === null && listings.some((l) => l.clearReleaseDate === true) || undefined
+  return canonical
 }

@@ -56,7 +56,10 @@ export function extractReleaseDate(text?: string): string | null {
     if (accept(iso)) return iso
   }
 
-  const dm = text.match(/(\d{1,2})[\/\-.](\d{1,2})(?![\/\-.]\d)/)
+  // Solo lo slash resta separatore giorno/mese: il trattino ("-") matcherebbe
+  // gli intervalli di giocatori ("2-4", "1-6") e il punto i decimali ("2.5"),
+  // inventando una data a anno corrente da testo che non è una data.
+  const dm = text.match(/(\d{1,2})\/(\d{1,2})(?![\/\-.]\d)/)
   if (dm) {
     const iso = `${nowYear}-${dm[2].padStart(2, '0')}-${dm[1].padStart(2, '0')}`
     if (accept(iso)) return iso
@@ -117,7 +120,17 @@ function isoOrNull(preferred?: string, text?: string): string | null {
   return extractReleaseDate(text)
 }
 
+// Fonti che dichiarano la data solo nell'elenco strutturato (per dvgiochi è
+// l'ancora di /prossime-uscite/: "27 OTTOBRE 2026" oppure "DA DEFINIRE").
+// Lì l'assenza di data è un dato; la descrizione non va mai minata per
+// inventarsene una (es. "per 2-4 giocatori" diventava il 2 aprile).
+const DATE_FROM_LISTING_ONLY: ReadonlySet<string> = new Set(['dvgiochi'])
+
 export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
+  const dateFromListing = DATE_FROM_LISTING_ONLY.has(sourceId)
+  const releaseDate = dateFromListing
+    ? isoOrNull(raw.releaseDateRaw, undefined)
+    : isoOrNull(raw.releaseDateRaw, raw.descriptionRaw)
   return {
     sourceId,
     externalId: raw.externalId,
@@ -129,7 +142,10 @@ export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
     price: toPrice(raw.priceRaw, raw.minorUnitRaw),
     currency: raw.currencyRaw ? raw.currencyRaw.toUpperCase() : null,
     availability: raw.availabilityRaw ?? null,
-    releaseDate: isoOrNull(raw.releaseDateRaw, raw.descriptionRaw),
+    releaseDate,
+    // L'assenza di data da una fonte autorevole è un dato ("DA DEFINIRE"):
+    // segna la riga perché lo store azzeri una data scritta in precedenza.
+    clearReleaseDate: (dateFromListing && releaseDate === null) || undefined,
     description: htmlToText(raw.descriptionRaw),
     imageUrl: raw.imageUrl ?? null,
     gameId: raw.gameId ?? null,

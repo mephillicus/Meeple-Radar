@@ -110,10 +110,11 @@ export async function runCollector(args: {
         // In una run editoriale (news/roundups) l'upsert del prodotto non
         // porta mai prezzo né data: quei campi arrivano su product solo dai
         // fill write-once, quindi le chiavi vanno tolte del tutto, l'upsert
-        // sostituisce le colonne presenti nel payload. Le righe listing
-        // continuano a portarli.
+        // sostituisce le colonne presenti nel payload. Anche la richiesta di
+        // azzeramento resta fuori: una data scritta da un fill non si tocca.
+        // Le righe listing continuano a portarli.
         const payload = (isEditorial
-          ? (({ price, currency, releaseDate, ...rest }) => rest)(canonical)
+          ? (({ price, currency, releaseDate, clearReleaseDate, ...rest }) => rest)(canonical)
           : canonical) as Listing
         const productIds = await store.upsertProducts([payload])
         const productId = productIds[0]

@@ -92,6 +92,8 @@ export function createSupabaseStore(
         ...(r.currency != null && { currency: r.currency }),
         ...(r.availability != null && { availability: r.availability }),
         ...(r.releaseDate != null && { release_date: r.releaseDate }),
+        // Fonte autorevole senza data: azzera esplicitamente il vecchio valore.
+        ...(r.releaseDate == null && r.clearReleaseDate === true && { release_date: null }),
         ...(r.imageUrl != null && { image_url: r.imageUrl }),
         ...(r.gameId != null && { game_id: r.gameId }),
         last_seen_at: seen,
@@ -163,6 +165,7 @@ export function createSupabaseStore(
         ...(p.price != null && { price: p.price }),
         ...(p.currency != null && { currency: p.currency }),
         ...(p.releaseDate != null && { release_date: p.releaseDate }),
+        ...(p.releaseDate == null && p.clearReleaseDate === true && { release_date: null }),
         ...(p.imageUrl != null && { image_url: p.imageUrl }),
         ...(p.gameId != null && { game_id: p.gameId }),
         sources: JSON.stringify([]),

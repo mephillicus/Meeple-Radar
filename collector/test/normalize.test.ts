@@ -14,6 +14,47 @@ test('extracts an Italian release date', () => {
   expect(extractReleaseDate('<p>Nessuna data</p>')).toBeNull()
 })
 
+test('giorno/mese senza anno: gli intervalli di giocatori non sono date', () => {
+  expect(extractReleaseDate('Villa è un gioco astratto e riflessivo per 2-4 giocatori')).toBeNull()
+  expect(extractReleaseDate('gioco cooperativo per 1-6 giocatori')).toBeNull()
+  expect(extractReleaseDate('durata della partita 2.5 ore')).toBeNull()
+  expect(extractReleaseDate('in uscita il 28/11')).toBe('2026-11-28')
+})
+
+test('dvgiochi: la data arriva solo dall\'elenco prossime uscite, mai dalla descrizione', () => {
+  // Villa è "DA DEFINIRE" sul sito: la descrizione ("per 2-4 giocatori,
+  // in arrivo a novembre") non deve produrre nessuna data.
+  const villa = normalizeListing('dvgiochi', {
+    externalId: 'villa', title: 'Villa', url: 'https://www.dvgiochi.com/catalogo/villa/',
+    descriptionRaw: '<p>Un gioco per 2-4 giocatori, in arrivo a novembre</p>',
+  })
+  expect(villa.releaseDate).toBeNull()
+  // La data dichiarata dall'elenco resta autorevole.
+  const blablada = normalizeListing('dvgiochi', {
+    externalId: 'blablada-ita', title: 'Blabladà', url: 'https://www.dvgiochi.com/catalogo/blablada-ita/',
+    releaseDateRaw: '2026-10-27', descriptionRaw: '<p>in arrivo a novembre</p>',
+  })
+  expect(blablada.releaseDate).toBe('2026-10-27')
+})
+
+test('dvgiochi senza data marca la riga per azzerare una data precedente', () => {
+  const villa = normalizeListing('dvgiochi', {
+    externalId: 'villa', title: 'Villa', url: 'https://www.dvgiochi.com/catalogo/villa/',
+    descriptionRaw: '<p>Un gioco per 2-4 giocatori</p>',
+  })
+  expect(villa.clearReleaseDate).toBe(true)
+  const blablada = normalizeListing('dvgiochi', {
+    externalId: 'blablada-ita', title: 'Blabladà', url: 'https://www.dvgiochi.com/catalogo/blablada-ita/',
+    releaseDateRaw: '2026-10-27',
+  })
+  expect(blablada.clearReleaseDate).toBeFalsy()
+  // Per le altre fonti l'assenza resta ambigua: nessuna cancellazione.
+  const cranio = normalizeListing('cranio', {
+    externalId: '1', title: 'X', url: 'https://e.com/x', descriptionRaw: '<p>Nessuna data</p>',
+  })
+  expect(cranio.clearReleaseDate).toBeFalsy()
+})
+
 test('normalizes a raw product, never inventing a date', () => {
   const l = normalizeListing('cranio', {
     externalId: '1', title: 'X', url: 'https://e.com/x', descriptionRaw: '<p>Nessuna data</p>',

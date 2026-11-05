@@ -206,7 +206,24 @@ test('una fonte news non porta prezzo e data nell upsert del prodotto', async ()
   const payload = store.upsertProducts.mock.calls[0][0][0]
   expect(payload).not.toHaveProperty('releaseDate')
   expect(payload).not.toHaveProperty('price')
+  // Né la richiesta di azzeramento: la write-once delle news non va toccata.
+  expect(payload).not.toHaveProperty('clearReleaseDate')
   expect(store.fillProductReleaseDate).toHaveBeenCalledWith(7, '2026-11-01')
+})
+
+test('dvgiochi senza data azzera quella vecchia su listing e prodotto', async () => {
+  const store = storeBase()
+  const adapters = {
+    html: async () => [{ externalId: 'villa', title: 'Villa', url: 'https://www.dvgiochi.com/catalogo/villa/', descriptionRaw: '<p>per 2-4 giocatori</p>' }],
+    shopify: async () => [], woocommerce: async () => [], wordpress: async () => [], headless: async () => [],
+  } as any
+  await runCollector({ sources: [src('dvgiochi', 'html')], adapters, store })
+  const listing = store.upsertListings.mock.calls[0][0][0]
+  expect(listing).toMatchObject({ releaseDate: null, clearReleaseDate: true })
+  const product = store.upsertProducts.mock.calls[0][0][0]
+  expect(product.clearReleaseDate).toBe(true)
+  // Il fill write-once non deve riscrivere una data appena azzerata.
+  expect(store.fillProductReleaseDate).not.toHaveBeenCalled()
 })
 
 test('chiama fillProductDescription con la citazione dell’articolo', async () => {

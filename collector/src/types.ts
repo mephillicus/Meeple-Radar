@@ -46,6 +46,9 @@ export type Listing = {
   description: string | null
   imageUrl: string | null
   gameId: number | null
+  // Vera da una fonte a data autorevole (es. dvgiochi "DA DEFINIRE"): la data
+  // precedente su listing/product va azzerata, non conservata.
+  clearReleaseDate?: boolean
 }
 
 export type Source = {
