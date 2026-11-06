@@ -24,16 +24,35 @@ function normalizePermalink(link: string, base: string, postType: string, permal
   return match ? `${base}${permalinkBase}/${match[1]}/` : link
 }
 
-type PageFields = { descriptionRaw?: string; releaseDateRaw?: string }
+type PageFields = {
+  descriptionRaw?: string
+  releaseDateRaw?: string
+  priceRaw?: string
+  currencyRaw?: string
+  availabilityRaw?: string
+}
 
 export function parseGhenosProductPage(html: string): PageFields {
   const $ = cheerio.load(html)
-  const block = $('.ae-element-custom-field').first()
-  if (block.length === 0) return {}
-  const paragraphs = block.find('p').get()
-  if (paragraphs.length === 0) return {}
-  const first = $(paragraphs[0]).text().trim()
   const out: PageFields = {}
+  // Prezzo e disponibilità stanno nei meta OG che WooCommerce/Yoast scrive in
+  // <head>, fuori dal blocco descrizione: vanno letti prima dell'early return.
+  // Il preordine non porta il meta product:availability: senza di esso l'app
+  // marca comunque "In preordine" grazie alla data futura.
+  const meta = (property: string): string | undefined =>
+    $(`meta[property="${property}"]`).first().attr('content')?.trim() || undefined
+  const priceRaw = meta('product:price:amount')
+  if (priceRaw) out.priceRaw = priceRaw
+  const currencyRaw = meta('product:price:currency')
+  if (currencyRaw) out.currencyRaw = currencyRaw
+  const availabilityRaw = meta('product:availability')
+  if (availabilityRaw) out.availabilityRaw = availabilityRaw
+
+  const block = $('.ae-element-custom-field').first()
+  if (block.length === 0) return out
+  const paragraphs = block.find('p').get()
+  if (paragraphs.length === 0) return out
+  const first = $(paragraphs[0]).text().trim()
   if (first.startsWith('Day one')) {
     const iso = extractReleaseDate(first)
     if (iso) out.releaseDateRaw = iso
@@ -107,6 +126,9 @@ export async function fetchWordPressProducts(
         descriptionRaw: fields.descriptionRaw || p.content?.rendered,
         releaseDateRaw: fields.releaseDateRaw,
         publishedAtRaw: p.date,
+        priceRaw: fields.priceRaw,
+        currencyRaw: fields.currencyRaw,
+        availabilityRaw: fields.availabilityRaw,
       })
       if (parsed.success) out.push(parsed.data)
     }

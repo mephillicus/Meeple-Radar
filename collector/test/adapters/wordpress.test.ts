@@ -42,6 +42,48 @@ test('normalizes a querystring permalink when a permalink base is given', async 
 
 const GHENOS_PAGE = '<div class="ae-element-custom-field" download=""><p>Day one 27 novembre</p><p>Descrizione del gioco.</p></div>'
 
+// Prezzo e disponibilità vivono nei meta OG di WooCommerce/Yoast, fuori dal
+// blocco descrizione: senza quella lettura il collector non porta mai prezzo.
+const GHENOS_PAGE_INSTOCK = `
+  <meta property="product:price:amount" content="19.90"/>
+  <meta property="product:price:currency" content="EUR"/>
+  <meta property="product:availability" content="instock"/>
+  <div class="ae-element-custom-field" download=""><p>Descrizione del gioco.</p></div>`
+
+const GHENOS_PAGE_PREORDER = `
+  <meta property="product:price:amount" content="22.90"/>
+  <meta property="product:price:currency" content="EUR"/>
+  <div class="ae-element-custom-field" download=""><p>Day one 11 dicembre</p><p>Descrizione del gioco.</p></div>`
+
+test('prezzo e disponibilità dai meta OG della pagina (prodotto disponibile)', () => {
+  const parsed = parseGhenosProductPage(GHENOS_PAGE_INSTOCK)
+  expect(parsed).toMatchObject({ priceRaw: '19.90', currencyRaw: 'EUR', availabilityRaw: 'instock' })
+  expect(parsed.descriptionRaw).toBe('Descrizione del gioco.')
+})
+
+test('prezzo presente anche sul preordine, senza meta di disponibilità', () => {
+  const parsed = parseGhenosProductPage(GHENOS_PAGE_PREORDER)
+  expect(parsed).toMatchObject({ priceRaw: '22.90', currencyRaw: 'EUR' })
+  expect(parsed.availabilityRaw).toBeUndefined()
+  const year = new Date().getUTCFullYear()
+  expect(parsed.releaseDateRaw).toBe(`${year}-12-11`)
+})
+
+test('i meta OG valgono anche senza il blocco descrizione', () => {
+  const parsed = parseGhenosProductPage('<meta property="product:price:amount" content="29"/>')
+  expect(parsed).toMatchObject({ priceRaw: '29' })
+})
+
+test('il prezzo arriva in uscita dall adapter', async () => {
+  const api = [{ id: 9, link: 'https://www.ghenosgames.com/prodotto/y/', title: { rendered: 'Y' } }]
+  const http = async (u: string) =>
+    u.includes('/wp-json/')
+      ? { status: 200, json: async () => api, text: async () => '' }
+      : { status: 200, json: async () => ({}), text: async () => GHENOS_PAGE_INSTOCK }
+  const out = await fetchWordPressProducts('https://www.ghenosgames.com', http)
+  expect(out[0]).toMatchObject({ priceRaw: '19.90', currencyRaw: 'EUR', availabilityRaw: 'instock' })
+})
+
 test('prende la data dal Day one e non dal campo date del WP', () => {
   const parsed = parseGhenosProductPage(GHENOS_PAGE)
   // La riga Day one non porta l'anno, che quindi cade su quello corrente:
