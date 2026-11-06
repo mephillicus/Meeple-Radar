@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Favorite
@@ -33,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -190,6 +192,22 @@ fun ListingCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
+                        if (item.isExpansionGame()) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFFF9800),
+                                modifier = Modifier.size(11.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Add,
+                                        contentDescription = "Espansione",
+                                        tint = Color(0xFFE65100),
+                                        modifier = Modifier.size(9.dp),
+                                    )
+                                }
+                            }
+                        }
                         Icon(
                             imageVector = Icons.Filled.ShoppingCart,
                             contentDescription = null,
@@ -259,3 +277,8 @@ fun RatingBadge(rating: Double, modifier: Modifier = Modifier) {
         }
     }
 }
+
+private fun IncomingItem.isExpansionGame(): Boolean =
+    game?.kind?.contains("expansion", ignoreCase = true) == true ||
+    title.contains("espansione", ignoreCase = true) ||
+    title.contains("expansion", ignoreCase = true)
