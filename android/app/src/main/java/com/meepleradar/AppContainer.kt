@@ -1,11 +1,14 @@
 package com.meepleradar
 
 import android.content.Context
+import com.meepleradar.data.local.SharedPreferencesBggCollectionStore
 import com.meepleradar.data.local.SharedPreferencesFavoriteStore
 import com.meepleradar.data.local.SharedPreferencesBggSelectionStore
 import com.meepleradar.data.local.SharedPreferencesLocalCacheStore
 import com.meepleradar.data.remote.BoardGameGeekImageLookup
 import com.meepleradar.data.remote.BoardGameImageLookup
+import com.meepleradar.data.remote.BggCollectionApi
+import com.meepleradar.data.remote.BggXmlCollectionApi
 import com.meepleradar.data.remote.GeekGroupApi
 import com.meepleradar.data.remote.GeekGroupRestApi
 import com.meepleradar.data.remote.OkHttpTransport
@@ -28,6 +31,8 @@ class AppContainer(context: Context) {
         geekGroupApi = geekGroupApi,
     )
     val bggSelectionStore = SharedPreferencesBggSelectionStore(context.applicationContext)
+    val bggCollectionStore = SharedPreferencesBggCollectionStore(context.applicationContext, json)
+    val bggCollectionApi: BggCollectionApi = BggXmlCollectionApi(transport)
 
     private val api: SupabaseApi = SupabaseRestApi(
         baseUrl = BuildConfig.SUPABASE_URL,

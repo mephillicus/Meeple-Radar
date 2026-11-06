@@ -115,6 +115,11 @@ class BoardGameGeekImageLookup(
                 if (validationScore >= 8000) {
                     if (bggId !in candidateIds) candidateIds.add(0, bggId)
                 }
+                bggIdDetails.expansions.forEach { exp ->
+                    if (exp.bggId !in candidateIds) {
+                        candidateIds.add(exp.bggId)
+                    }
+                }
             }
         }
 
@@ -178,7 +183,7 @@ class BoardGameGeekImageLookup(
         val normTarget = normalize(targetTitle)
         if (normTarget.isEmpty()) return 0
 
-        val targetIsExpansion = targetTitle.contains("–") || targetTitle.contains("-") || targetTitle.contains("expansion") || targetTitle.contains("espansione") || targetTitle.contains("gilda") || targetTitle.contains("deserto") || targetTitle.contains("pantheon") || targetTitle.contains("agora")
+        val targetIsExpansion = targetTitle.contains("expansion", ignoreCase = true) || targetTitle.contains("espansione", ignoreCase = true) || targetTitle.contains("gilda", ignoreCase = true) || targetTitle.contains("deserto", ignoreCase = true) || targetTitle.contains("pantheon", ignoreCase = true) || targetTitle.contains("agora", ignoreCase = true)
         val candidateIsExpansion = details.expands.isNotEmpty()
 
         if (targetIsExpansion && !candidateIsExpansion) {
@@ -225,6 +230,14 @@ class BoardGameGeekImageLookup(
                     score -= missingWords.size * 800
                 }
             }
+
+            val targetHasDesert = targetTitle.contains("deserto", ignoreCase = true) || targetTitle.contains("desert", ignoreCase = true)
+            val candHasDesert = candName.contains("deserto", ignoreCase = true) || candName.contains("desert", ignoreCase = true)
+            if (targetHasDesert && candHasDesert) score += 5000
+
+            val targetHasGuild = targetTitle.contains("gilda", ignoreCase = true) || targetTitle.contains("guild", ignoreCase = true) || targetTitle.contains("spaziale", ignoreCase = true) || targetTitle.contains("spacing", ignoreCase = true)
+            val candHasGuild = candName.contains("gilda", ignoreCase = true) || candName.contains("guild", ignoreCase = true) || candName.contains("spaziale", ignoreCase = true) || candName.contains("spacing", ignoreCase = true)
+            if (targetHasGuild && candHasGuild) score += 5000
 
             maxScore = maxOf(maxScore, score)
         }
@@ -352,7 +365,15 @@ class BoardGameGeekImageLookup(
             .let { nodes -> (0 until nodes.length).mapNotNull { nodes.item(it) } }
             .filter { it.attributes?.getNamedItem("type")?.nodeValue in GAME_TYPES }
 
-        return items.mapNotNull { it.attributes?.getNamedItem("id")?.nodeValue?.toIntOrNull() }
+        val normQuery = normalize(cleanQuery)
+
+        return items.sortedByDescending { node ->
+            val name = (0 until node.childNodes.length).mapNotNull { node.childNodes.item(it) }
+                .firstOrNull { it.nodeName == "name" }
+                ?.attributes?.getNamedItem("value")?.nodeValue.orEmpty()
+            if (normalize(name) == normQuery) 1000 else 0
+        }
+            .mapNotNull { it.attributes?.getNamedItem("id")?.nodeValue?.toIntOrNull() }
             .filterNot { it == excludedId }
             .distinct()
     }
@@ -398,9 +419,8 @@ class BoardGameGeekImageLookup(
         val yearPublished = item["yearpublished"]?.jsonPrimitive?.intOrNull
         val minPlayers = item["minplayers"]?.jsonPrimitive?.intOrNull
         val maxPlayers = item["maxplayers"]?.jsonPrimitive?.intOrNull
-        val playingTime = item["playingtime"]?.jsonPrimitive?.intOrNull
-            ?: item["maxplaytime"]?.jsonPrimitive?.intOrNull
             ?: item["minplaytime"]?.jsonPrimitive?.intOrNull
+            ?: item["playingtime"]?.jsonPrimitive?.intOrNull
         val minAge = item["minage"]?.jsonPrimitive?.intOrNull
 
         val links = item["links"]?.jsonObject
@@ -436,11 +456,7 @@ class BoardGameGeekImageLookup(
         val designers = parseLinks("boardgamedesigner")
         val categories = parseLinks("boardgamecategory")
         val mechanics = parseLinks("boardgamemechanic")
-        val altNamesFromLinks = parseLinks("boardgamename")
-        val altNamesFromJsonArray = runCatching {
-            item["alternatenames"]?.jsonArray?.mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
-        }.getOrNull().orEmpty()
-        val alternateNames = (altNamesFromLinks + altNamesFromJsonArray).distinct()
+        val alternateNames = parseLinks("boardgamename")
 
         val expansions = parseBggLinks("boardgameexpansion")
         val expands = parseBggLinks("expandsboardgame")
@@ -452,7 +468,7 @@ class BoardGameGeekImageLookup(
             yearPublished = yearPublished,
             minPlayers = minPlayers,
             maxPlayers = maxPlayers,
-            playingTime = playingTime,
+            playingTime = null,
             minAge = minAge,
             designers = designers,
             categories = categories,
@@ -556,7 +572,7 @@ class BoardGameGeekImageLookup(
     private fun parseXml(xml: String) = DocumentBuilderFactory.newInstance().run {
         setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         setFeature("http://xml.org/sax/features/external-general-entities", false)
-        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        setFeature("http://xml.org/sax/features/external-general-entities", false)
         newDocumentBuilder().parse(InputSource(StringReader(xml)))
     }
 

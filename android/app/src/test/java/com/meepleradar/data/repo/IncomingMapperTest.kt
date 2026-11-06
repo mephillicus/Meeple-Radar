@@ -224,6 +224,27 @@ class IncomingMapperTest {
     }
 
     @Test
+    fun `listing con stesso productId confluiscono anche se solo uno e collegato a un game`() {
+        val linked = listing(id = 1, sourceId = "s1", title = "The Old King's Crown", gameId = 42)
+            .copy(productId = 10L)
+        val unlinked = listing(id = 2, sourceId = "s2", title = "The Old King's Crown")
+            .copy(productId = 10L)
+
+        val items = buildIncomingItems(
+            listings = listOf(linked, unlinked),
+            games = mapOf(42L to game(42, "The Old King's Crown")),
+            sources = sources("s1", "s2"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(10L to Product(10L, "The Old King's Crown", null, null)),
+        )
+
+        assertEquals(1, items.size)
+        assertEquals("product:10", items.single().key)
+        assertEquals(listOf("Store s1", "Store s2"), items.single().offers.map { it.sourceName })
+    }
+
+    @Test
     fun `mantiene il titolo del product per la ricerca BGG anche se il game collegato ha un nome diverso`() {
         val productTitle = "Dune: La Guerra per Arrakis – La Guerra del Deserto"
         val listing = listing(id = 1, title = productTitle, gameId = 5).copy(productId = 10L)
@@ -292,6 +313,15 @@ class IncomingMapperTest {
             today = today,
         )
         assertTrue(itemsIgnoredByProduct.isEmpty())
+
+        val linkedItemsIgnoredByProduct = buildIncomingItems(
+            listings = listOf(a.copy(gameId = 5), b.copy(gameId = 5)),
+            games = mapOf(5L to game(5, "Citadels")),
+            sources = sources("s1", "s2"),
+            ignoredKeys = setOf("product:10"),
+            today = today,
+        )
+        assertTrue(linkedItemsIgnoredByProduct.isEmpty())
 
         val itemsIgnoredByListing = buildIncomingItems(
             listings = listOf(a, b),

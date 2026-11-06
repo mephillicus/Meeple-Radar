@@ -39,7 +39,7 @@ class SupabaseRestApi(
 
     private val base = baseUrl.trimEnd('/')
 
-    private fun selectUrl(table: String) = "$base/rest/v1/$table?select=*"
+    private fun selectUrl(table: String) = "$base/rest/v1/$table?select=*&order=id.asc"
 
     private fun headers(extra: Map<String, String> = emptyMap()): Map<String, String> = buildMap {
         put("apikey", anonKey)
@@ -49,28 +49,23 @@ class SupabaseRestApi(
     }
 
     override suspend fun listings(): List<Listing> =
-        json.decodeFromString<List<ListingDto>>(transport.get(selectUrl("listing"), headers()))
+        fetchAll<ListingDto>(selectUrl("listing"))
             .map { it.toDomain() }
 
     override suspend fun games(): List<Game> =
-        json.decodeFromString<List<GameDto>>(transport.get(selectUrl("game"), headers()))
+        fetchAll<GameDto>(selectUrl("game"))
             .map { it.toDomain() }
 
     override suspend fun sources(): List<Source> =
-        json.decodeFromString<List<SourceDto>>(transport.get(selectUrl("source"), headers()))
+        fetchAll<SourceDto>(selectUrl("source"))
             .map { it.toDomain() }
 
     override suspend fun products(): List<Product> =
-        json.decodeFromString<List<ProductDto>>(transport.get(selectUrl("product"), headers()))
+        fetchAll<ProductDto>(selectUrl("product"))
             .map { it.toDomain() }
 
     override suspend fun userActions(): List<UserActionRow> =
-        json.decodeFromString<List<UserActionDto>>(
-            transport.get(
-                "$base/rest/v1/user_action?select=*&order=created_at.desc,id.desc",
-                headers(),
-            ),
-        )
+        fetchAll<UserActionDto>("$base/rest/v1/user_action?select=*&order=created_at.desc,id.desc")
             .map { it.toDomain() }
 
     override suspend fun insertAction(row: UserActionRow) {
@@ -79,6 +74,26 @@ class SupabaseRestApi(
             headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
             body = json.encodeToString(ActionInsertDto.from(row)),
         )
+    }
+
+    private suspend inline fun <reified T> fetchAll(url: String): List<T> {
+        val rows = mutableListOf<T>()
+        var offset = 0
+        while (true) {
+            val page = json.decodeFromString<List<T>>(
+                transport.get(
+                    url,
+                    headers(mapOf("Range-Unit" to "items", "Range" to "$offset-${offset + PAGE_SIZE - 1}")),
+                ),
+            )
+            rows += page
+            if (page.size < PAGE_SIZE) return rows
+            offset += PAGE_SIZE
+        }
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 1000
     }
 }
 

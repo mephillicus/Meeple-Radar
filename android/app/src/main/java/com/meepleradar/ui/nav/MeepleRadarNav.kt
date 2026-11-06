@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -55,11 +56,14 @@ import com.meepleradar.ui.news.NewsScreen
 import com.meepleradar.ui.news.NewsViewModel
 import com.meepleradar.ui.preorders.PreordersScreen
 import com.meepleradar.ui.preorders.PreordersViewModel
+import com.meepleradar.ui.mycollection.BggCollectionViewModel
+import com.meepleradar.ui.mycollection.MyCollectionScreen
 
 const val ROUTE_INCOMING = "incoming"
 const val ROUTE_NEWS = "news"
 const val ROUTE_PREORDERS = "preorders"
 const val ROUTE_FAVORITES = "favorites"
+const val ROUTE_MY_COLLECTION = "my_collection"
 const val ROUTE_DETAIL = "detail/{key}"
 
 private const val ARG_KEY = "key"
@@ -158,6 +162,12 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                             icon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
                             label = { Text("Preferiti") },
                         )
+                        NavigationBarItem(
+                            selected = currentRoute == ROUTE_MY_COLLECTION,
+                            onClick = { navController.switchTab(ROUTE_MY_COLLECTION) },
+                            icon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                            label = { Text("Miei") },
+                        )
                     }
 
                     Text(
@@ -228,6 +238,25 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
                     imageLookup = container.boardGameImageLookup,
+                )
+            }
+
+            composable(ROUTE_MY_COLLECTION) {
+                val vm: BggCollectionViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            BggCollectionViewModel(
+                                api = container.bggCollectionApi,
+                                store = container.bggCollectionStore,
+                                repository = container.repository,
+                            )
+                        }
+                    },
+                )
+                MyCollectionScreen(
+                    vm = vm,
+                    imageLookup = container.boardGameImageLookup,
+                    onOpen = { item -> navController.navigate(detailRoute(item.key)) },
                 )
             }
 

@@ -44,16 +44,45 @@ class SupabaseRestApiTest {
     private fun listingJson(vararg rows: String) = rows.joinToString(prefix = "[", postfix = "]", separator = ",")
 
     @Test
-    fun `listings costruisce url select star con header apikey e bearer`() = runTest {
+    fun `listings costruisce url ordinato e header apikey e bearer con range`() = runTest {
         val transport = FakeTransport()
         SupabaseRestApi(base, anon, transport, json).listings()
 
         val call = transport.calls.single()
         assertEquals("GET", call.method)
-        assertEquals("$base/rest/v1/listing?select=*", call.url)
+        assertEquals("$base/rest/v1/listing?select=*&order=id.asc", call.url)
         assertEquals(anon, call.headers["apikey"])
         assertEquals("Bearer $anon", call.headers["Authorization"])
         assertEquals("application/json", call.headers["Accept"])
+        assertEquals("items", call.headers["Range-Unit"])
+        assertEquals("0-999", call.headers["Range"])
+    }
+
+    @Test
+    fun `listings recupera anche le pagine oltre il limite Supabase`() = runTest {
+        val firstPage = (1..1000).joinToString(prefix = "[", postfix = "]") { id ->
+            """{"id":$id,"source_id":"s1","title":"Gioco $id","url":"https://u/$id"}"""
+        }
+        val transport = object : HttpTransport {
+            val ranges = mutableListOf<String>()
+
+            override suspend fun get(url: String, headers: Map<String, String>): String {
+                ranges += headers.getValue("Range")
+                return if (headers.getValue("Range") == "0-999") {
+                    firstPage
+                } else {
+                    """[{"id":1001,"source_id":"s1","title":"DVgames","url":"https://u/1001"}]"""
+                }
+            }
+
+            override suspend fun post(url: String, headers: Map<String, String>, body: String): String = ""
+        }
+
+        val listings = SupabaseRestApi(base, anon, transport, json).listings()
+
+        assertEquals(1001, listings.size)
+        assertEquals("DVgames", listings.last().title)
+        assertEquals(listOf("0-999", "1000-1999"), transport.ranges)
     }
 
     @Test
@@ -62,7 +91,7 @@ class SupabaseRestApiTest {
             """{"id":1,"source_id":"s1","title":"T","url":"https://u","price":null,"currency":null,""" +
                 """"availability":null,"release_date":null,"image_url":null,"game_id":null,"match_confidence":null}""",
         )
-        val transport = FakeTransport(mapOf("$base/rest/v1/listing?select=*" to body))
+        val transport = FakeTransport(mapOf("$base/rest/v1/listing?select=*&order=id.asc" to body))
 
         val listing = SupabaseRestApi(base, anon, transport, json).listings().single()
 
@@ -82,7 +111,7 @@ class SupabaseRestApiTest {
             """{"id":2,"source_id":"s1","title":"B","url":"https://b","price":"12.50","currency":"EUR",""" +
                 """"availability":null,"release_date":null,"image_url":null,"game_id":null,"match_confidence":null}""",
         )
-        val transport = FakeTransport(mapOf("$base/rest/v1/listing?select=*" to body))
+        val transport = FakeTransport(mapOf("$base/rest/v1/listing?select=*&order=id.asc" to body))
 
         val listings = SupabaseRestApi(base, anon, transport, json).listings()
 
@@ -98,12 +127,12 @@ class SupabaseRestApiTest {
         val body = listingJson(
             """{"id":10,"title":"Citadels","url":"https://www.asmodee.it/citadels","price":"39.90","currency":"EUR","publisher":"Asmodee","image_url":"https://img","release_date":"2026-12-01"}""",
         )
-        val transport = FakeTransport(mapOf("$base/rest/v1/product?select=*" to body))
+        val transport = FakeTransport(mapOf("$base/rest/v1/product?select=*&order=id.asc" to body))
         val products = SupabaseRestApi(base, anon, transport, json).products()
 
         val call = transport.calls.single()
         assertEquals("GET", call.method)
-        assertEquals("$base/rest/v1/product?select=*", call.url)
+        assertEquals("$base/rest/v1/product?select=*&order=id.asc", call.url)
         assertEquals(1, products.size)
         assertEquals(10L, products[0].id)
         assertEquals("Citadels", products[0].title)
@@ -159,6 +188,7 @@ class SupabaseRestApiTest {
         assertEquals(UserActionRow(5, null, Action.FAVORITE), actions[0])
         assertEquals(UserActionRow(null, 9, Action.IGNORED), actions[1])
         assertEquals(UserActionRow(5, null, Action.UNFAVORITED), actions[2])
+        assertEquals("0-999", transport.calls.single().headers["Range"])
     }
 
     @Test

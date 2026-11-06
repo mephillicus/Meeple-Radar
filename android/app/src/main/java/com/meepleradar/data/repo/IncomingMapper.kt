@@ -11,8 +11,8 @@ import com.meepleradar.data.model.Source
 import java.time.LocalDate
 
 fun keyOf(listing: Listing): String = when {
-    listing.gameId != null -> "game:${listing.gameId}"
     listing.productId != null -> "product:${listing.productId}"
+    listing.gameId != null -> "game:${listing.gameId}"
     else -> "listing:${listing.id}"
 }
 
@@ -36,7 +36,11 @@ fun buildIncomingItems(
         .filter { sourceIds == null || it.sourceId in sourceIds }
         .groupBy { keyOf(it) }
         .filter { (key, groupListings) ->
-            key !in ignoredKeys && groupListings.none { "listing:${it.id}" in ignoredKeys }
+            key !in ignoredKeys && groupListings.none { listing ->
+                "listing:${listing.id}" in ignoredKeys ||
+                    listing.gameId?.let { "game:$it" in ignoredKeys } == true ||
+                    listing.productId?.let { "product:$it" in ignoredKeys } == true
+            }
         }
         .map { (key, groupListings) ->
             val game = groupListings.firstNotNullOfOrNull { listing ->
