@@ -497,8 +497,11 @@ private fun ExpansionPill(
     onClick: () -> Unit,
     onOpenExpansion: (IncomingItem) -> Unit,
 ) {
+    val displayIndicators = indicators.distinctBy { it.type }
     Surface(
-        modifier = modifier.clickable(onClick = onClick),
+        modifier = modifier
+            .height(34.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(
@@ -507,20 +510,23 @@ private fun ExpansionPill(
         ),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = if (count == null) label else "$label ($count)",
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelLarge,
                 color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-            indicators.distinctBy { it.item.game?.bggId }.forEach { indicator ->
-                ExpansionAvailabilityDot(indicator, onClick = { onOpenExpansion(indicator.item) })
+            if (displayIndicators.isNotEmpty()) {
+                Spacer(Modifier.width(2.dp))
+                displayIndicators.forEach { indicator ->
+                    ExpansionAvailabilityDot(indicator, onClick = { onOpenExpansion(indicator.item) })
+                }
             }
         }
     }
