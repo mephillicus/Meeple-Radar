@@ -91,53 +91,60 @@ class SupabaseRestApi(
         title: String,
         imageUrl: String?,
     ) {
-        val targetGameId = if (currentGameId != null && currentGameId > 0) {
-            val gameObj = buildMap {
-                put("id", JsonPrimitive(currentGameId))
-                put("name", JsonPrimitive(title))
-                put("bgg_id", JsonPrimitive(bggId))
-                imageUrl?.let { put("image_url", JsonPrimitive(it)) }
-            }
-            transport.post(
-                url = "$base/rest/v1/game",
-                headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
-                body = json.encodeToString(gameObj),
-            )
-            currentGameId
-        } else {
-            val existing = json.decodeFromString<List<GameDto>>(
-                transport.get("$base/rest/v1/game?bgg_id=eq.$bggId&select=*", headers()),
-            )
-            if (existing.isNotEmpty()) {
-                existing.first().id
-            } else {
-                val newGameObj = buildMap {
+        try {
+            val targetGameId = if (currentGameId != null && currentGameId > 0) {
+                val gameObj = buildMap {
+                    put("id", JsonPrimitive(currentGameId))
                     put("name", JsonPrimitive(title))
-                    put("kind", JsonPrimitive("boardgame"))
                     put("bgg_id", JsonPrimitive(bggId))
                     imageUrl?.let { put("image_url", JsonPrimitive(it)) }
                 }
-                val created = json.decodeFromString<List<GameDto>>(
-                    transport.post(
-                        url = "$base/rest/v1/game",
-                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                        body = json.encodeToString(newGameObj),
-                    ),
+                transport.post(
+                    url = "$base/rest/v1/game",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
+                    body = json.encodeToString(gameObj),
                 )
-                created.first().id
+                currentGameId
+            } else {
+                val existing = json.decodeFromString<List<GameDto>>(
+                    transport.get("$base/rest/v1/game?bgg_id=eq.$bggId&select=*", headers()),
+                )
+                if (existing.isNotEmpty()) {
+                    existing.first().id
+                } else {
+                    val newGameObj = buildMap {
+                        put("name", JsonPrimitive(title))
+                        put("kind", JsonPrimitive("boardgame"))
+                        put("bgg_id", JsonPrimitive(bggId))
+                        imageUrl?.let { put("image_url", JsonPrimitive(it)) }
+                    }
+                    val created = json.decodeFromString<List<GameDto>>(
+                        transport.post(
+                            url = "$base/rest/v1/game",
+                            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                            body = json.encodeToString(newGameObj),
+                        ),
+                    )
+                    created.first().id
+                }
             }
-        }
 
-        if (listingId > 0) {
-            val listingObj = buildMap {
-                put("id", JsonPrimitive(listingId))
-                put("game_id", JsonPrimitive(targetGameId))
+            if (listingId > 0) {
+                val listingObj = buildMap {
+                    put("id", JsonPrimitive(listingId))
+                    put("game_id", JsonPrimitive(targetGameId))
+                }
+                transport.post(
+                    url = "$base/rest/v1/listing",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
+                    body = json.encodeToString(listingObj),
+                )
             }
-            transport.post(
-                url = "$base/rest/v1/listing",
-                headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
-                body = json.encodeToString(listingObj),
-            )
+        } catch (e: Exception) {
+            if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
+                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game' e 'listing'.")
+            }
+            throw e
         }
     }
 
