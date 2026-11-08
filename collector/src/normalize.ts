@@ -2,7 +2,15 @@ import type { Listing, RawProduct } from './types.js'
 import { decodeHtml, htmlToText } from './text.js'
 
 export function normalizeTitle(title: string): string {
-  return title.toLowerCase().replace(/[^\w\s]/gu, '').replace(/\s+/g, ' ').trim()
+  // Il suffisso edizione locale "(ITA)" non è parte del nome: senza toglierlo
+  // lo stesso gioco nasce due volte (es. "Black Flag!" vs "Black Flag! (ITA)").
+  // Dopo la rimozione della punteggiatura il suffisso è sempre il token finale.
+  return title
+    .toLowerCase()
+    .replace(/[^\w\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\s+ita$/, '')
 }
 
 export function toPrice(priceRaw?: string, minorUnit?: number): number | null {

@@ -1,6 +1,16 @@
 import { expect, test } from 'vitest'
-import { toPrice, extractReleaseDate, normalizeListing } from '../src/normalize.js'
+import { toPrice, extractReleaseDate, normalizeListing, normalizeTitle } from '../src/normalize.js'
 import { htmlToText } from '../src/text.js'
+
+test('normalizeTitle assimila il suffisso edizione ITA: stesso gioco, non due', () => {
+  expect(normalizeTitle('Black Flag! (ITA)')).toBe('black flag')
+  expect(normalizeTitle('BLACK FLAG')).toBe('black flag')
+  expect(normalizeTitle('Bunny 100 (ITA)')).toBe('bunny 100')
+  // Titoli che contengono ita in altro modo restano se stessi.
+  expect(normalizeTitle('Akita')).toBe('akita')
+  expect(normalizeTitle('Dita')).toBe('dita')
+  expect(normalizeTitle('Ita')).toBe('ita')
+})
 
 test('converts minor units to a decimal price', () => {
   expect(toPrice('1299', 2)).toBe(12.99)
