@@ -29,6 +29,7 @@ export interface ListingStore {
   fillProductReleaseDate(productId: number, iso: string): Promise<void>
   fillProductPublisher(productId: number, publisher: string): Promise<void>
   findUnlinkedProducts(): Promise<{ id: number; title: string; normalizedTitle: string; releaseDate: string | null }[]>
+    findProductById(productId: number): Promise<{ id: number; title: string; normalizedTitle: string; releaseDate: string | null; gameId: number | null } | null>
   findGameByBggId(bggId: number): Promise<{ id: number } | null>
   createGame(game: { name: string; kind: 'base' | 'expansion'; bggId: number; bggRating?: number | null; bggRank?: number | null }): Promise<number>
   setProductGame(productId: number, gameId: number): Promise<boolean>
@@ -248,6 +249,23 @@ export function createSupabaseStore(
         from += page.length
       }
       return rows
+    },
+
+    findProductById: async (productId: number) => {
+      const { data, error } = await client
+        .from('product')
+        .select('id, title, normalized_title, release_date, game_id')
+        .eq('id', productId)
+        .maybeSingle()
+      if (error) throw new Error(`findProductById(${productId}): ${error.message}`)
+      if (data === null || data === undefined) return null
+      return {
+        id: Number(data.id),
+        title: String(data.title ?? ''),
+        normalizedTitle: String(data.normalized_title ?? ''),
+        releaseDate: data.release_date === null || data.release_date === undefined ? null : String(data.release_date),
+        gameId: data.game_id === null || data.game_id === undefined ? null : Number(data.game_id),
+      }
     },
 
     findGameByBggId,

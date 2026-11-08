@@ -16,7 +16,7 @@ export type RanksIndex = {
   byId: Map<number, RankRow>
 }
 
-function splitFields(line: string): string[] {
+export function splitDelimited(line: string, sep: string): string[] {
   const fields: string[] = []
   let cur = ''
   let inQuotes = false
@@ -35,7 +35,7 @@ function splitFields(line: string): string[] {
       }
     } else if (ch === '"') {
       inQuotes = true
-    } else if (ch === ',') {
+    } else if (ch === sep) {
       fields.push(cur)
       cur = ''
     } else {
@@ -44,6 +44,10 @@ function splitFields(line: string): string[] {
   }
   fields.push(cur)
   return fields
+}
+
+function splitFields(line: string): string[] {
+  return splitDelimited(line, ',')
 }
 
 function numOrNull(raw: string | undefined): number | null {

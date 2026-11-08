@@ -456,6 +456,26 @@ test('findUnlinkedProducts seleziona solo product senza game_id, in ordine di id
   expect(rows).toEqual([{ id: 3, title: 'X', normalizedTitle: 'x', releaseDate: '2026-05-01' }])
 })
 
+test('findProductById legge un product per id o restituisce null', async () => {
+  const maybeSingle = vi.fn().mockResolvedValue({
+    data: { id: 3211, title: 'Villa', normalized_title: 'villa', release_date: null },
+    error: null,
+  })
+  const eq = vi.fn(() => ({ maybeSingle }))
+  const select = vi.fn(() => ({ eq }))
+  const from = vi.fn(() => ({ select }))
+  const store = createSupabaseStore({ from } as any)
+  const product = await store.findProductById(3211)
+  expect(from).toHaveBeenCalledWith('product')
+  expect(select).toHaveBeenCalledWith('id, title, normalized_title, release_date')
+  expect(eq).toHaveBeenCalledWith('id', 3211)
+  expect(product).toEqual({ id: 3211, title: 'Villa', normalizedTitle: 'villa', releaseDate: null })
+  const none = vi.fn().mockResolvedValue({ data: null, error: null })
+  const eqNone = vi.fn(() => ({ maybeSingle: none }))
+  const fromNone = vi.fn(() => ({ select: vi.fn(() => ({ eq: eqNone })) }))
+  expect(await createSupabaseStore({ from: fromNone } as any).findProductById(999)).toBeNull()
+})
+
 test('createGame: payload con chiavi snake_case e campi nullish omessi', async () => {
   const insert = vi.fn().mockResolvedValue({ data: [{ id: 11 }], error: null })
   const from = vi.fn(() => ({ insert }))
