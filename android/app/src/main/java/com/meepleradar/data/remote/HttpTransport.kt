@@ -13,6 +13,8 @@ interface HttpTransport {
     suspend fun get(url: String, headers: Map<String, String>): String
 
     suspend fun post(url: String, headers: Map<String, String>, body: String): String
+
+    suspend fun patch(url: String, headers: Map<String, String>, body: String): String = post(url, headers, body)
 }
 
 internal fun bodyOrThrow(response: Response): String = response.use { res ->
@@ -28,6 +30,9 @@ class OkHttpTransport(private val client: OkHttpClient) : HttpTransport {
     override suspend fun post(url: String, headers: Map<String, String>, body: String): String =
         execute("POST", url, headers, body)
 
+    override suspend fun patch(url: String, headers: Map<String, String>, body: String): String =
+        execute("PATCH", url, headers, body)
+
     private suspend fun execute(
         method: String,
         url: String,
@@ -36,8 +41,9 @@ class OkHttpTransport(private val client: OkHttpClient) : HttpTransport {
     ): String = withContext(Dispatchers.IO) {
         val builder = Request.Builder().url(url)
         headers.forEach { (name, value) -> builder.addHeader(name, value) }
-        if (method == "POST") {
-            builder.post((body ?: "").toRequestBody(JSON_MEDIA_TYPE))
+        when (method) {
+            "POST" -> builder.post((body ?: "").toRequestBody(JSON_MEDIA_TYPE))
+            "PATCH" -> builder.patch((body ?: "").toRequestBody(JSON_MEDIA_TYPE))
         }
         bodyOrThrow(client.newCall(builder.build()).execute())
     }

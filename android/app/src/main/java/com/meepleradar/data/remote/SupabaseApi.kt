@@ -94,14 +94,13 @@ class SupabaseRestApi(
         try {
             val targetGameId = if (currentGameId != null && currentGameId > 0) {
                 val gameObj = buildMap {
-                    put("id", JsonPrimitive(currentGameId))
                     put("name", JsonPrimitive(title))
                     put("bgg_id", JsonPrimitive(bggId))
                     imageUrl?.let { put("image_url", JsonPrimitive(it)) }
                 }
-                transport.post(
-                    url = "$base/rest/v1/game",
-                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
+                transport.patch(
+                    url = "$base/rest/v1/game?id=eq.$currentGameId",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
                     body = json.encodeToString(gameObj),
                 )
                 currentGameId
@@ -130,13 +129,10 @@ class SupabaseRestApi(
             }
 
             if (listingId > 0) {
-                val listingObj = buildMap {
-                    put("id", JsonPrimitive(listingId))
-                    put("game_id", JsonPrimitive(targetGameId))
-                }
-                transport.post(
-                    url = "$base/rest/v1/listing",
-                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
+                val listingObj = mapOf("game_id" to JsonPrimitive(targetGameId))
+                transport.patch(
+                    url = "$base/rest/v1/listing?id=eq.$listingId",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
                     body = json.encodeToString(listingObj),
                 )
             }
