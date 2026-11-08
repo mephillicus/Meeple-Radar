@@ -262,6 +262,28 @@ class IncomingMapperTest {
     }
 
     @Test
+    fun `preferisce la descrizione del product a quella del game`() {
+        val product = Product(
+            id = 10,
+            title = "Dune",
+            imageUrl = null,
+            releaseDate = null,
+            description = "Descrizione del prodotto",
+        )
+        val listing = listing(id = 1, gameId = 5).copy(productId = product.id)
+        val items = buildIncomingItems(
+            listings = listOf(listing),
+            games = mapOf(5L to game(5, "Dune").copy(description = "Descrizione del game")),
+            sources = sources("s1"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(product.id to product),
+        )
+
+        assertEquals("Descrizione del prodotto", items.single().customDescription)
+    }
+
+    @Test
     fun `mostra il prezzo product solo se il link punta al publisher dichiarato`() {
         val product = Product(
             id = 10,

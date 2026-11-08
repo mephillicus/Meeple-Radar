@@ -55,10 +55,11 @@ interface ListingRepository {
     suspend fun linkListingToBgg(
         listingId: Long,
         currentGameId: Long?,
-        bggId: Int,
-        title: String,
-        imageUrl: String? = null,
-    ) = Unit
+        details: com.meepleradar.data.remote.BoardGameDetails,
+        fallbackTitle: String,
+    ): Long? = currentGameId
+
+    suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) = Unit
 }
 
 class DefaultListingRepository(
@@ -201,17 +202,46 @@ class DefaultListingRepository(
     override suspend fun linkListingToBgg(
         listingId: Long,
         currentGameId: Long?,
-        bggId: Int,
-        title: String,
-        imageUrl: String?,
-    ) {
-        api.linkListingToBgg(
+        details: com.meepleradar.data.remote.BoardGameDetails,
+        fallbackTitle: String,
+    ): Long? {
+        val gameId = api.linkListingToBgg(
             listingId = listingId,
             currentGameId = currentGameId,
-            bggId = bggId,
-            title = title,
-            imageUrl = imageUrl,
+            details = details,
+            fallbackTitle = fallbackTitle,
         )
+        if (gameId != null) {
+            val title = details.primaryName ?: details.englishName ?: fallbackTitle
+            val kind = if (details.expands.isNotEmpty()) "expansion" else "base"
+            val existing = localCacheStore?.load()?.games?.firstOrNull { it.id == gameId }
+            val linkedGame = Game(
+                id = gameId,
+                name = title,
+                kind = kind,
+                bggId = details.bggId,
+                bggRating = details.bggRating,
+                bggRank = details.bggRank,
+                imageUrl = details.imageUrl,
+                description = existing?.description,
+            )
+            localCacheStore?.upsertGame(linkedGame, listingId.takeIf { it > 0 })
+        }
+        return gameId
+    }
+
+    override suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) {
+        api.updateGameBggStats(bggId, bggRating, bggRank)
+        localCacheStore?.load()?.let { cached ->
+            cached.games.firstOrNull { it.bggId == bggId }?.let { game ->
+                localCacheStore.upsertGame(
+                    game.copy(
+                        bggRating = bggRating ?: game.bggRating,
+                        bggRank = bggRank ?: game.bggRank,
+                    ),
+                )
+            }
+        }
     }
 
     private suspend fun buildItems(

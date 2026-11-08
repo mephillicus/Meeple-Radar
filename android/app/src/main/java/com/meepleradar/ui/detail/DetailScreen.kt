@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -154,6 +155,7 @@ fun DetailScreen(
                     onRemoveManualBggSelection = vm::removeManualBggSelection,
                     onSearchBggCandidates = vm::searchBggCandidates,
                     onSaveToDb = vm::saveToDatabase,
+                    onUpdateMissingBggStats = vm::updateMissingBggStats,
                 )
             }
         }
@@ -168,6 +170,7 @@ private fun DetailContent(
     onRemoveManualBggSelection: () -> Unit,
     onSearchBggCandidates: (String) -> Unit,
     onSaveToDb: () -> Unit,
+    onUpdateMissingBggStats: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val bestOffers = remember(content.offers) { bestComparableEuroOffers(content.offers) }
@@ -176,6 +179,16 @@ private fun DetailContent(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        content.actionError?.let { error ->
+            item {
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
         item {
             DetailHeader(content, imageLookup)
         }
@@ -209,6 +222,44 @@ private fun DetailContent(
                 isBestOffer = offer in bestOffers,
                 onOpen = { runCatching { uriHandler.openUri(offer.url) } },
             )
+        }
+
+        val game = content.item.game
+        val bggId = game?.bggId ?: content.boardGameDetails?.bggId
+        val hasSavedGame = game?.bggId != null || content.saveToDbSuccess
+        val hasMissingStats = if (game != null) {
+            game.bggRating == null || game.bggRank == null
+        } else {
+            content.boardGameDetails?.let { it.bggRating == null || it.bggRank == null } ?: false
+        }
+        if (bggId != null && hasSavedGame && hasMissingStats) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onUpdateMissingBggStats,
+                        enabled = !content.isUpdatingBggStats,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (content.isUpdatingBggStats) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Aggiornamento dati BGG…")
+                        } else {
+                            Text("Aggiorna voto e rank BGG")
+                        }
+                    }
+                    content.updateBggStatsError?.let { error ->
+                        Text(
+                            text = error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
         }
 
         if (content.isPendingDbSave || content.saveToDbSuccess || content.saveToDbError != null) {
@@ -332,6 +383,7 @@ private fun BoardGameSpecs(
     val details = content.boardGameDetails
     val game = content.item.game
     var showFullDescription by remember { mutableStateOf(false) }
+    var isEditingBgg by remember { mutableStateOf(false) }
 
     Card(
         shape = RoundedCornerShape(20.dp),
@@ -348,12 +400,25 @@ private fun BoardGameSpecs(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text("Scheda BoardGameGeek", style = MaterialTheme.typography.titleLarge)
-                (details?.bggId ?: game?.bggId)?.let { id ->
-                    TextButton(
-                        onClick = { uriHandler.openUri("https://boardgamegeek.com/boardgame/$id") },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(
+                        onClick = { isEditingBgg = !isEditingBgg },
+                        modifier = Modifier.size(32.dp),
                     ) {
-                        Text("Apri su BGG ↗", style = MaterialTheme.typography.labelSmall)
+                        Icon(
+                            imageVector = Icons.Filled.Edit,
+                            contentDescription = if (isEditingBgg) "Chiudi modifica BGG" else "Modifica associazione BGG",
+                            tint = if (isEditingBgg) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                    (details?.bggId ?: game?.bggId)?.let { id ->
+                        TextButton(
+                            onClick = { uriHandler.openUri("https://boardgamegeek.com/boardgame/$id") },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text("Apri ↗", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
@@ -387,6 +452,21 @@ private fun BoardGameSpecs(
                 )
                 if (game?.bggRating != null) SpecQuickGrid(game = game, details = null)
             } else {
+                if (isEditingBgg) {
+                    BggCandidateSelector(
+                        candidates = content.bggCandidates,
+                        isLoading = content.isLoadingBggCandidates,
+                        error = content.detailsError,
+                        isSearching = content.isSearchingBgg,
+                        searchError = content.bggSearchError,
+                        onSelect = { candidate ->
+                            onSelectBggCandidate(candidate)
+                            isEditingBgg = false
+                        },
+                        onSearch = onSearchBggCandidates,
+                    )
+                }
+
                 SpecQuickGrid(game = game, details = details)
 
                 GameSpecificationRows(details, content.item.title)

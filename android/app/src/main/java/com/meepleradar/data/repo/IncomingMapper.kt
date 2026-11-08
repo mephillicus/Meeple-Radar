@@ -64,8 +64,8 @@ fun buildIncomingItems(
                     releaseDate = listing.releaseDate ?: releaseDate,
                 )
             } + listOfNotNull(product?.publisherOffer(releaseDate))
-            val customDescription = game?.description?.takeIf { it.isNotBlank() }
-                ?: product?.description?.takeIf { it.isNotBlank() }
+            val customDescription = product?.description?.takeIf { it.isNotBlank() }
+                ?: game?.description?.takeIf { it.isNotBlank() }
                 ?: groupListings.firstNotNullOfOrNull { it.description?.takeIf(String::isNotBlank) }
             val bggSelectionKeys = buildList {
                 add(key)

@@ -32,10 +32,11 @@ interface SupabaseApi {
     suspend fun linkListingToBgg(
         listingId: Long,
         currentGameId: Long?,
-        bggId: Int,
-        title: String,
-        imageUrl: String? = null,
-    ) = Unit
+        details: BoardGameDetails,
+        fallbackTitle: String,
+    ): Long? = currentGameId
+
+    suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) = Unit
 }
 
 class SupabaseRestApi(
@@ -84,20 +85,40 @@ class SupabaseRestApi(
         )
     }
 
+    override suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) {
+        require(bggId > 0) { "ID BGG non valido: $bggId" }
+        val updates = buildMap {
+            bggRating?.let { put("bgg_rating", JsonPrimitive(it)) }
+            bggRank?.let { put("bgg_rank", JsonPrimitive(it)) }
+        }
+        require(updates.isNotEmpty()) { "BoardGameGeek non ha restituito voto o rank." }
+        transport.patch(
+            url = "$base/rest/v1/game?bgg_id=eq.$bggId",
+            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+            body = json.encodeToString(updates),
+        )
+    }
+
     override suspend fun linkListingToBgg(
         listingId: Long,
         currentGameId: Long?,
-        bggId: Int,
-        title: String,
-        imageUrl: String?,
-    ) {
+        details: BoardGameDetails,
+        fallbackTitle: String,
+    ): Long {
         try {
+            val title = details.primaryName ?: details.englishName ?: fallbackTitle
+            val isExpansion = details.expands.isNotEmpty()
+            val kindValue = if (isExpansion) "expansion" else "base"
+            val gameObj = buildMap {
+                put("name", JsonPrimitive(title))
+                put("kind", JsonPrimitive(kindValue))
+                put("bgg_id", JsonPrimitive(details.bggId))
+                put("bgg_rating", details.bggRating?.let(::JsonPrimitive) ?: JsonNull)
+                put("bgg_rank", details.bggRank?.let(::JsonPrimitive) ?: JsonNull)
+                put("image_url", details.imageUrl?.let(::JsonPrimitive) ?: JsonNull)
+            }
+
             val targetGameId = if (currentGameId != null && currentGameId > 0) {
-                val gameObj = buildMap {
-                    put("name", JsonPrimitive(title))
-                    put("bgg_id", JsonPrimitive(bggId))
-                    imageUrl?.let { put("image_url", JsonPrimitive(it)) }
-                }
                 transport.patch(
                     url = "$base/rest/v1/game?id=eq.$currentGameId",
                     headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
@@ -106,22 +127,22 @@ class SupabaseRestApi(
                 currentGameId
             } else {
                 val existing = json.decodeFromString<List<GameDto>>(
-                    transport.get("$base/rest/v1/game?bgg_id=eq.$bggId&select=*", headers()),
+                    transport.get("$base/rest/v1/game?bgg_id=eq.${details.bggId}&select=*", headers()),
                 )
                 if (existing.isNotEmpty()) {
-                    existing.first().id
+                    val existingId = existing.first().id
+                    transport.patch(
+                        url = "$base/rest/v1/game?id=eq.$existingId",
+                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+                        body = json.encodeToString(gameObj),
+                    )
+                    existingId
                 } else {
-                    val newGameObj = buildMap {
-                        put("name", JsonPrimitive(title))
-                        put("kind", JsonPrimitive("boardgame"))
-                        put("bgg_id", JsonPrimitive(bggId))
-                        imageUrl?.let { put("image_url", JsonPrimitive(it)) }
-                    }
                     val created = json.decodeFromString<List<GameDto>>(
                         transport.post(
                             url = "$base/rest/v1/game",
                             headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                            body = json.encodeToString(newGameObj),
+                            body = json.encodeToString(gameObj),
                         ),
                     )
                     created.first().id
@@ -136,6 +157,7 @@ class SupabaseRestApi(
                     body = json.encodeToString(listingObj),
                 )
             }
+            return targetGameId
         } catch (e: Exception) {
             if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
                 throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game' e 'listing'.")

@@ -4,16 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meepleradar.data.local.BggSelectionStore
 import com.meepleradar.data.model.Action
+import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Offer
-import com.meepleradar.data.remote.BggSeries
 import com.meepleradar.data.remote.BoardGameDetails
 import com.meepleradar.data.remote.BoardGameImageLookup
+import com.meepleradar.data.remote.BggSeries
 import com.meepleradar.data.repo.ListingRepository
-import java.text.Normalizer
+import com.meepleradar.ui.incoming.orderedOffersForDisplay
 import java.time.LocalDate
 import java.util.Locale
-import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +31,7 @@ sealed interface DetailUiState {
         val item: IncomingItem,
         val offers: List<Offer>,
         val isFavorite: Boolean = false,
+        val actionError: String? = null,
         val boardGameDetails: BoardGameDetails? = null,
         val isLoadingDetails: Boolean = false,
         val detailsError: String? = null,
@@ -45,6 +47,9 @@ sealed interface DetailUiState {
         val isSavingToDb: Boolean = false,
         val saveToDbSuccess: Boolean = false,
         val saveToDbError: String? = null,
+        val isUpdatingBggStats: Boolean = false,
+        val updateBggStatsSuccess: Boolean = false,
+        val updateBggStatsError: String? = null,
     ) : DetailUiState
 }
 
@@ -76,24 +81,25 @@ class DetailViewModel(
                 val isFavorite = repo.favorites(today).any { it.key == key }
                 _state.value = DetailUiState.Content(
                     item = item,
-                    offers = orderOffers(item.offers),
+                    offers = orderedOffersForDisplay(item.offers),
                     isFavorite = isFavorite,
                     isLoadingDetails = imageLookup != null,
                 )
                 val lookup = imageLookup ?: return@launch
                 var details: BoardGameDetails? = null
                 try {
-                    val customDesc = item.customDescription ?: item.game?.description
+                    val customDesc = item.customDescription?.takeIf(String::isNotBlank)
+                        ?: item.game?.description?.takeIf(String::isNotBlank)
                     val title = item.lookupTitle ?: item.title
                     val selectionKey = selectionKeyFor(title)
                     val bggSelectionKeys = (item.bggSelectionKeys + key).distinct()
                     val savedBggId = bggSelectionKeys.firstNotNullOfOrNull(bggSelectionStore::getBggId)
                         ?: bggSelectionStore.getBggId(selectionKey)
-                    details = if (savedBggId != null) {
-                        lookup.findDetailsById(savedBggId)
-                    } else {
-                        lookup.findDetails(title, item.game?.bggId)
-                    }
+                    val bggId = savedBggId ?: item.game?.bggId
+                    details = bggId
+                        ?.takeIf { it > 0 }
+                        ?.let { lookup.findDetailsById(it) }
+                        ?: lookup.findDetails(title, null)
                     if (!customDesc.isNullOrBlank() && details != null) {
                         details = details.copy(description = customDesc)
                     }
@@ -101,12 +107,12 @@ class DetailViewModel(
                         it.copy(
                             boardGameDetails = details,
                             isLoadingDetails = false,
-                            isLoadingBggCandidates = details == null && savedBggId == null,
+                            isLoadingBggCandidates = details == null,
                             manualBggId = savedBggId,
                         )
                     }
-                    if (details == null && savedBggId == null) {
-                        val candidates = lookup.findCandidates(title, item.game?.bggId)
+                    if (details == null) {
+                        val candidates = lookup.findCandidates(title, bggId)
                         updateContent {
                             it.copy(bggCandidates = candidates, isLoadingBggCandidates = false)
                         }
@@ -123,12 +129,12 @@ class DetailViewModel(
                     }
                 }
 
-                val validBggId = details?.bggId?.takeIf { it > 0 }
-                if (validBggId != null) {
+                val bggIdToLoadSeries = details?.bggId ?: item.game?.bggId
+                if (bggIdToLoadSeries != null && bggIdToLoadSeries > 0) {
                     updateContent { it.copy(isLoadingSeries = true) }
                     try {
-                        val seriesData = lookup.findSeries(validBggId)
-                        updateContent { it.copy(series = seriesData, isLoadingSeries = false) }
+                        val series = lookup.findSeries(bggIdToLoadSeries)
+                        updateContent { it.copy(series = series, isLoadingSeries = false) }
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -154,7 +160,8 @@ class DetailViewModel(
         val selectionKeys = (content.item.bggSelectionKeys + key).distinct()
         selectionKeys.forEach { bggSelectionStore.saveBggId(it, candidate.bggId) }
         bggSelectionStore.saveBggId(selectionKeyFor(title), candidate.bggId)
-        val customDesc = content.item.customDescription ?: content.item.game?.description
+        val customDesc = content.item.customDescription?.takeIf(String::isNotBlank)
+            ?: content.item.game?.description?.takeIf(String::isNotBlank)
         val selected = if (customDesc.isNullOrBlank()) candidate else candidate.copy(description = customDesc)
         updateContent {
             it.copy(
@@ -188,6 +195,11 @@ class DetailViewModel(
     fun saveToDatabase() {
         val content = _state.value as? DetailUiState.Content ?: return
         val details = content.boardGameDetails ?: return
+        val lookup = imageLookup
+        if (lookup == null) {
+            updateContent { it.copy(saveToDbError = "Servizio BoardGameGeek non disponibile.") }
+            return
+        }
         val listingId = content.item.key.removePrefix("listing:").toLongOrNull()
             ?: content.item.bggSelectionKeys.firstNotNullOfOrNull { it.removePrefix("listing:").toLongOrNull() }
             ?: 0L
@@ -202,15 +214,37 @@ class DetailViewModel(
 
         viewModelScope.launch {
             try {
-                repo.linkListingToBgg(
+                val latestDetails = lookup.refreshDetailsById(details.bggId)
+                    ?: throw IllegalStateException("Impossibile recuperare tutti i dati da BoardGameGeek.")
+                val customDescription = content.item.customDescription?.takeIf(String::isNotBlank)
+                    ?: content.item.game?.description?.takeIf(String::isNotBlank)
+                val savedGameId = repo.linkListingToBgg(
                     listingId = listingId,
                     currentGameId = currentGameId,
-                    bggId = details.bggId,
-                    title = details.primaryName ?: content.item.title,
-                    imageUrl = details.imageUrl,
+                    details = latestDetails,
+                    fallbackTitle = content.item.title,
                 )
                 updateContent {
+                    val savedGame = savedGameId?.let { id ->
+                        val existing = content.item.game
+                        Game(
+                            id = id,
+                            name = latestDetails.primaryName ?: latestDetails.englishName ?: content.item.title,
+                            kind = if (latestDetails.expands.isNotEmpty()) "expansion" else "base",
+                            bggId = latestDetails.bggId,
+                            bggRating = latestDetails.bggRating,
+                            bggRank = latestDetails.bggRank,
+                            imageUrl = latestDetails.imageUrl,
+                            description = existing?.description,
+                        )
+                    }
                     it.copy(
+                        item = if (savedGame == null) it.item else it.item.copy(game = savedGame),
+                        boardGameDetails = if (customDescription == null) {
+                            latestDetails
+                        } else {
+                            latestDetails.copy(description = customDescription)
+                        },
                         isSavingToDb = false,
                         isPendingDbSave = false,
                         saveToDbSuccess = true,
@@ -253,8 +287,105 @@ class DetailViewModel(
                 updateContent {
                     it.copy(
                         isSearchingBgg = false,
-                        bggSearchError = e.message ?: DETAILS_ERROR,
+                        bggSearchError = e.message ?: "Ricerca BGG fallita.",
                     )
+                }
+            }
+        }
+    }
+
+    fun updateMissingBggStats() {
+        val content = _state.value as? DetailUiState.Content ?: return
+        val game = content.item.game
+        if (game == null && !content.saveToDbSuccess) return
+        val bggId = game?.bggId ?: content.boardGameDetails?.bggId ?: return
+        val lookup = imageLookup ?: run {
+            updateContent { it.copy(updateBggStatsError = "Servizio BoardGameGeek non disponibile.") }
+            return
+        }
+        if (content.isUpdatingBggStats) return
+
+        updateContent {
+            it.copy(
+                isUpdatingBggStats = true,
+                updateBggStatsSuccess = false,
+                updateBggStatsError = null,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                val latestDetails = lookup.refreshDetailsById(bggId)
+                    ?: throw IllegalStateException("Impossibile recuperare i dati da BoardGameGeek.")
+                if (latestDetails.bggRating == null && latestDetails.bggRank == null) {
+                    throw IllegalStateException("BoardGameGeek non ha restituito né il voto né il rank.")
+                }
+                repo.updateGameBggStats(
+                    bggId = bggId,
+                    bggRating = latestDetails.bggRating,
+                    bggRank = latestDetails.bggRank,
+                )
+                updateContent {
+                    val latestGame = it.item.game
+                    val updatedItem = if (latestGame == null) {
+                        it.item
+                    } else {
+                        it.item.copy(
+                            game = latestGame.copy(
+                                bggRating = latestDetails.bggRating ?: latestGame.bggRating,
+                                bggRank = latestDetails.bggRank ?: latestGame.bggRank,
+                            ),
+                        )
+                    }
+                    it.copy(
+                        item = updatedItem,
+                        boardGameDetails = latestDetails,
+                        isUpdatingBggStats = false,
+                        updateBggStatsSuccess = true,
+                        updateBggStatsError = null,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateContent {
+                    it.copy(
+                        isUpdatingBggStats = false,
+                        updateBggStatsSuccess = false,
+                        updateBggStatsError = e.message ?: "Impossibile aggiornare voto e rank BGG.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun toggleFavorite() {
+        val content = _state.value as? DetailUiState.Content ?: return
+        val newFavorite = !content.isFavorite
+        val action = if (newFavorite) Action.FAVORITE else Action.UNFAVORITED
+        viewModelScope.launch {
+            try {
+                repo.setAction(key, action)
+                updateContent { it.copy(isFavorite = newFavorite, actionError = null) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateContent {
+                    it.copy(actionError = e.message ?: ACTION_ERROR)
+                }
+            }
+        }
+    }
+
+    fun ignore(onBack: () -> Unit) {
+        viewModelScope.launch {
+            try {
+                repo.setAction(key, Action.IGNORED)
+                onBack()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateContent {
+                    it.copy(actionError = e.message ?: ACTION_ERROR)
                 }
             }
         }
@@ -263,77 +394,29 @@ class DetailViewModel(
     fun removeManualBggSelection() {
         val content = _state.value as? DetailUiState.Content ?: return
         val title = content.item.lookupTitle ?: content.item.title
+        val selectionKeys = (content.item.bggSelectionKeys + key).distinct()
+        selectionKeys.forEach { bggSelectionStore.removeBggId(it) }
         bggSelectionStore.removeBggId(selectionKeyFor(title))
-        (content.item.bggSelectionKeys + key).distinct().forEach(bggSelectionStore::removeBggId)
         refresh()
     }
 
-    private fun selectionKeyFor(title: String): String {
-        val normalized = Normalizer.normalize(title, Normalizer.Form.NFD)
-            .replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
-            .lowercase(Locale.ROOT)
-            .filter(Char::isLetterOrDigit)
-        return "title:$normalized"
-    }
+    private fun selectionKeyFor(title: String): String =
+        "title:" + title.lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]+"), "")
 
-    fun toggleFavorite() {
-        val content = _state.value as? DetailUiState.Content ?: return
-        val action = if (content.isFavorite) Action.UNFAVORITED else Action.FAVORITE
-        viewModelScope.launch {
-            try {
-                repo.setAction(key, action)
-                updateContent { it.copy(isFavorite = !content.isFavorite) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _state.value = DetailUiState.Error(e.message ?: DEFAULT_ERROR)
-            }
-        }
-    }
-
-    private object NoOpBggSelectionStore : BggSelectionStore {
-        override fun getBggId(itemKey: String): Int? = null
-        override fun saveBggId(itemKey: String, bggId: Int) = Unit
-        override fun removeBggId(itemKey: String) = Unit
-    }
-
-    fun ignore(onIgnored: () -> Unit) {
-        if (_state.value !is DetailUiState.Content) return
-        viewModelScope.launch {
-            try {
-                repo.setAction(key, Action.IGNORED)
-                onIgnored()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _state.value = DetailUiState.Error(e.message ?: DEFAULT_ERROR)
-            }
-        }
-    }
-
-    private fun updateContent(transform: (DetailUiState.Content) -> DetailUiState.Content) {
-        val content = _state.value as? DetailUiState.Content ?: return
-        _state.value = transform(content)
+    private inline fun updateContent(block: (DetailUiState.Content) -> DetailUiState.Content) {
+        val current = _state.value as? DetailUiState.Content ?: return
+        _state.value = block(current)
     }
 
     private companion object {
-        const val DEFAULT_ERROR = "Impossibile caricare il gioco"
-        const val DETAILS_ERROR = "Specifiche BGG non disponibili"
+        const val DEFAULT_ERROR = "Impossibile caricare i dettagli."
+        const val DETAILS_ERROR = "Impossibile caricare i dettagli da BoardGameGeek."
+        const val ACTION_ERROR = "Impossibile completare l'operazione."
     }
 }
 
-internal fun orderOffers(offers: List<Offer>): List<Offer> = offers.sortedWith(
-    compareBy<Offer> { offer ->
-        when {
-            offer.price?.currency == "EUR" -> EUR_GROUP
-            offer.price != null -> OTHER_CURRENCY_GROUP
-            else -> NO_PRICE_GROUP
-        }
-    }
-        .thenBy { it.price?.amount ?: Double.MAX_VALUE }
-        .thenBy { it.sourceName },
-)
-
-private const val EUR_GROUP = 0
-private const val OTHER_CURRENCY_GROUP = 1
-private const val NO_PRICE_GROUP = 2
+private object NoOpBggSelectionStore : BggSelectionStore {
+    override fun getBggId(itemKey: String): Int? = null
+    override fun saveBggId(itemKey: String, bggId: Int) {}
+    override fun removeBggId(itemKey: String) {}
+}

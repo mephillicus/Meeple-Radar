@@ -8,6 +8,7 @@ import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.remote.BoardGameDetails
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
@@ -51,7 +52,7 @@ class DefaultListingRepositoryTest {
 
     }
 
-    private class FakeLocalCacheStore(private val database: CachedDatabase) : LocalCacheStore {
+    private class FakeLocalCacheStore(private var database: CachedDatabase) : LocalCacheStore {
         override fun load(): CachedDatabase = database
 
         override fun saveIfChanged(
@@ -59,7 +60,15 @@ class DefaultListingRepositoryTest {
             newGames: List<Game>,
             newSources: List<Source>,
             newProducts: List<Product>,
-        ): Pair<CachedDatabase, Boolean> = database to false
+        ): Pair<CachedDatabase, Boolean> {
+            database = database.copy(
+                listings = newListings,
+                games = newGames,
+                sources = newSources,
+                products = newProducts,
+            )
+            return database to true
+        }
     }
 
     private fun listing(
@@ -241,5 +250,52 @@ class DefaultListingRepositoryTest {
         DefaultListingRepository(api, FakeFavoriteStore()).setAction("product:12", Action.FAVORITE)
 
         assertEquals(listOf(UserActionRow(gameId = null, listingId = null, action = Action.FAVORITE, productId = 12)), api.inserted)
+    }
+
+    @Test
+    fun `associazione BGG aggiorna anche la cache locale del game e del listing`() = runTest {
+        val cachedGame = game(5, "Titolo precedente")
+        val cachedListing = listing(id = 10, gameId = 5)
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(cachedListing),
+                games = listOf(cachedGame),
+            ),
+        )
+        val repository = DefaultListingRepository(
+            api = FakeSupabaseApi(),
+            favoriteStore = FakeFavoriteStore(),
+            localCacheStore = cache,
+        )
+        val details = BoardGameDetails(
+            bggId = 321,
+            imageUrl = "https://bgg.example/cover.jpg",
+            description = null,
+            yearPublished = 2024,
+            minPlayers = 2,
+            maxPlayers = 4,
+            playingTime = 60,
+            minAge = 10,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            primaryName = "Titolo BGG",
+            bggRating = 7.6,
+            bggRank = 28,
+        )
+
+        repository.linkListingToBgg(10, 5, details, "Fallback")
+
+        val updated = cache.load()
+        assertEquals(321, updated.games.single().bggId)
+        assertEquals(7.6, updated.games.single().bggRating!!, 0.0001)
+        assertEquals(28, updated.games.single().bggRank)
+        assertEquals("https://bgg.example/cover.jpg", updated.games.single().imageUrl)
+        assertEquals(5L, updated.listings.single().gameId)
+
+        repository.updateGameBggStats(321, 8.1, 21)
+
+        assertEquals(8.1, cache.load().games.single().bggRating!!, 0.0001)
+        assertEquals(21, cache.load().games.single().bggRank)
     }
 }

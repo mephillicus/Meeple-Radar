@@ -23,6 +23,23 @@ data class CachedDatabase(
 
 interface LocalCacheStore {
     fun load(): CachedDatabase?
+
+    fun upsertGame(game: Game, linkedListingId: Long? = null) {
+        val cached = load() ?: return
+        val games = cached.games.filterNot { it.id == game.id } + game
+        val listings = if (linkedListingId == null) cached.listings else {
+            cached.listings.map { listing ->
+                if (listing.id == linkedListingId) listing.copy(gameId = game.id) else listing
+            }
+        }
+        saveIfChanged(
+            newListings = listings,
+            newGames = games,
+            newSources = cached.sources,
+            newProducts = cached.products,
+        )
+    }
+
     fun saveIfChanged(
         newListings: List<Listing>,
         newGames: List<Game>,
@@ -66,6 +83,21 @@ class SharedPreferencesLocalCacheStore(
         } catch (e: Exception) {
             null
         }
+    }
+
+    override fun upsertGame(game: Game, linkedListingId: Long?) {
+        val cached = load() ?: return
+        val games = cached.games.filterNot { it.id == game.id } + game
+        val listings = if (linkedListingId == null) cached.listings else {
+            cached.listings.map { listing ->
+                if (listing.id == linkedListingId) listing.copy(gameId = game.id) else listing
+            }
+        }
+        preferences.edit()
+            .putString(KEY_GAMES, json.encodeToString(games.sortedBy { it.id }.map { CachedGame.from(it) }))
+            .putString(KEY_LISTINGS, json.encodeToString(listings.sortedBy { it.id }.map { CachedListing.from(it) }))
+            .putLong(KEY_TIMESTAMP, System.currentTimeMillis())
+            .apply()
     }
 
     override fun saveIfChanged(

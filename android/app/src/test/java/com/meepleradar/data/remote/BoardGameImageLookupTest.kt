@@ -111,6 +111,54 @@ class BoardGameImageLookupTest {
     }
 
     @Test
+    fun `aggiorna dettagli e legge voto e rank dal dynamicinfo BGG`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("/api/geekitems?") ->
+                    """{"item":{"name":"Coffee Rush: Winter","imageurl":"https://cf.geekdo-images.com/winter.jpg","description":"Game"}}"""
+                url.contains("/api/dynamicinfo?") -> """
+                    {
+                      "item": {
+                        "stats": {"usersrated":"70","average":"7.37414","baverage":"5.54772"},
+                        "rankinfo": [
+                          {"rankobjecttype":"subtype","rankobjectid":1,"browsesubtype":"boardgame","rank":"13912","baverage":"5.54772"}
+                        ]
+                      }
+                    }
+                """.trimIndent()
+                else -> error("URL BGG non prevista: $url")
+            }
+        }
+        val lookup = BoardGameGeekImageLookup(transport)
+
+        val refreshed = lookup.refreshDetailsById(462564)
+
+        assertEquals(7.37414, refreshed?.bggRating!!, 0.0001)
+        assertEquals(13912, refreshed.bggRank)
+        assertTrue(transport.urls.any { it.contains("dynamicinfo?objectid=462564") })
+        assertEquals(1, transport.urls.count { it.contains("/api/dynamicinfo?") })
+        assertEquals(0, transport.urls.count { it.contains("/thing?") })
+    }
+
+    @Test
+    fun `ignora rating e rank BGG a zero quando non ci sono voti`() = runTest {
+        val transport = FakeTransport { url ->
+            when {
+                url.contains("/api/geekitems?") ->
+                    """{"item":{"name":"Gioco senza voti","imageurl":"https://example.com/image.jpg"}}"""
+                url.contains("/api/dynamicinfo?") ->
+                    """{"item":{"stats":{"usersrated":"0","average":"0","baverage":"0"},"rankinfo":[{"rankobjecttype":"subtype","rankobjectid":1,"browsesubtype":"boardgame","rank":"0"}]}}"""
+                else -> error("URL BGG non prevista: $url")
+            }
+        }
+
+        val details = BoardGameGeekImageLookup(transport).refreshDetailsById(462564)
+
+        assertEquals(null, details?.bggRating)
+        assertEquals(null, details?.bggRank)
+    }
+
+    @Test
     fun `findSeries per gioco base estrae le espansioni da geekitems`() = runTest {
         val transport = FakeTransport { url ->
             when {

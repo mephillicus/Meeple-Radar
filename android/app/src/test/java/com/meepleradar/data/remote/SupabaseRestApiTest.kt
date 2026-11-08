@@ -39,6 +39,11 @@ class SupabaseRestApiTest {
             calls += Call("POST", url, headers, body)
             return ""
         }
+
+        override suspend fun patch(url: String, headers: Map<String, String>, body: String): String {
+            calls += Call("PATCH", url, headers, body)
+            return ""
+        }
     }
 
     private fun listingJson(vararg rows: String) = rows.joinToString(prefix = "[", postfix = "]", separator = ",")
@@ -160,6 +165,112 @@ class SupabaseRestApiTest {
         assertEquals(JsonPrimitive(5), body["game_id"])
         assertEquals(JsonNull, body["listing_id"])
         assertEquals(JsonPrimitive("favorite"), body["action"])
+    }
+
+    @Test
+    fun `linkListingToBgg salva i dati BGG e distingue espansioni e giochi base`() = runTest {
+        val details = BoardGameDetails(
+            bggId = 99,
+            imageUrl = "https://bgg.example/cover.jpg",
+            description = "Descrizione BGG",
+            yearPublished = 2024,
+            minPlayers = 1,
+            maxPlayers = 4,
+            playingTime = 90,
+            minAge = 10,
+            designers = listOf("Autore"),
+            categories = listOf("Strategia"),
+            mechanics = listOf("Carte"),
+            expands = listOf(BggLink(10, "Gioco base", null)),
+            bggRating = 7.5,
+            bggRank = 42,
+        )
+        val transport = FakeTransport()
+
+        SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
+            listingId = 7,
+            currentGameId = 5,
+            details = details,
+            fallbackTitle = "Titolo alternativo",
+        )
+        val gamePatch = transport.calls.first()
+        val gameBody = Json.parseToJsonElement(gamePatch.body!!).jsonObject
+
+        assertEquals("PATCH", gamePatch.method)
+        assertEquals("$base/rest/v1/game?id=eq.5", gamePatch.url)
+        assertEquals(JsonPrimitive("Titolo alternativo"), gameBody["name"])
+        assertEquals(JsonPrimitive("expansion"), gameBody["kind"])
+        assertEquals(JsonPrimitive(99), gameBody["bgg_id"])
+        assertEquals(JsonPrimitive(7.5), gameBody["bgg_rating"])
+        assertEquals(JsonPrimitive(42), gameBody["bgg_rank"])
+        assertEquals(JsonPrimitive("https://bgg.example/cover.jpg"), gameBody["image_url"])
+        assertTrue(gameBody.containsKey("name"))
+        assertTrue(gameBody.containsKey("kind"))
+        assertTrue(gameBody.containsKey("bgg_id"))
+        assertTrue(gameBody.containsKey("bgg_rating"))
+        assertTrue(gameBody.containsKey("bgg_rank"))
+        assertTrue(gameBody.containsKey("image_url"))
+        assertEquals("$base/rest/v1/listing?id=eq.7", transport.calls[1].url)
+
+        val baseGame = details.copy(bggId = 100, expands = emptyList())
+        val baseGameTransport = FakeTransport()
+        SupabaseRestApi(base, anon, baseGameTransport, json).linkListingToBgg(
+            listingId = 0,
+            currentGameId = 5,
+            details = baseGame,
+            fallbackTitle = "Gioco base",
+        )
+        val baseGameBody = Json.parseToJsonElement(baseGameTransport.calls.single().body!!).jsonObject
+        assertEquals(JsonPrimitive("base"), baseGameBody["kind"])
+    }
+
+    @Test
+    fun `aggiorna solo voto e rank BGG di un game`() = runTest {
+        val transport = FakeTransport()
+
+        SupabaseRestApi(base, anon, transport, json).updateGameBggStats(
+            bggId = 99,
+            bggRating = 7.25,
+            bggRank = 314,
+        )
+
+        val call = transport.calls.single()
+        val body = Json.parseToJsonElement(call.body!!).jsonObject
+        assertEquals("PATCH", call.method)
+        assertEquals("$base/rest/v1/game?bgg_id=eq.99", call.url)
+        assertEquals(JsonPrimitive(7.25), body["bgg_rating"])
+        assertEquals(JsonPrimitive(314), body["bgg_rank"])
+        assertEquals(2, body.size)
+    }
+
+    @Test
+    fun `associazione BGG azzera valori precedenti non disponibili`() = runTest {
+        val transport = FakeTransport()
+        val details = BoardGameDetails(
+            bggId = 99,
+            imageUrl = null,
+            description = null,
+            yearPublished = null,
+            minPlayers = null,
+            maxPlayers = null,
+            playingTime = null,
+            minAge = null,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+        )
+
+        SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
+            listingId = 0,
+            currentGameId = 5,
+            details = details,
+            fallbackTitle = "Gioco",
+        )
+
+        val body = Json.parseToJsonElement(transport.calls.single().body!!).jsonObject
+        assertEquals(JsonNull, body["bgg_rating"])
+        assertEquals(JsonNull, body["bgg_rank"])
+        assertEquals(JsonNull, body["image_url"])
     }
 
     @Test

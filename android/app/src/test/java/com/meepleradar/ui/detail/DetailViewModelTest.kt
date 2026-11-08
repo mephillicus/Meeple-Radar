@@ -51,6 +51,7 @@ class DetailViewModelTest {
     ) : ListingRepository {
         var requestedSourceIds: Set<String>? = emptySet()
         val actions = mutableListOf<Pair<String, Action>>()
+        var actionFailure: Throwable? = null
 
         override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> {
             requestedSourceIds = sourceIds
@@ -63,6 +64,7 @@ class DetailViewModelTest {
         override suspend fun sources(): List<Source> = emptyList()
 
         override suspend fun setAction(key: String, action: Action) {
+            actionFailure?.let { throw it }
             actions += key to action
             favoriteItems = when (action) {
                 Action.FAVORITE -> items.filter { it.key == key }
@@ -72,16 +74,25 @@ class DetailViewModelTest {
 
         var linkedListingId: Long? = null
         var linkedBggId: Int? = null
+        var statsGameId: Long? = null
+        var statsRating: Double? = null
+        var statsRank: Int? = null
 
         override suspend fun linkListingToBgg(
             listingId: Long,
             currentGameId: Long?,
-            bggId: Int,
-            title: String,
-            imageUrl: String?,
-        ) {
+            details: com.meepleradar.data.remote.BoardGameDetails,
+            fallbackTitle: String,
+        ): Long? {
             linkedListingId = listingId
-            linkedBggId = bggId
+            linkedBggId = details.bggId
+            return currentGameId ?: 1234L
+        }
+
+        override suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) {
+            statsGameId = bggId.toLong()
+            statsRating = bggRating
+            statsRank = bggRank
         }
 
         override fun lastDbModifiedTimestamp(): Long = 0L
@@ -114,6 +125,7 @@ class DetailViewModelTest {
         var requestedTitle: String? = null
         var requestedBggId: Int? = null
         var requestedDetailsById: Int? = null
+        var requestedRefreshDetailsById: Int? = null
         var requestedCandidatesTitle: String? = null
         var requestedSearchQuery: String? = null
 
@@ -128,6 +140,12 @@ class DetailViewModelTest {
 
         override suspend fun findDetailsById(bggId: Int): BoardGameDetails? {
             requestedDetailsById = bggId
+            requestedBggId = bggId
+            return details?.takeIf { it.bggId == bggId }
+        }
+
+        override suspend fun refreshDetailsById(bggId: Int): BoardGameDetails? {
+            requestedRefreshDetailsById = bggId
             return details?.takeIf { it.bggId == bggId }
         }
 
@@ -209,6 +227,30 @@ class DetailViewModelTest {
     }
 
     @Test
+    fun `mostra gli errori quando preferito o ignora falliscono`() = runTest(dispatcher) {
+        val repo = FakeRepo(listOf(item("game:5", emptyList()))).apply {
+            actionFailure = IllegalStateException("Supabase non raggiungibile")
+        }
+        val viewModel = DetailViewModel(repo, key = "game:5", today = today)
+        advanceUntilIdle()
+
+        viewModel.toggleFavorite()
+        advanceUntilIdle()
+
+        val favoriteFailure = viewModel.state.value as DetailUiState.Content
+        assertEquals(false, favoriteFailure.isFavorite)
+        assertEquals("Supabase non raggiungibile", favoriteFailure.actionError)
+
+        var navigatedBack = false
+        viewModel.ignore { navigatedBack = true }
+        advanceUntilIdle()
+
+        val ignoreFailure = viewModel.state.value as DetailUiState.Content
+        assertEquals(false, navigatedBack)
+        assertEquals("Supabase non raggiungibile", ignoreFailure.actionError)
+    }
+
+    @Test
     fun `carica specifiche del gioco e cerca tra tutti i negozi`() = runTest(dispatcher) {
         val details = BoardGameDetails(
             bggId = 13,
@@ -240,14 +282,28 @@ class DetailViewModelTest {
     }
 
     @Test
-    fun `usa il titolo originale del product per cercare i dettagli BGG`() = runTest(dispatcher) {
+    fun `carica direttamente l'id BGG del game senza verificare il titolo del product`() = runTest(dispatcher) {
         val productTitle = "Dune: La Guerra per Arrakis – La Guerra del Deserto"
+        val details = BoardGameDetails(
+            bggId = 283355,
+            imageUrl = null,
+            description = "Dettagli del gioco associato",
+            yearPublished = 2019,
+            minPlayers = null,
+            maxPlayers = null,
+            playingTime = null,
+            minAge = null,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            primaryName = "Titolo BGG diverso dal product",
+        )
         val item = item("product:10", emptyList()).copy(
             title = "Dune",
             game = com.meepleradar.data.model.Game(5, "Dune", "base", 283355, null, null, null),
             lookupTitle = productTitle,
         )
-        val lookup = FakeImageLookup()
+        val lookup = FakeImageLookup(details = details)
         val viewModel = DetailViewModel(
             repo = FakeRepo(listOf(item)),
             key = "product:10",
@@ -257,9 +313,10 @@ class DetailViewModelTest {
 
         advanceUntilIdle()
 
-        assertEquals(productTitle, lookup.requestedTitle)
+        val state = viewModel.state.value as DetailUiState.Content
+        assertEquals(283355, lookup.requestedDetailsById)
         assertEquals(283355, lookup.requestedBggId)
-        assertTrue(viewModel.state.value is DetailUiState.Content)
+        assertEquals(details, state.boardGameDetails)
     }
 
     @Test
@@ -322,7 +379,7 @@ class DetailViewModelTest {
         advanceUntilIdle()
 
         assertEquals(476751, reopenedLookup.requestedDetailsById)
-        assertEquals(null, reopenedLookup.requestedBggId)
+        assertEquals(476751, reopenedLookup.requestedBggId)
         assertEquals(candidate, (reopened.state.value as DetailUiState.Content).boardGameDetails)
 
         reopenedLookup.requestedDetailsById = null
@@ -333,8 +390,7 @@ class DetailViewModelTest {
         assertEquals(null, store.getBggId("product:26731"))
         assertEquals(null, store.getBggId("listing:146379"))
         assertEquals(null, store.getBggId(stableSelectionKey))
-        assertEquals(null, reopenedLookup.requestedDetailsById)
-        assertEquals(476751, reopenedLookup.requestedBggId)
+        assertEquals(476751, reopenedLookup.requestedDetailsById)
         assertEquals(true, corrected.bggCandidates.isEmpty())
         assertEquals(null, corrected.manualBggId)
     }
@@ -376,14 +432,6 @@ class DetailViewModelTest {
     @Test
     fun `saveToDatabase invoca linkListingToBgg e imposta saveToDbSuccess`() = runTest(dispatcher) {
         val repo = FakeRepo(listOf(item("listing:123", emptyList())))
-        val viewModel = DetailViewModel(
-            repo = repo,
-            key = "listing:123",
-            today = today,
-            imageLookup = FakeImageLookup(),
-        )
-        advanceUntilIdle()
-
         val candidate = BoardGameDetails(
             bggId = 999,
             imageUrl = "https://img",
@@ -398,6 +446,14 @@ class DetailViewModelTest {
             mechanics = emptyList(),
             primaryName = "Nuovo Gioco",
         )
+        val lookup = FakeImageLookup(details = candidate)
+        val viewModel = DetailViewModel(
+            repo = repo,
+            key = "listing:123",
+            today = today,
+            imageLookup = lookup,
+        )
+        advanceUntilIdle()
 
         viewModel.selectBggCandidate(candidate)
         val content = viewModel.state.value as DetailUiState.Content
@@ -410,6 +466,60 @@ class DetailViewModelTest {
         assertTrue(savedContent.saveToDbSuccess)
         assertEquals(999, repo.linkedBggId)
         assertEquals(123L, repo.linkedListingId)
+        assertEquals(999, savedContent.item.game?.bggId)
+        assertEquals(999, lookup.requestedRefreshDetailsById)
+    }
+
+    @Test
+    fun `aggiorna voto e rank mancanti da BGG e salva i valori`() = runTest(dispatcher) {
+        val game = com.meepleradar.data.model.Game(
+            id = 5,
+            name = "Gioco associato",
+            kind = "base",
+            bggId = 999,
+            bggRating = null,
+            bggRank = null,
+            imageUrl = null,
+        )
+        val item = item("game:5", emptyList()).copy(game = game)
+        val details = BoardGameDetails(
+            bggId = 999,
+            imageUrl = "https://bgg.example/cover.jpg",
+            description = "Descrizione",
+            yearPublished = 2024,
+            minPlayers = 2,
+            maxPlayers = 4,
+            playingTime = 60,
+            minAge = 10,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            bggRating = 7.8,
+            bggRank = 123,
+        )
+        val repo = FakeRepo(listOf(item))
+        val lookup = FakeImageLookup(details = details)
+        val viewModel = DetailViewModel(
+            repo = repo,
+            key = "game:5",
+            today = today,
+            imageLookup = lookup,
+        )
+        advanceUntilIdle()
+
+        viewModel.updateMissingBggStats()
+        advanceUntilIdle()
+
+        val content = viewModel.state.value as DetailUiState.Content
+        assertEquals(999, lookup.requestedRefreshDetailsById)
+        assertEquals(999L, repo.statsGameId)
+        assertEquals(7.8, repo.statsRating!!, 0.0001)
+        assertEquals(123, repo.statsRank)
+        val updatedGame = content.item.game ?: error("Il gioco aggiornato deve restare nello stato")
+        assertEquals(7.8, updatedGame.bggRating!!, 0.0001)
+        assertEquals(123, updatedGame.bggRank)
+        assertTrue(content.updateBggStatsSuccess)
+        assertEquals(null, content.updateBggStatsError)
     }
 
     @Test

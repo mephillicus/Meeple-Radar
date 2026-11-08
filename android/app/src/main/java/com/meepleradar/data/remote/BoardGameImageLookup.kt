@@ -34,6 +34,8 @@ interface BoardGameImageLookup {
 
     suspend fun findDetailsById(bggId: Int): BoardGameDetails? = null
 
+    suspend fun refreshDetailsById(bggId: Int): BoardGameDetails? = findDetailsById(bggId)
+
     suspend fun findCandidates(title: String, bggId: Int?): List<BoardGameDetails> = emptyList()
 
     suspend fun searchCandidates(title: String, bggId: Int? = null): List<BoardGameDetails> = findCandidates(title, bggId)
@@ -94,6 +96,13 @@ class BoardGameGeekImageLookup(
         detailsCache[bggId]?.let { return it }
         return semaphore.withPermit {
             detailsCache[bggId] ?: detailsFromThing(bggId).also { detailsCache[bggId] = it }
+        }
+    }
+
+    override suspend fun refreshDetailsById(bggId: Int): BoardGameDetails? {
+        if (bggId <= 0) return null
+        return semaphore.withPermit {
+            detailsFromThing(bggId)?.also { detailsCache[bggId] = it }
         }
     }
 
@@ -390,17 +399,58 @@ class BoardGameGeekImageLookup(
         }.getOrNull()
 
         if (bggDetails != null && (!bggDetails.description.isNullOrBlank() || !bggDetails.imageUrl.isNullOrBlank() || bggDetails.expansions.isNotEmpty() || bggDetails.expands.isNotEmpty())) {
-            return bggDetails
+            return withDynamicStats(id, bggDetails)
         }
 
         if (geekGroupApi != null) {
             val ggDetails = runCatching { geekGroupApi?.getGameDetails(id) }.getOrNull()
             if (ggDetails != null) {
-                return ggDetails
+                return withDynamicStats(id, ggDetails)
             }
         }
 
-        return runCatching { detailsFromXmlThing(id) }.getOrNull()
+        return runCatching { detailsFromXmlThing(id) }.getOrNull()?.let { withDynamicStats(id, it) }
+    }
+
+    private suspend fun withDynamicStats(id: Int, details: BoardGameDetails): BoardGameDetails {
+        if (details.bggRating != null && details.bggRank != null) return details
+        val statsUrl = "https://api.geekdo.com/api/dynamicinfo?objectid=$id&objecttype=thing"
+        val stats = runCatching {
+            val response = transport.get(statsUrl, JSON_HEADERS)
+            parseDynamicStats(response)
+        }.getOrNull() ?: return details
+        return details.copy(
+            bggRating = details.bggRating ?: stats.first,
+            bggRank = details.bggRank ?: stats.second,
+        )
+    }
+
+    private fun parseDynamicStats(jsonText: String): Pair<Double?, Int?> {
+        val item = Json.parseToJsonElement(jsonText.trim()).jsonObject["item"]?.jsonObject
+            ?: return null to null
+        val stats = item["stats"]?.jsonObject
+        val usersRated = stats?.get("usersrated")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+        val rating = if (usersRated > 0) {
+            stats?.get("average")?.jsonPrimitive?.contentOrNull
+                ?.toDoubleOrNull()
+                ?.takeIf { it > 0.0 && it.isFinite() }
+        } else {
+            null
+        }
+        val rank = item["rankinfo"]?.jsonArray
+            ?.firstOrNull { element ->
+                val rankInfo = element.jsonObject
+                rankInfo["rankobjecttype"]?.jsonPrimitive?.contentOrNull == "subtype" &&
+                    rankInfo["rankobjectid"]?.jsonPrimitive?.contentOrNull == "1" &&
+                    rankInfo["browsesubtype"]?.jsonPrimitive?.contentOrNull == "boardgame"
+            }
+            ?.jsonObject
+            ?.get("rank")
+            ?.jsonPrimitive
+            ?.contentOrNull
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+        return rating to rank
     }
 
     private fun parseGeekDoJson(id: Int, jsonText: String): BoardGameDetails? {
@@ -558,7 +608,7 @@ class BoardGameGeekImageLookup(
             categories = names("boardgamecategory"),
             mechanics = names("boardgamemechanic"),
             expansions = bggLinks("boardgameexpansion"),
-            expands = bggLinks("boardgameexpansion"),
+            expands = bggLinks("expandsboardgame"),
             primaryName = primaryName,
             alternateNames = alternateNames,
             bggRating = average,
