@@ -70,6 +70,20 @@ class DetailViewModelTest {
             }
         }
 
+        var linkedListingId: Long? = null
+        var linkedBggId: Int? = null
+
+        override suspend fun linkListingToBgg(
+            listingId: Long,
+            currentGameId: Long?,
+            bggId: Int,
+            title: String,
+            imageUrl: String?,
+        ) {
+            linkedListingId = listingId
+            linkedBggId = bggId
+        }
+
         override fun lastDbModifiedTimestamp(): Long = 0L
 
         override fun newlyAddedCount(): Int = 0
@@ -357,6 +371,45 @@ class DetailViewModelTest {
         assertEquals("Dune Desert War", lookup.requestedSearchQuery)
         assertEquals(listOf(candidate), content.bggCandidates)
         assertEquals(false, content.isSearchingBgg)
+    }
+
+    @Test
+    fun `saveToDatabase invoca linkListingToBgg e imposta saveToDbSuccess`() = runTest(dispatcher) {
+        val repo = FakeRepo(listOf(item("listing:123", emptyList())))
+        val viewModel = DetailViewModel(
+            repo = repo,
+            key = "listing:123",
+            today = today,
+            imageLookup = FakeImageLookup(),
+        )
+        advanceUntilIdle()
+
+        val candidate = BoardGameDetails(
+            bggId = 999,
+            imageUrl = "https://img",
+            description = null,
+            yearPublished = 2024,
+            minPlayers = 2,
+            maxPlayers = 4,
+            playingTime = 60,
+            minAge = 10,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            primaryName = "Nuovo Gioco",
+        )
+
+        viewModel.selectBggCandidate(candidate)
+        val content = viewModel.state.value as DetailUiState.Content
+        assertTrue(content.isPendingDbSave)
+
+        viewModel.saveToDatabase()
+        advanceUntilIdle()
+
+        val savedContent = viewModel.state.value as DetailUiState.Content
+        assertTrue(savedContent.saveToDbSuccess)
+        assertEquals(999, repo.linkedBggId)
+        assertEquals(123L, repo.linkedListingId)
     }
 
     @Test

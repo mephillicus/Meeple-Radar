@@ -41,6 +41,10 @@ sealed interface DetailUiState {
         val manualBggId: Int? = null,
         val isSearchingBgg: Boolean = false,
         val bggSearchError: String? = null,
+        val isPendingDbSave: Boolean = false,
+        val isSavingToDb: Boolean = false,
+        val saveToDbSuccess: Boolean = false,
+        val saveToDbError: String? = null,
     ) : DetailUiState
 }
 
@@ -161,6 +165,9 @@ class DetailViewModel(
                 series = null,
                 seriesError = null,
                 manualBggId = candidate.bggId,
+                isPendingDbSave = true,
+                saveToDbSuccess = false,
+                saveToDbError = null,
             )
         }
         val lookup = imageLookup ?: return
@@ -173,6 +180,50 @@ class DetailViewModel(
             } catch (e: Exception) {
                 updateContent {
                     it.copy(isLoadingSeries = false, seriesError = e.message)
+                }
+            }
+        }
+    }
+
+    fun saveToDatabase() {
+        val content = _state.value as? DetailUiState.Content ?: return
+        val details = content.boardGameDetails ?: return
+        val listingId = content.item.key.removePrefix("listing:").toLongOrNull()
+            ?: content.item.bggSelectionKeys.firstNotNullOfOrNull { it.removePrefix("listing:").toLongOrNull() }
+            ?: 0L
+        val currentGameId = content.item.game?.id
+
+        updateContent {
+            it.copy(
+                isSavingToDb = true,
+                saveToDbError = null,
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                repo.linkListingToBgg(
+                    listingId = listingId,
+                    currentGameId = currentGameId,
+                    bggId = details.bggId,
+                    title = details.primaryName ?: content.item.title,
+                    imageUrl = details.imageUrl,
+                )
+                updateContent {
+                    it.copy(
+                        isSavingToDb = false,
+                        isPendingDbSave = false,
+                        saveToDbSuccess = true,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updateContent {
+                    it.copy(
+                        isSavingToDb = false,
+                        saveToDbError = e.message ?: "Impossibile salvare sul Database.",
+                    )
                 }
             }
         }

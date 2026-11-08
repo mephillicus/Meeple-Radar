@@ -51,6 +51,14 @@ interface ListingRepository {
     fun newlyAddedCountFlow(): StateFlow<Int>
 
     fun preorderCount(): Int
+
+    suspend fun linkListingToBgg(
+        listingId: Long,
+        currentGameId: Long?,
+        bggId: Int,
+        title: String,
+        imageUrl: String? = null,
+    ) = Unit
 }
 
 class DefaultListingRepository(
@@ -188,6 +196,22 @@ class DefaultListingRepository(
             }
             api.insertAction(row)
         }
+    }
+
+    override suspend fun linkListingToBgg(
+        listingId: Long,
+        currentGameId: Long?,
+        bggId: Int,
+        title: String,
+        imageUrl: String?,
+    ) {
+        api.linkListingToBgg(
+            listingId = listingId,
+            currentGameId = currentGameId,
+            bggId = bggId,
+            title = title,
+            imageUrl = imageUrl,
+        )
     }
 
     private suspend fun buildItems(

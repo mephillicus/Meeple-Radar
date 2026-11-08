@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Favorite
@@ -147,11 +148,12 @@ fun DetailScreen(
                 )
 
                 is DetailUiState.Content -> DetailContent(
-                    current,
-                    imageLookup,
-                    vm::selectBggCandidate,
-                    vm::removeManualBggSelection,
-                    vm::searchBggCandidates,
+                    content = current,
+                    imageLookup = imageLookup,
+                    onSelectBggCandidate = vm::selectBggCandidate,
+                    onRemoveManualBggSelection = vm::removeManualBggSelection,
+                    onSearchBggCandidates = vm::searchBggCandidates,
+                    onSaveToDb = vm::saveToDatabase,
                 )
             }
         }
@@ -165,6 +167,7 @@ private fun DetailContent(
     onSelectBggCandidate: (BoardGameDetails) -> Unit,
     onRemoveManualBggSelection: () -> Unit,
     onSearchBggCandidates: (String) -> Unit,
+    onSaveToDb: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val bestOffers = remember(content.offers) { bestComparableEuroOffers(content.offers) }
@@ -206,6 +209,18 @@ private fun DetailContent(
                 isBestOffer = offer in bestOffers,
                 onOpen = { runCatching { uriHandler.openUri(offer.url) } },
             )
+        }
+
+        if (content.isPendingDbSave || content.saveToDbSuccess || content.saveToDbError != null) {
+            item {
+                SaveToDatabaseCard(
+                    isPending = content.isPendingDbSave,
+                    isSaving = content.isSavingToDb,
+                    saveSuccess = content.saveToDbSuccess,
+                    saveError = content.saveToDbError,
+                    onSaveToDb = onSaveToDb,
+                )
+            }
         }
     }
 }
@@ -862,6 +877,103 @@ private fun OfferRow(offer: Offer, allOffers: List<Offer>, isBestOffer: Boolean,
                     )
                     Spacer(Modifier.width(6.dp))
                     Text("Apri", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SaveToDatabaseCard(
+    isPending: Boolean,
+    isSaving: Boolean,
+    saveSuccess: Boolean,
+    saveError: String?,
+    onSaveToDb: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (saveSuccess) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (saveSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (saveSuccess) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = "Associazione salvata permanentemente sul Database!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            } else {
+                Text(
+                    text = "Hai selezionato una nuova corrispondenza BGG. Puoi salvarla permanentemente sul Database.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+
+                saveError?.let { err ->
+                    Text(
+                        text = err,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+
+                Button(
+                    onClick = onSaveToDb,
+                    enabled = !isSaving,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                ) {
+                    if (isSaving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Scrittura su Supabase in corso...")
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (saveError != null) "Riprova Salvataggio" else "Salva sul Database")
+                    }
                 }
             }
         }

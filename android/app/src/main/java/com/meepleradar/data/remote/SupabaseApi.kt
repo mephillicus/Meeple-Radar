@@ -28,6 +28,14 @@ interface SupabaseApi {
     suspend fun userActions(): List<UserActionRow>
 
     suspend fun insertAction(row: UserActionRow)
+
+    suspend fun linkListingToBgg(
+        listingId: Long,
+        currentGameId: Long?,
+        bggId: Int,
+        title: String,
+        imageUrl: String? = null,
+    ) = Unit
 }
 
 class SupabaseRestApi(
@@ -74,6 +82,63 @@ class SupabaseRestApi(
             headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
             body = json.encodeToString(ActionInsertDto.from(row)),
         )
+    }
+
+    override suspend fun linkListingToBgg(
+        listingId: Long,
+        currentGameId: Long?,
+        bggId: Int,
+        title: String,
+        imageUrl: String?,
+    ) {
+        val targetGameId = if (currentGameId != null && currentGameId > 0) {
+            val gameObj = buildMap {
+                put("id", JsonPrimitive(currentGameId))
+                put("name", JsonPrimitive(title))
+                put("bgg_id", JsonPrimitive(bggId))
+                imageUrl?.let { put("image_url", JsonPrimitive(it)) }
+            }
+            transport.post(
+                url = "$base/rest/v1/game",
+                headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
+                body = json.encodeToString(gameObj),
+            )
+            currentGameId
+        } else {
+            val existing = json.decodeFromString<List<GameDto>>(
+                transport.get("$base/rest/v1/game?bgg_id=eq.$bggId&select=*", headers()),
+            )
+            if (existing.isNotEmpty()) {
+                existing.first().id
+            } else {
+                val newGameObj = buildMap {
+                    put("name", JsonPrimitive(title))
+                    put("kind", JsonPrimitive("boardgame"))
+                    put("bgg_id", JsonPrimitive(bggId))
+                    imageUrl?.let { put("image_url", JsonPrimitive(it)) }
+                }
+                val created = json.decodeFromString<List<GameDto>>(
+                    transport.post(
+                        url = "$base/rest/v1/game",
+                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                        body = json.encodeToString(newGameObj),
+                    ),
+                )
+                created.first().id
+            }
+        }
+
+        if (listingId > 0) {
+            val listingObj = buildMap {
+                put("id", JsonPrimitive(listingId))
+                put("game_id", JsonPrimitive(targetGameId))
+            }
+            transport.post(
+                url = "$base/rest/v1/listing",
+                headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
+                body = json.encodeToString(listingObj),
+            )
+        }
     }
 
     private suspend inline fun <reified T> fetchAll(url: String): List<T> {
