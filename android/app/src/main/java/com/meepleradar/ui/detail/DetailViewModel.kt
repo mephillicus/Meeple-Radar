@@ -75,7 +75,7 @@ class DetailViewModel(
         viewModelScope.launch {
             try {
                 var item = repo.findItem(key, today)
-                val isFromDatabase = item != null
+                val isFromDatabase = item?.game?.id != null && item.game.id > 0L
                 if (item == null && fallbackItem != null) {
                     item = fallbackItem
                 } else if (item == null) {
@@ -89,6 +89,7 @@ class DetailViewModel(
                     offers = orderedOffersForDisplay(item.offers),
                     isFavorite = isFavorite,
                     isFromDatabase = isFromDatabase,
+                    isPendingDbSave = !isFromDatabase,
                     isLoadingDetails = imageLookup != null,
                 )
                 val lookup = imageLookup ?: return@launch

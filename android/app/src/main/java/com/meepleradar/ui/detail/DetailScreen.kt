@@ -230,7 +230,7 @@ private fun DetailContent(
 
         val game = content.item.game
         val bggId = game?.bggId ?: content.boardGameDetails?.bggId
-        if (game?.bggId != null && bggId != null && (game.bggRating == null || game.bggRank == null)) {
+        if (content.isFromDatabase && game?.bggId != null && bggId != null && (game.bggRating == null || game.bggRank == null)) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
