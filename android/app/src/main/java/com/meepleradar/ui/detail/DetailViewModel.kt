@@ -116,7 +116,7 @@ class DetailViewModel(
                             isLoadingDetails = false,
                             isLoadingBggCandidates = details == null,
                             manualBggId = savedBggId,
-                            isPendingDbSave = item.game == null && details != null,
+                            isPendingDbSave = !isFromDatabase || savedBggId != null,
                         )
                     }
                     if (details == null) {

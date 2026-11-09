@@ -260,8 +260,7 @@ private fun DetailContent(
             }
         }
 
-        val needsGameAssociation = content.item.game == null && content.boardGameDetails != null
-        if (needsGameAssociation || content.isPendingDbSave || content.saveToDbSuccess || content.saveToDbError != null) {
+        if (!content.isFromDatabase || content.isPendingDbSave || content.saveToDbSuccess || content.saveToDbError != null) {
             item {
                 SaveToDatabaseCard(
                     isPending = content.isPendingDbSave,
