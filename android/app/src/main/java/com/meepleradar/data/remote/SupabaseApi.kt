@@ -229,12 +229,19 @@ class SupabaseRestApi(
             )
             val targetProductId = createdProducts.firstOrNull()?.id
 
-            // 3. Get valid source_id
-            val validSourceId = runCatching { sources().firstOrNull()?.id }.getOrNull() ?: "dungeondice"
+            // 3. Ensure "meeple_app" source exists in source table
+            runCatching {
+                val sourceObj = mapOf("id" to JsonPrimitive("meeple_app"), "name" to JsonPrimitive("MeepleApp"))
+                transport.post(
+                    url = "$base/rest/v1/source",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
+                    body = json.encodeToString(sourceObj),
+                )
+            }
 
             // 4. Insert Listing
             val listingObj = buildMap {
-                put("source_id", JsonPrimitive(validSourceId))
+                put("source_id", JsonPrimitive("meeple_app"))
                 put("title", JsonPrimitive(title))
                 put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/$bggId"))
                 put("game_id", JsonPrimitive(targetGameId))
