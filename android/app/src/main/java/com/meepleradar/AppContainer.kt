@@ -45,5 +45,6 @@ class AppContainer(context: Context) {
         api = api,
         favoriteStore = SharedPreferencesFavoriteStore(context.applicationContext),
         localCacheStore = SharedPreferencesLocalCacheStore(context.applicationContext, json),
+        bggCollectionStore = bggCollectionStore,
     )
 }

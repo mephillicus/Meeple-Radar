@@ -68,6 +68,7 @@ class DefaultListingRepository(
     private val api: SupabaseApi,
     private val favoriteStore: FavoriteStore,
     private val localCacheStore: LocalCacheStore? = null,
+    private val bggCollectionStore: com.meepleradar.data.local.BggCollectionStore? = null,
 ) : ListingRepository {
 
     private val _newlyAddedCount = MutableStateFlow(localCacheStore?.load()?.newlyAddedCount ?: 0)
@@ -120,6 +121,32 @@ class DefaultListingRepository(
     }
 
     override suspend fun findItem(key: String, today: LocalDate): IncomingItem? {
+        if (key.startsWith("bgg:")) {
+            val bggId = key.removePrefix("bgg:").toIntOrNull()
+            if (bggId != null) {
+                val bggGame = bggCollectionStore?.load()?.games?.firstOrNull { it.bggId == bggId }
+                val name = bggGame?.name ?: "Gioco BGG #$bggId"
+                val imageUrl = bggGame?.imageUrl
+                return IncomingItem(
+                    key = key,
+                    title = name,
+                    imageUrl = imageUrl,
+                    releaseDate = null,
+                    kind = com.meepleradar.data.model.ItemKind.NEW_UNDATED,
+                    game = Game(
+                        id = 0L,
+                        name = name,
+                        kind = bggGame?.kind ?: "base",
+                        bggId = bggId,
+                        bggRating = bggGame?.rating,
+                        bggRank = null,
+                        imageUrl = imageUrl,
+                    ),
+                    offers = emptyList(),
+                )
+            }
+        }
+
         val cached = localCacheStore?.load()
         val games = cached?.games?.associateBy { it.id } ?: emptyMap()
         val sources = cached?.sources?.associateBy { it.id } ?: emptyMap()
