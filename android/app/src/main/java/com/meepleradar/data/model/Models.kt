@@ -70,3 +70,16 @@ data class IncomingItem(
     val lookupTitle: String? = null,
     val bggSelectionKeys: List<String> = emptyList(),
 )
+
+data class CandidateListingLink(
+    val id: Long,
+    val sourceId: String,
+    val sourceName: String,
+    val title: String,
+    val price: Double?,
+    val currency: String?,
+    val currentGameId: Long?,
+    val currentGameName: String?,
+    val isUnlinked: Boolean,
+    val isSelected: Boolean = isUnlinked,
+)

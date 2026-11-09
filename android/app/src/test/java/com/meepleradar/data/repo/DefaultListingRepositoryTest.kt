@@ -51,7 +51,7 @@ class DefaultListingRepositoryTest {
             inserted += row
         }
 
-        override suspend fun saveGameToDatabase(item: IncomingItem) {
+        override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>) {
             // No-op per test
         }
 

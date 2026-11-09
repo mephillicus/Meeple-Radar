@@ -38,7 +38,13 @@ interface SupabaseApi {
 
     suspend fun saveGameToDatabase(
         item: com.meepleradar.data.model.IncomingItem,
-    )
+        selectedListingIdsToLink: List<Long> = emptyList(),
+    ) = Unit
+
+    suspend fun findCandidateListingsToLink(
+        title: String,
+        bggId: Int,
+    ): List<com.meepleradar.data.model.CandidateListingLink> = emptyList()
 
     suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) = Unit
 }
@@ -176,6 +182,7 @@ class SupabaseRestApi(
 
     override suspend fun saveGameToDatabase(
         item: com.meepleradar.data.model.IncomingItem,
+        selectedListingIdsToLink: List<Long>,
     ) {
         try {
             val title = item.title
