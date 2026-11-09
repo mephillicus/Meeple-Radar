@@ -183,6 +183,9 @@ class SupabaseRestApi(
             val bggId = item.game?.bggId ?: 0
             if (bggId <= 0) throw IllegalStateException("ID BGG non disponibile per il gioco.")
 
+            val itemUrl = "https://boardgamegeek.com/boardgame/$bggId"
+
+            // 1. Insert or Update Game
             val gameObj = buildMap {
                 put("name", JsonPrimitive(title))
                 put("kind", JsonPrimitive(kind))
@@ -213,21 +216,32 @@ class SupabaseRestApi(
             )
             val targetGameId = createdGame.first().id
 
-            // 2. Insert Product
-            val productObj = buildMap {
-                put("title", JsonPrimitive(title))
-                put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/$bggId"))
-                item.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
-                item.customDescription?.let { put("description", JsonPrimitive(it)) }
+            // 2. Insert or Find Product
+            var targetProductId: Long? = null
+            runCatching {
+                val encodedUrl = java.net.URLEncoder.encode(itemUrl, "UTF-8")
+                val existingProduct = json.decodeFromString<List<ProductDto>>(
+                    transport.get("$base/rest/v1/product?url=eq.$encodedUrl&select=*", headers()),
+                )
+                if (existingProduct.isNotEmpty()) {
+                    targetProductId = existingProduct.first().id
+                } else {
+                    val productObj = buildMap {
+                        put("title", JsonPrimitive(title))
+                        put("url", JsonPrimitive(itemUrl))
+                        item.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
+                        item.customDescription?.let { put("description", JsonPrimitive(it)) }
+                    }
+                    val createdProducts = json.decodeFromString<List<ProductDto>>(
+                        transport.post(
+                            url = "$base/rest/v1/product",
+                            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                            body = json.encodeToString(productObj),
+                        ),
+                    )
+                    targetProductId = createdProducts.firstOrNull()?.id
+                }
             }
-            val createdProducts = json.decodeFromString<List<ProductDto>>(
-                transport.post(
-                    url = "$base/rest/v1/product",
-                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                    body = json.encodeToString(productObj),
-                ),
-            )
-            val targetProductId = createdProducts.firstOrNull()?.id
 
             // 3. Ensure "meeple_app" source exists in source table
             runCatching {
@@ -239,23 +253,40 @@ class SupabaseRestApi(
                 )
             }
 
-            // 4. Insert Listing
+            // 4. Insert or Update Listing
+            val encodedListingUrl = java.net.URLEncoder.encode(itemUrl, "UTF-8")
+            val existingListing = runCatching {
+                json.decodeFromString<List<ListingDto>>(
+                    transport.get("$base/rest/v1/listing?url=eq.$encodedListingUrl&select=*", headers()),
+                )
+            }.getOrDefault(emptyList())
+
             val listingObj = buildMap {
                 put("source_id", JsonPrimitive("meeple_app"))
                 put("title", JsonPrimitive(title))
-                put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/$bggId"))
+                put("url", JsonPrimitive(itemUrl))
                 put("game_id", JsonPrimitive(targetGameId))
                 targetProductId?.let { put("product_id", JsonPrimitive(it)) }
                 put("match_confidence", JsonPrimitive(1.0))
             }
-            transport.post(
-                url = "$base/rest/v1/listing",
-                headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                body = json.encodeToString(listingObj),
-            )
+
+            if (existingListing.isNotEmpty()) {
+                val existingListingId = existingListing.first().id
+                transport.patch(
+                    url = "$base/rest/v1/listing?id=eq.$existingListingId",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+                    body = json.encodeToString(listingObj),
+                )
+            } else {
+                transport.post(
+                    url = "$base/rest/v1/listing",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                    body = json.encodeToString(listingObj),
+                )
+            }
         } catch (e: Exception) {
             if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
-                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game', 'product' e 'listing'.")
+                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game', 'product', 'listing' e 'source'.")
             }
             throw e
         }
