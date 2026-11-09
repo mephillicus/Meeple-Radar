@@ -36,6 +36,10 @@ interface SupabaseApi {
         fallbackTitle: String,
     ): Long? = currentGameId
 
+    suspend fun saveGameToDatabase(
+        item: com.meepleradar.data.model.IncomingItem,
+    )
+
     suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) = Unit
 }
 
@@ -162,6 +166,66 @@ class SupabaseRestApi(
                 )
             }
             return targetGameId
+        } catch (e: Exception) {
+            if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
+                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game' e 'listing'.")
+            }
+            throw e
+        }
+    }
+
+    override suspend fun saveGameToDatabase(
+        item: com.meepleradar.data.model.IncomingItem,
+    ) {
+        try {
+            val title = item.title
+            val kind = if (item.game?.kind == "expansion") "expansion" else "base"
+            val bggId = item.game?.bggId ?: 0
+            if (bggId <= 0) throw IllegalStateException("ID BGG non disponibile per il gioco.")
+
+            val gameObj = buildMap {
+                put("name", JsonPrimitive(title))
+                put("kind", JsonPrimitive(kind))
+                put("bgg_id", JsonPrimitive(bggId))
+                item.game?.bggRating?.let { put("bgg_rating", JsonPrimitive(it)) }
+                item.game?.bggRank?.let { put("bgg_rank", JsonPrimitive(it)) }
+                item.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
+            }
+
+            val existingGame = json.decodeFromString<List<GameDto>>(
+                transport.get("$base/rest/v1/game?bgg_id=eq.$bggId&select=*", headers()),
+            )
+            val targetGameId = if (existingGame.isNotEmpty()) {
+                val existingId = existingGame.first().id
+                transport.patch(
+                    url = "$base/rest/v1/game?id=eq.$existingId",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+                    body = json.encodeToString(gameObj),
+                )
+                existingId
+            } else {
+                val created = json.decodeFromString<List<GameDto>>(
+                    transport.post(
+                        url = "$base/rest/v1/game",
+                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                        body = json.encodeToString(gameObj),
+                    ),
+                )
+                created.first().id
+            }
+
+            val listingObj = buildMap {
+                put("source_id", JsonPrimitive("meepleradar"))
+                put("title", JsonPrimitive(title))
+                put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/$bggId"))
+                put("game_id", JsonPrimitive(targetGameId))
+                put("match_confidence", JsonPrimitive(1.0))
+            }
+            transport.post(
+                url = "$base/rest/v1/listing",
+                headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                body = json.encodeToString(listingObj),
+            )
         } catch (e: Exception) {
             if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
                 throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game' e 'listing'.")

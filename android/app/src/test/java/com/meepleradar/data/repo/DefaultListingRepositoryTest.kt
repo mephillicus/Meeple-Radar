@@ -5,6 +5,7 @@ import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
+import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
@@ -48,6 +49,10 @@ class DefaultListingRepositoryTest {
 
         override suspend fun insertAction(row: UserActionRow) {
             inserted += row
+        }
+
+        override suspend fun saveGameToDatabase(item: IncomingItem) {
+            // No-op per test
         }
 
     }

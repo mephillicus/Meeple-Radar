@@ -66,6 +66,10 @@ class IncomingViewModelTest {
             actions += key to action
         }
 
+        override suspend fun saveGameToDatabase(item: IncomingItem) {
+            // No-op per test
+        }
+
         override fun lastDbModifiedTimestamp(): Long = 0L
 
         override fun newlyAddedCount(): Int = 0

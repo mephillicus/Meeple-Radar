@@ -95,6 +95,10 @@ class DetailViewModelTest {
             statsRank = bggRank
         }
 
+        override suspend fun saveGameToDatabase(item: IncomingItem) {
+            // No-op per test
+        }
+
         override fun lastDbModifiedTimestamp(): Long = 0L
 
         override fun newlyAddedCount(): Int = 0
@@ -140,6 +144,7 @@ class DetailViewModelTest {
 
         override suspend fun findDetailsById(bggId: Int): BoardGameDetails? {
             requestedDetailsById = bggId
+            requestedRefreshDetailsById = bggId
             requestedBggId = bggId
             return details?.takeIf { it.bggId == bggId }
         }

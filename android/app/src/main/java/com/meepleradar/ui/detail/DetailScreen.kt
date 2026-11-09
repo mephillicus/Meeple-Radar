@@ -58,7 +58,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.remote.BggLink
 import com.meepleradar.data.remote.BoardGameDetails
@@ -199,6 +202,7 @@ private fun DetailContent(
                 onSelectBggCandidate,
                 onRemoveManualBggSelection,
                 onSearchBggCandidates,
+                onAddToDatabase = onSaveToDb,
             )
         }
 
@@ -373,6 +377,7 @@ private fun BoardGameSpecs(
     onSelectBggCandidate: (BoardGameDetails) -> Unit,
     onRemoveManualBggSelection: () -> Unit,
     onSearchBggCandidates: (String) -> Unit,
+    onAddToDatabase: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val details = content.boardGameDetails
@@ -431,21 +436,28 @@ private fun BoardGameSpecs(
                     )
                 }
             } else if (details == null) {
-                Text(
-                    "Specifiche BGG non trovate per questo gioco.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                BggCandidateSelector(
-                    candidates = content.bggCandidates,
-                    isLoading = content.isLoadingBggCandidates,
-                    error = content.detailsError,
-                    isSearching = content.isSearchingBgg,
-                    searchError = content.bggSearchError,
-                    onSelect = onSelectBggCandidate,
-                    onSearch = onSearchBggCandidates,
-                )
-                if (game?.bggRating != null) SpecQuickGrid(game = game, details = null)
+                if (!content.isFromDatabase) {
+                    NotInDatabaseCard(
+                        item = content.item,
+                        onAddToDatabase = onAddToDatabase,
+                    )
+                } else {
+                    Text(
+                        "Specifiche BGG non trovate per questo gioco.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    BggCandidateSelector(
+                        candidates = content.bggCandidates,
+                        isLoading = content.isLoadingBggCandidates,
+                        error = content.detailsError,
+                        isSearching = content.isSearchingBgg,
+                        searchError = content.bggSearchError,
+                        onSelect = onSelectBggCandidate,
+                        onSearch = onSearchBggCandidates,
+                    )
+                    if (game?.bggRating != null) SpecQuickGrid(game = game, details = null)
+                }
             } else {
                 if (isEditingBgg) {
                     BggCandidateSelector(
@@ -953,6 +965,64 @@ private fun OfferRow(offer: Offer, allOffers: List<Offer>, isBestOffer: Boolean,
                     Spacer(Modifier.width(6.dp))
                     Text("Apri", style = MaterialTheme.typography.bodyMedium)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotInDatabaseCard(
+    item: IncomingItem,
+    onAddToDatabase: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Questo gioco non è ancora nel Database.",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = "Vuoi aggiungerlo permanentemente al Database MeepleRadar?",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            if (item.imageUrl != null) {
+                AsyncImage(
+                    model = item.imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.size(80.dp).clip(RoundedCornerShape(16.dp)),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+            Button(
+                onClick = onAddToDatabase,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Text(
+                    text = "Aggiungi al Database",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }

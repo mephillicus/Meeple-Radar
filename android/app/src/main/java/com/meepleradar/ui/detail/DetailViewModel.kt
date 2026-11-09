@@ -50,6 +50,7 @@ sealed interface DetailUiState {
         val isUpdatingBggStats: Boolean = false,
         val updateBggStatsSuccess: Boolean = false,
         val updateBggStatsError: String? = null,
+        val isFromDatabase: Boolean = false,
     ) : DetailUiState
 }
 
@@ -59,6 +60,7 @@ class DetailViewModel(
     private val today: LocalDate = LocalDate.now(),
     private val imageLookup: BoardGameImageLookup? = null,
     private val bggSelectionStore: BggSelectionStore = NoOpBggSelectionStore,
+    private val fallbackItem: IncomingItem? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
@@ -72,8 +74,11 @@ class DetailViewModel(
         _state.value = DetailUiState.Loading
         viewModelScope.launch {
             try {
-                val item = repo.findItem(key, today)
-                if (item == null) {
+                var item = repo.findItem(key, today)
+                val isFromDatabase = item != null
+                if (item == null && fallbackItem != null) {
+                    item = fallbackItem
+                } else if (item == null) {
                     _state.value = DetailUiState.NotFound
                     return@launch
                 }
@@ -83,6 +88,7 @@ class DetailViewModel(
                     item = item,
                     offers = orderedOffersForDisplay(item.offers),
                     isFavorite = isFavorite,
+                    isFromDatabase = isFromDatabase,
                     isLoadingDetails = imageLookup != null,
                 )
                 val lookup = imageLookup ?: return@launch
@@ -195,12 +201,7 @@ class DetailViewModel(
 
     fun saveToDatabase() {
         val content = _state.value as? DetailUiState.Content ?: return
-        val details = content.boardGameDetails ?: return
-        val lookup = imageLookup
-        if (lookup == null) {
-            updateContent { it.copy(saveToDbError = "Servizio BoardGameGeek non disponibile.") }
-            return
-        }
+        val details = content.boardGameDetails
         val listingId = content.item.key.removePrefix("listing:").toLongOrNull()
             ?: content.item.bggSelectionKeys.firstNotNullOfOrNull { it.removePrefix("listing:").toLongOrNull() }
             ?: 0L
@@ -215,41 +216,52 @@ class DetailViewModel(
 
         viewModelScope.launch {
             try {
-                val latestDetails = lookup.refreshDetailsById(details.bggId)
-                    ?: throw IllegalStateException("Impossibile recuperare tutti i dati da BoardGameGeek.")
-                val customDescription = content.item.customDescription?.takeIf(String::isNotBlank)
-                    ?: content.item.game?.description?.takeIf(String::isNotBlank)
-                val savedGameId = repo.linkListingToBgg(
-                    listingId = listingId,
-                    currentGameId = currentGameId,
-                    details = latestDetails,
-                    fallbackTitle = content.item.title,
-                )
-                updateContent {
-                    val savedGame = savedGameId?.let { id ->
-                        val existing = content.item.game
-                        Game(
-                            id = id,
-                            name = latestDetails.primaryName ?: latestDetails.englishName ?: content.item.title,
-                            kind = if (latestDetails.expands.isNotEmpty()) "expansion" else "base",
-                            bggId = latestDetails.bggId,
-                            bggRating = latestDetails.bggRating,
-                            bggRank = latestDetails.bggRank,
-                            imageUrl = latestDetails.imageUrl,
-                            description = existing?.description,
+                if (details != null) {
+                    val lookup = imageLookup
+                    val latestDetails = lookup?.findDetailsById(details.bggId) ?: details
+                    val customDescription = content.item.customDescription?.takeIf(String::isNotBlank)
+                        ?: content.item.game?.description?.takeIf(String::isNotBlank)
+                    val savedGameId = repo.linkListingToBgg(
+                        listingId = listingId,
+                        currentGameId = currentGameId,
+                        details = latestDetails,
+                        fallbackTitle = content.item.title,
+                    )
+                    updateContent {
+                        val savedGame = savedGameId?.let { id ->
+                            val existing = content.item.game
+                            Game(
+                                id = id,
+                                name = latestDetails.primaryName ?: latestDetails.englishName ?: content.item.title,
+                                kind = if (latestDetails.expands.isNotEmpty()) "expansion" else "base",
+                                bggId = latestDetails.bggId,
+                                bggRating = latestDetails.bggRating,
+                                bggRank = latestDetails.bggRank,
+                                imageUrl = latestDetails.imageUrl,
+                                description = existing?.description,
+                            )
+                        }
+                        it.copy(
+                            item = if (savedGame == null) it.item else it.item.copy(game = savedGame),
+                            boardGameDetails = if (customDescription == null) {
+                                latestDetails
+                            } else {
+                                latestDetails.copy(description = customDescription)
+                            },
+                            isSavingToDb = false,
+                            isPendingDbSave = false,
+                            saveToDbSuccess = true,
                         )
                     }
-                    it.copy(
-                        item = if (savedGame == null) it.item else it.item.copy(game = savedGame),
-                        boardGameDetails = if (customDescription == null) {
-                            latestDetails
-                        } else {
-                            latestDetails.copy(description = customDescription)
-                        },
-                        isSavingToDb = false,
-                        isPendingDbSave = false,
-                        saveToDbSuccess = true,
-                    )
+                } else {
+                    repo.saveGameToDatabase(content.item)
+                    updateContent {
+                        it.copy(
+                            isSavingToDb = false,
+                            isPendingDbSave = false,
+                            saveToDbSuccess = true,
+                        )
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e

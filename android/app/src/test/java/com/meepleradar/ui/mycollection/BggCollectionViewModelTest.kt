@@ -92,6 +92,9 @@ class BggCollectionViewModelTest {
         override suspend fun findItem(key: String, today: LocalDate): IncomingItem? = null
         override suspend fun sources(): List<Source> = emptyList()
         override suspend fun setAction(key: String, action: Action) = Unit
+        override suspend fun saveGameToDatabase(item: IncomingItem) {
+            // No-op per test
+        }
         override fun lastDbModifiedTimestamp(): Long = 0L
         override fun newlyAddedCount(): Int = 0
         override fun newlyAddedCountFlow() = kotlinx.coroutines.flow.MutableStateFlow(0)

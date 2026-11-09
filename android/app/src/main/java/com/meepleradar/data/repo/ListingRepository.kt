@@ -59,6 +59,8 @@ interface ListingRepository {
         fallbackTitle: String,
     ): Long? = currentGameId
 
+    suspend fun saveGameToDatabase(item: IncomingItem)
+
     suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) = Unit
 }
 
@@ -241,6 +243,25 @@ class DefaultListingRepository(
                     ),
                 )
             }
+        }
+    }
+
+    override suspend fun saveGameToDatabase(item: IncomingItem) {
+        api.saveGameToDatabase(item)
+        val gameId = item.game?.id ?: 0L
+        if (gameId > 0) {
+            val existing = localCacheStore?.load()?.games?.firstOrNull { it.id == gameId }
+            val linkedGame = Game(
+                id = gameId,
+                name = item.game?.name ?: item.title,
+                kind = item.game?.kind ?: "base",
+                bggId = item.game?.bggId,
+                bggRating = item.game?.bggRating,
+                bggRank = item.game?.bggRank,
+                imageUrl = item.game?.imageUrl ?: item.imageUrl,
+                description = existing?.description,
+            )
+            localCacheStore?.upsertGame(linkedGame, item.key.removePrefix("listing:").toLongOrNull())
         }
     }
 
