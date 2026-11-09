@@ -25,6 +25,7 @@ class SupabaseRestApiTest {
 
     private class FakeTransport(
         private val getResponses: Map<String, String> = emptyMap(),
+        private val patchResponse: String = "",
     ) : HttpTransport {
         data class Call(val method: String, val url: String, val headers: Map<String, String>, val body: String?)
 
@@ -42,7 +43,7 @@ class SupabaseRestApiTest {
 
         override suspend fun patch(url: String, headers: Map<String, String>, body: String): String {
             calls += Call("PATCH", url, headers, body)
-            return ""
+            return patchResponse
         }
     }
 
@@ -226,7 +227,9 @@ class SupabaseRestApiTest {
 
     @Test
     fun `aggiorna solo voto e rank BGG di un game`() = runTest {
-        val transport = FakeTransport()
+        val transport = FakeTransport(
+            patchResponse = """[{"id":5,"name":"Coffee Rush: Winter","kind":"base","bgg_id":99,"bgg_rating":7.25,"bgg_rank":314}]""",
+        )
 
         SupabaseRestApi(base, anon, transport, json).updateGameBggStats(
             bggId = 99,
@@ -237,10 +240,22 @@ class SupabaseRestApiTest {
         val call = transport.calls.single()
         val body = Json.parseToJsonElement(call.body!!).jsonObject
         assertEquals("PATCH", call.method)
-        assertEquals("$base/rest/v1/game?bgg_id=eq.99", call.url)
+        assertEquals("$base/rest/v1/game?bgg_id=eq.99&select=*", call.url)
         assertEquals(JsonPrimitive(7.25), body["bgg_rating"])
         assertEquals(JsonPrimitive(314), body["bgg_rank"])
         assertEquals(2, body.size)
+    }
+
+    @Test
+    fun `aggiornamento voto e rank fallisce se l'id BGG non esiste nel database`() = runTest {
+        val transport = FakeTransport(patchResponse = "[]")
+
+        try {
+            SupabaseRestApi(base, anon, transport, json).updateGameBggStats(999999, 7.0, 100)
+            fail("attesa eccezione per gioco non trovato")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("Nessun gioco associato"))
+        }
     }
 
     @Test

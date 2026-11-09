@@ -92,11 +92,15 @@ class SupabaseRestApi(
             bggRank?.let { put("bgg_rank", JsonPrimitive(it)) }
         }
         require(updates.isNotEmpty()) { "BoardGameGeek non ha restituito voto o rank." }
-        transport.patch(
-            url = "$base/rest/v1/game?bgg_id=eq.$bggId",
-            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+        val response = transport.patch(
+            url = "$base/rest/v1/game?bgg_id=eq.$bggId&select=*",
+            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
             body = json.encodeToString(updates),
         )
+        val updatedGames = json.decodeFromString<List<GameDto>>(response)
+        check(updatedGames.any { it.bggId == bggId }) {
+            "Nessun gioco associato all'ID BGG $bggId trovato o aggiornabile su Supabase."
+        }
     }
 
     override suspend fun linkListingToBgg(

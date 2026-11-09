@@ -467,7 +467,51 @@ class DetailViewModelTest {
         assertEquals(999, repo.linkedBggId)
         assertEquals(123L, repo.linkedListingId)
         assertEquals(999, savedContent.item.game?.bggId)
+        assertEquals(1234L, savedContent.item.game?.id)
         assertEquals(999, lookup.requestedRefreshDetailsById)
+    }
+
+    @Test
+    fun `propone il salvataggio quando i dettagli BGG esistono ma manca il game associato`() = runTest(dispatcher) {
+        val details = BoardGameDetails(
+            bggId = 410991,
+            imageUrl = "https://bgg.example/looot.jpg",
+            description = "Looot",
+            yearPublished = 2024,
+            minPlayers = 2,
+            maxPlayers = 4,
+            playingTime = 35,
+            minAge = 10,
+            designers = listOf("Charles Chevallier"),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            primaryName = "Looot",
+            bggRating = 7.05344,
+            bggRank = 1808,
+        )
+        val repo = FakeRepo(listOf(item("listing:410991", emptyList())))
+        val lookup = FakeImageLookup(details = details)
+        val viewModel = DetailViewModel(
+            repo = repo,
+            key = "listing:410991",
+            today = today,
+            imageLookup = lookup,
+        )
+        advanceUntilIdle()
+
+        val loaded = viewModel.state.value as DetailUiState.Content
+        assertEquals(null, loaded.item.game)
+        assertTrue(loaded.isPendingDbSave)
+        assertEquals(details, loaded.boardGameDetails)
+
+        viewModel.saveToDatabase()
+        advanceUntilIdle()
+
+        val saved = viewModel.state.value as DetailUiState.Content
+        assertTrue(saved.saveToDbSuccess)
+        assertEquals(410991, saved.item.game?.bggId)
+        assertEquals(1234L, saved.item.game?.id)
+        assertEquals(410991L, repo.linkedListingId)
     }
 
     @Test

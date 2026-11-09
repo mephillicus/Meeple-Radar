@@ -55,7 +55,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.meepleradar.data.model.BggCollectionGame
+import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.IncomingItem
+import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.data.remote.BggLink
 import com.meepleradar.ui.components.EmptyView
@@ -400,7 +402,34 @@ private fun BggCollectionGameGroup(
                 showIgnoreAction = false,
             )
         } else {
-            BggCollectionCard(game = game, imageLookup = imageLookup)
+            BggCollectionCard(
+                game = game,
+                imageLookup = imageLookup,
+                onClick = {
+                    onOpen(
+                        IncomingItem(
+                            key = "bgg:${game.bggId}",
+                            title = game.name,
+                            imageUrl = game.imageUrl,
+                            releaseDate = null,
+                            kind = ItemKind.NEW_UNDATED,
+                            game = Game(
+                                id = game.bggId.toLong(),
+                                name = game.name,
+                                kind = game.kind,
+                                bggId = game.bggId,
+                                imageUrl = game.imageUrl,
+                                bggRating = null,
+                                bggRank = null,
+                            ),
+                            offers = emptyList(),
+                            customDescription = null,
+                            lookupTitle = null,
+                            bggSelectionKeys = emptyList(),
+                        )
+                    )
+                }
+            )
         }
 
         if (showExpansionPills) {
@@ -602,12 +631,13 @@ private fun ExpansionAvailabilityDot(
 }
 
 @Composable
-private fun BggCollectionCard(game: BggCollectionGame, imageLookup: BoardGameImageLookup) {
-    val uriHandler = LocalUriHandler.current
+private fun BggCollectionCard(
+    game: BggCollectionGame,
+    imageLookup: BoardGameImageLookup,
+    onClick: () -> Unit,
+) {
     Card(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable {
-            uriHandler.openUri("https://boardgamegeek.com/boardgame/${game.bggId}")
-        },
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),

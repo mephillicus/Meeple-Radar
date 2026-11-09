@@ -226,13 +226,7 @@ private fun DetailContent(
 
         val game = content.item.game
         val bggId = game?.bggId ?: content.boardGameDetails?.bggId
-        val hasSavedGame = game?.bggId != null || content.saveToDbSuccess
-        val hasMissingStats = if (game != null) {
-            game.bggRating == null || game.bggRank == null
-        } else {
-            content.boardGameDetails?.let { it.bggRating == null || it.bggRank == null } ?: false
-        }
-        if (bggId != null && hasSavedGame && hasMissingStats) {
+        if (game?.bggId != null && bggId != null && (game.bggRating == null || game.bggRank == null)) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -262,7 +256,8 @@ private fun DetailContent(
             }
         }
 
-        if (content.isPendingDbSave || content.saveToDbSuccess || content.saveToDbError != null) {
+        val needsGameAssociation = content.item.game == null && content.boardGameDetails != null
+        if (needsGameAssociation || content.isPendingDbSave || content.saveToDbSuccess || content.saveToDbError != null) {
             item {
                 SaveToDatabaseCard(
                     isPending = content.isPendingDbSave,
@@ -1012,7 +1007,7 @@ private fun SaveToDatabaseCard(
                 }
             } else {
                 Text(
-                    text = "Hai selezionato una nuova corrispondenza BGG. Puoi salvarla permanentemente sul Database.",
+                    text = "Questa scheda BGG non è ancora collegata al Database. Puoi creare o collegare il gioco e salvare i dati BGG.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
