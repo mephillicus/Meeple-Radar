@@ -117,7 +117,7 @@ class DefaultListingRepositoryTest {
         val items = DefaultListingRepository(api, FakeFavoriteStore()).incoming(today)
 
         assertEquals(listOf("game:5"), items.map { it.key })
-        assertEquals("Catan", items[0].title)
+        assertEquals("Gioco 1", items[0].title)
         assertEquals("Store Uno", items[0].offers[0].sourceName)
     }
 

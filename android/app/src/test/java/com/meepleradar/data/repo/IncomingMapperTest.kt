@@ -108,7 +108,7 @@ class IncomingMapperTest {
 
         assertEquals(1, items.size)
         assertEquals("game:5", items[0].key)
-        assertEquals("Catan", items[0].title)
+        assertEquals("Gioco 1", items[0].title)
         assertEquals(2, items[0].offers.size)
         assertEquals(listOf("Store s1", "Store s2"), items[0].offers.map { it.sourceName })
         assertEquals(Price(35.0, "EUR"), bestEurPrice(items[0].offers))
@@ -198,7 +198,7 @@ class IncomingMapperTest {
             today = today,
         )
 
-        assertEquals(listOf("Alpha", "Later", "Sooner", "Zeta"), items.map { it.title })
+        assertEquals(listOf("Gioco 1", "Gioco 2", "Gioco 3", "Gioco 4"), items.map { it.title })
     }
 
     @Test
@@ -217,7 +217,7 @@ class IncomingMapperTest {
 
         assertEquals(1, items.size)
         assertEquals("product:10", items[0].key)
-        assertEquals("Citadels", items[0].title)
+        assertEquals("Gioco 1", items[0].title)
         assertEquals(2, items[0].offers.size)
         assertEquals(Price(35.0, "EUR"), bestEurPrice(items[0].offers))
         assertEquals(listOf("product:10", "listing:1", "listing:2"), items[0].bggSelectionKeys)
@@ -257,7 +257,7 @@ class IncomingMapperTest {
             products = mapOf(10L to Product(10L, productTitle, null, null)),
         )
 
-        assertEquals("Dune", items.single().title)
+        assertEquals(productTitle, items.single().title)
         assertEquals(productTitle, items.single().lookupTitle)
     }
 
@@ -320,6 +320,32 @@ class IncomingMapperTest {
             products = mapOf(product.id to unrelatedLink),
         )
         assertEquals(1, withoutPublisherLink.single().offers.size)
+    }
+
+    @Test
+    fun `non mostra un link BGG come offerta del publisher`() {
+        val product = Product(
+            id = 10,
+            title = "Dune",
+            imageUrl = null,
+            releaseDate = null,
+            url = "https://boardgamegeek.com/boardgame/12345",
+            price = 49.9,
+            currency = "EUR",
+            publisher = "BoardGameGeek",
+        )
+        val listing = listing(id = 1).copy(productId = product.id)
+        val items = buildIncomingItems(
+            listings = listOf(listing),
+            games = emptyMap(),
+            sources = sources("s1"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(product.id to product),
+        )
+
+        assertEquals(1, items.single().offers.size)
+        assertEquals(listing.url, items.single().offers.single().url)
     }
 
     @Test

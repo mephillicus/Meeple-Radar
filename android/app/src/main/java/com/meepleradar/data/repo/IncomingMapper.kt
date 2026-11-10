@@ -77,7 +77,7 @@ fun buildIncomingItems(
             }.distinct()
             IncomingItem(
                 key = key,
-                title = game?.name ?: product?.title ?: groupListings.first().title,
+                title = groupListings.first().title.takeIf { it.isNotBlank() } ?: product?.title ?: game?.name ?: "",
                 imageUrl = game?.imageUrl ?: product?.imageUrl ?: groupListings.firstNotNullOfOrNull { it.imageUrl },
                 releaseDate = releaseDate,
                 kind = if (releaseDate != null) ItemKind.UPCOMING else ItemKind.NEW_UNDATED,
@@ -106,6 +106,7 @@ private fun Product.publisherOffer(releaseDate: LocalDate?): Offer? {
     } catch (_: java.net.URISyntaxException) {
         null
     }?.removePrefix("www.")?.lowercase(java.util.Locale.ROOT) ?: return null
+    if (host == "boardgamegeek.com" || host.endsWith(".boardgamegeek.com") || host == "bgg.cc") return null
     val publisherTokens = offerPublisher.lowercase(java.util.Locale.ROOT)
         .split(Regex("[^\\p{L}\\p{N}]+"))
         .filter { it.length >= 4 }
