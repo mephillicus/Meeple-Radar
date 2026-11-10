@@ -1,6 +1,5 @@
 package com.meepleradar.ui.detail
 
-import android.text.Html
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -94,7 +93,6 @@ fun DetailScreen(
         contentWindowInsets = ScreenContentInsets,
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            // Top Navigation Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -230,7 +228,8 @@ private fun DetailContent(
 
         val game = content.item.game
         val bggId = game?.bggId ?: content.boardGameDetails?.bggId
-        if (content.isFromDatabase && game?.bggId != null && bggId != null && (game.bggRating == null || game.bggRank == null)) {
+        if (content.isFromDatabase && game?.bggId != null && bggId != null &&
+            (game.bggRating == null || game.bggRank == null || game.description.isNullOrBlank())) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
@@ -246,7 +245,7 @@ private fun DetailContent(
                             Spacer(Modifier.width(8.dp))
                             Text("Aggiornamento dati BGG…")
                         } else {
-                            Text("Aggiorna voto e rank BGG")
+                            Text("Aggiorna voto, rank e descrizione BGG")
                         }
                     }
                     content.updateBggStatsError?.let { error ->
@@ -326,7 +325,6 @@ private fun DetailHeader(content: DetailUiState.Content, imageLookup: BoardGameI
                         )
                     }
 
-                    // Rating and Rank
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -478,7 +476,7 @@ private fun BoardGameSpecs(
                 GameSpecificationRows(details, content.item.title)
 
                 details.description?.let { description ->
-                    val plainText = Html.fromHtml(description, Html.FROM_HTML_MODE_COMPACT)
+                    val plainText = android.text.Html.fromHtml(description, android.text.Html.FROM_HTML_MODE_COMPACT)
                         .toString()
                         .trim()
                     if (plainText.isNotBlank()) {
@@ -999,29 +997,11 @@ private fun NotInDatabaseCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(8.dp))
-            if (item.imageUrl != null) {
-                AsyncImage(
-                    model = item.imageUrl,
-                    contentDescription = null,
-                    modifier = Modifier.size(80.dp).clip(RoundedCornerShape(16.dp)),
-                    contentScale = ContentScale.Fit,
-                )
-            }
             Button(
                 onClick = onAddToDatabase,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-                modifier = Modifier.fillMaxWidth().height(48.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(
-                    text = "Aggiungi al Database",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                )
+                Text("Aggiungi al Database")
             }
         }
     }
@@ -1037,88 +1017,40 @@ private fun SaveToDatabaseCard(
 ) {
     Card(
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (saveSuccess) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-        ),
-        border = BorderStroke(
-            1.dp,
-            if (saveSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (saveSuccess) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Text(
-                        text = "Associazione salvata permanentemente sul Database!",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-            } else {
+            Text(
+                text = when {
+                    saveSuccess -> "Salvataggio completato"
+                    isSaving -> "Salvataggio in corso…"
+                    isPending -> "Riprendi e salva su database"
+                    else -> "Salva sul database"
+                },
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (saveError != null) {
+                Text(saveError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Button(
+                onClick = onSaveToDb,
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Text(
-                    text = "Questa scheda BGG non è ancora collegata al Database. Puoi creare o collegare il gioco e salvare i dati BGG.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
+                    when {
+                        saveSuccess -> "Salvato"
+                        isSaving -> "Salvataggio…"
+                        isPending -> "Salva associazione"
+                        else -> "Salva su database"
+                    },
                 )
-
-                saveError?.let { err ->
-                    Text(
-                        text = err,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-
-                Button(
-                    onClick = onSaveToDb,
-                    enabled = !isSaving,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                    modifier = Modifier.fillMaxWidth().height(44.dp),
-                ) {
-                    if (isSaving) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Scrittura su Supabase in corso...")
-                    } else {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (saveError != null) "Riprova Salvataggio" else "Salva sul Database")
-                    }
-                }
             }
         }
     }

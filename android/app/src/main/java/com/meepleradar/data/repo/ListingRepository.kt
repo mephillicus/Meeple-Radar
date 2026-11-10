@@ -61,7 +61,12 @@ interface ListingRepository {
 
     suspend fun saveGameToDatabase(item: IncomingItem)
 
-    suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) = Unit
+    suspend fun updateGameBggStats(
+        bggId: Int,
+        bggRating: Double?,
+        bggRank: Int?,
+        description: String? = null,
+    ) = Unit
 }
 
 class DefaultListingRepository(
@@ -252,21 +257,27 @@ class DefaultListingRepository(
                 bggRating = details.bggRating,
                 bggRank = details.bggRank,
                 imageUrl = details.imageUrl,
-                description = existing?.description,
+                description = existing?.description ?: details.description,
             )
             localCacheStore?.upsertGame(linkedGame, listingId.takeIf { it > 0 })
         }
         return gameId
     }
 
-    override suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) {
-        api.updateGameBggStats(bggId, bggRating, bggRank)
+    override suspend fun updateGameBggStats(
+        bggId: Int,
+        bggRating: Double?,
+        bggRank: Int?,
+        description: String?,
+    ) {
+        api.updateGameBggStats(bggId, bggRating, bggRank, description)
         localCacheStore?.load()?.let { cached ->
             cached.games.firstOrNull { it.bggId == bggId }?.let { game ->
                 localCacheStore.upsertGame(
                     game.copy(
                         bggRating = bggRating ?: game.bggRating,
                         bggRank = bggRank ?: game.bggRank,
+                        description = description?.takeIf(String::isNotBlank) ?: game.description,
                     ),
                 )
             }
@@ -286,7 +297,7 @@ class DefaultListingRepository(
                 bggRating = item.game?.bggRating,
                 bggRank = item.game?.bggRank,
                 imageUrl = item.game?.imageUrl ?: item.imageUrl,
-                description = existing?.description,
+                description = existing?.description ?: item.game?.description,
             )
             localCacheStore?.upsertGame(linkedGame, item.key.removePrefix("listing:").toLongOrNull())
         }

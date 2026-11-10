@@ -46,7 +46,12 @@ interface SupabaseApi {
         bggId: Int,
     ): List<com.meepleradar.data.model.CandidateListingLink> = emptyList()
 
-    suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) = Unit
+    suspend fun updateGameBggStats(
+        bggId: Int,
+        bggRating: Double?,
+        bggRank: Int?,
+        description: String? = null,
+    ) = Unit
 }
 
 class SupabaseRestApi(
@@ -95,13 +100,19 @@ class SupabaseRestApi(
         )
     }
 
-    override suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) {
+    override suspend fun updateGameBggStats(
+        bggId: Int,
+        bggRating: Double?,
+        bggRank: Int?,
+        description: String?,
+    ) {
         require(bggId > 0) { "ID BGG non valido: $bggId" }
         val updates = buildMap {
             bggRating?.let { put("bgg_rating", JsonPrimitive(it)) }
             bggRank?.let { put("bgg_rank", JsonPrimitive(it)) }
+            description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
         }
-        require(updates.isNotEmpty()) { "BoardGameGeek non ha restituito voto o rank." }
+        require(updates.isNotEmpty()) { "BoardGameGeek non ha restituito nessun dato da aggiornare." }
         val response = transport.patch(
             url = "$base/rest/v1/game?bgg_id=eq.$bggId&select=*",
             headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
@@ -130,6 +141,7 @@ class SupabaseRestApi(
                 put("bgg_rating", details.bggRating?.let(::JsonPrimitive) ?: JsonNull)
                 put("bgg_rank", details.bggRank?.let(::JsonPrimitive) ?: JsonNull)
                 put("image_url", details.imageUrl?.let(::JsonPrimitive) ?: JsonNull)
+                details.description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
             }
 
             val targetGameId = if (currentGameId != null && currentGameId > 0) {
@@ -192,13 +204,13 @@ class SupabaseRestApi(
 
             val itemUrl = "https://boardgamegeek.com/boardgame/$bggId"
 
-            // 1. Insert or Update Game
             val gameObj = buildMap {
                 put("name", JsonPrimitive(title))
                 put("kind", JsonPrimitive(kind))
                 put("bgg_id", JsonPrimitive(bggId))
                 item.game?.bggRating?.let { put("bgg_rating", JsonPrimitive(it)) }
                 item.game?.bggRank?.let { put("bgg_rank", JsonPrimitive(it)) }
+                item.game?.description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
                 item.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
             }
 
@@ -223,7 +235,6 @@ class SupabaseRestApi(
             )
             val targetGameId = createdGame.first().id
 
-            // 2. Insert or Find Product
             var targetProductId: Long? = null
             runCatching {
                 val encodedUrl = java.net.URLEncoder.encode(itemUrl, "UTF-8")
@@ -250,7 +261,6 @@ class SupabaseRestApi(
                 }
             }
 
-            // 3. Ensure "meeple_app" source exists in source table
             runCatching {
                 val sourceObj = mapOf("id" to JsonPrimitive("meeple_app"), "name" to JsonPrimitive("MeepleApp"))
                 transport.post(
@@ -260,7 +270,6 @@ class SupabaseRestApi(
                 )
             }
 
-            // 4. Insert or Update Listing
             val encodedListingUrl = java.net.URLEncoder.encode(itemUrl, "UTF-8")
             val existingListing = runCatching {
                 json.decodeFromString<List<ListingDto>>(

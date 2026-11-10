@@ -52,6 +52,10 @@ class DetailViewModelTest {
         var requestedSourceIds: Set<String>? = emptySet()
         val actions = mutableListOf<Pair<String, Action>>()
         var actionFailure: Throwable? = null
+        var statsGameId: Long? = null
+        var statsRating: Double? = null
+        var statsRank: Int? = null
+        var statsDescription: String? = null
 
         override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> {
             requestedSourceIds = sourceIds
@@ -59,7 +63,9 @@ class DetailViewModelTest {
             return items
         }
 
-        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> = favoriteItems
+        override suspend fun favorites(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> {
+            return favoriteItems
+        }
 
         override suspend fun sources(): List<Source> = emptyList()
 
@@ -74,9 +80,6 @@ class DetailViewModelTest {
 
         var linkedListingId: Long? = null
         var linkedBggId: Int? = null
-        var statsGameId: Long? = null
-        var statsRating: Double? = null
-        var statsRank: Int? = null
 
         override suspend fun linkListingToBgg(
             listingId: Long,
@@ -89,10 +92,16 @@ class DetailViewModelTest {
             return currentGameId ?: 1234L
         }
 
-        override suspend fun updateGameBggStats(bggId: Int, bggRating: Double?, bggRank: Int?) {
+        override suspend fun updateGameBggStats(
+            bggId: Int,
+            bggRating: Double?,
+            bggRank: Int?,
+            description: String?,
+        ) {
             statsGameId = bggId.toLong()
             statsRating = bggRating
             statsRank = bggRank
+            statsDescription = description
         }
 
         override suspend fun saveGameToDatabase(item: IncomingItem) {
@@ -529,12 +538,13 @@ class DetailViewModelTest {
             bggRating = null,
             bggRank = null,
             imageUrl = null,
+            description = null,
         )
         val item = item("game:5", emptyList()).copy(game = game)
         val details = BoardGameDetails(
             bggId = 999,
             imageUrl = "https://bgg.example/cover.jpg",
-            description = "Descrizione",
+            description = "Descrizione aggiornata",
             yearPublished = 2024,
             minPlayers = 2,
             maxPlayers = 4,
@@ -564,9 +574,11 @@ class DetailViewModelTest {
         assertEquals(999L, repo.statsGameId)
         assertEquals(7.8, repo.statsRating!!, 0.0001)
         assertEquals(123, repo.statsRank)
+        assertEquals("Descrizione aggiornata", repo.statsDescription)
         val updatedGame = content.item.game ?: error("Il gioco aggiornato deve restare nello stato")
         assertEquals(7.8, updatedGame.bggRating!!, 0.0001)
         assertEquals(123, updatedGame.bggRank)
+        assertEquals("Descrizione aggiornata", updatedGame.description)
         assertTrue(content.updateBggStatsSuccess)
         assertEquals(null, content.updateBggStatsError)
     }
