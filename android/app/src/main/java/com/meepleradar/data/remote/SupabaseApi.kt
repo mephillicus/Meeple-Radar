@@ -191,25 +191,27 @@ class SupabaseRestApi(
             }
 
             if (targetProductId == null) {
-                // Nessun product trovato per questo game: creane uno nuovo
-                val productObj = buildMap {
-                    put("title", JsonPrimitive(title))
-                    put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
-                    put("game_id", JsonPrimitive(targetGameId))
-                    details.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
-                    details.description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
-                }
-                val createdProducts = runCatching {
+                // Nessun product trovato per questo game: creane uno nuovo tramite funzione RPC
+                val rpcResponse = runCatching {
                     transport.post(
-                        url = "$base/rest/v1/product",
-                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                        body = json.encodeToString(productObj),
+                        url = "$base/rest/v1/rpc/upsert_product_for_game",
+                        headers = headers(mapOf(
+                            "Content-Type" to "application/json",
+                            "Prefer" to "return=representation",
+                        )),
+                        body = json.encodeToString(buildMap {
+                            put("p_game_id", JsonPrimitive(targetGameId))
+                            put("p_title", JsonPrimitive(title))
+                            put("p_url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
+                            details.imageUrl?.let { put("p_image_url", JsonPrimitive(it)) }
+                            details.description?.takeIf(String::isNotBlank)?.let { put("p_description", JsonPrimitive(it)) }
+                        }),
                     )
                 }.getOrNull()
-                if (createdProducts != null) {
+                if (rpcResponse != null) {
                     runCatching {
-                        val decoded = json.decodeFromString<List<ProductDto>>(createdProducts)
-                        targetProductId = decoded.firstOrNull()?.id
+                        val decoded = json.decodeFromString<JsonPrimitive>(rpcResponse)
+                        targetProductId = decoded.content.toLongOrNull()
                     }
                 }
             }
