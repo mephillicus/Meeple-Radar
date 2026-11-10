@@ -175,34 +175,52 @@ class SupabaseRestApi(
                 }
             }
 
-            val listingUrl = if (listingId > 0) {
-                runCatching {
-                    val existingListing = json.decodeFromString<List<ListingDto>>(
-                        transport.get("$base/rest/v1/listing?id=eq.$listingId&select=url", headers()),
-                    )
-                    existingListing.firstOrNull()?.url
-                }.getOrNull()
-            } else null
-
-            val productUrl = listingUrl ?: "https://boardgamegeek.com/boardgame/${details.bggId}"
-
             var targetProductId: Long? = null
-            val encodedProductUrl = java.net.URLEncoder.encode(productUrl, "UTF-8")
-            val productResponse = runCatching {
-                transport.get("$base/rest/v1/product?url=eq.$encodedProductUrl&select=*", headers())
+
+            // Cerca un product già collegato a questo game tramite le listing esistenti
+            val productByGameResponse = runCatching {
+                transport.get("$base/rest/v1/listing?game_id=eq.${targetGameId}&select=product_id&product_id=not.is.null", headers())
             }.getOrNull()
-            if (productResponse != null) {
+            if (productByGameResponse != null) {
                 runCatching {
-                    val existingProduct = json.decodeFromString<List<ProductDto>>(productResponse)
-                    if (existingProduct.isNotEmpty()) {
-                        targetProductId = existingProduct.first().id
+                    val linkedListings = json.decodeFromString<List<ListingDto>>(productByGameResponse)
+                    val productIdFromListing = linkedListings.firstNotNullOfOrNull { it.productId }
+                    if (productIdFromListing != null) {
+                        targetProductId = productIdFromListing
                     }
                 }
             }
+
             if (targetProductId == null) {
+                // Fallback: cerca product per URL della listing esistente
+                val listingUrl = if (listingId > 0) {
+                    runCatching {
+                        val existingListing = json.decodeFromString<List<ListingDto>>(
+                            transport.get("$base/rest/v1/listing?id=eq.$listingId&select=url", headers()),
+                        )
+                        existingListing.firstOrNull()?.url
+                    }.getOrNull()
+                } else null
+                val productUrl = listingUrl ?: "https://boardgamegeek.com/boardgame/${details.bggId}"
+                val encodedProductUrl = java.net.URLEncoder.encode(productUrl, "UTF-8")
+                val productResponse = runCatching {
+                    transport.get("$base/rest/v1/product?url=eq.$encodedProductUrl&select=*", headers())
+                }.getOrNull()
+                if (productResponse != null) {
+                    runCatching {
+                        val existingProduct = json.decodeFromString<List<ProductDto>>(productResponse)
+                        if (existingProduct.isNotEmpty()) {
+                            targetProductId = existingProduct.first().id
+                        }
+                    }
+                }
+            }
+
+            if (targetProductId == null) {
+                // Nessun product trovato: creane uno nuovo
                 val productObj = buildMap {
                     put("title", JsonPrimitive(title))
-                    put("url", JsonPrimitive(productUrl))
+                    put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
                     details.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
                     details.description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
                 }
