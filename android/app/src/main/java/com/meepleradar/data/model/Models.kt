@@ -45,6 +45,7 @@ data class Product(
     val price: Double? = null,
     val currency: String? = null,
     val publisher: String? = null,
+    val gameId: Long? = null,
 )
 
 data class Price(val amount: Double, val currency: String)

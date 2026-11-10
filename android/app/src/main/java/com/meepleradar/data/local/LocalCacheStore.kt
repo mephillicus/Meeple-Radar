@@ -262,10 +262,25 @@ private data class CachedProduct(
     val imageUrl: String?,
     val releaseDate: String?,
     val description: String? = null,
+    val gameId: Long? = null,
 ) {
-    fun toDomain() = Product(id, title, imageUrl, releaseDate.asLocalDateOrNull(), description)
+    fun toDomain() = Product(
+        id = id,
+        title = title,
+        imageUrl = imageUrl,
+        releaseDate = releaseDate.asLocalDateOrNull(),
+        description = description,
+        gameId = gameId,
+    )
     companion object {
-        fun from(p: Product) = CachedProduct(p.id, p.title, p.imageUrl, p.releaseDate?.toString(), p.description)
+        fun from(p: Product) = CachedProduct(
+            id = p.id,
+            title = p.title,
+            imageUrl = p.imageUrl,
+            releaseDate = p.releaseDate?.toString(),
+            description = p.description,
+            gameId = p.gameId,
+        )
     }
 }
 
