@@ -26,6 +26,7 @@ class SupabaseRestApiTest {
     private class FakeTransport(
         private val getResponses: Map<String, String> = emptyMap(),
         private val patchResponse: String = "",
+        private val postResponses: Map<String, String> = emptyMap(),
     ) : HttpTransport {
         data class Call(val method: String, val url: String, val headers: Map<String, String>, val body: String?)
 
@@ -38,7 +39,7 @@ class SupabaseRestApiTest {
 
         override suspend fun post(url: String, headers: Map<String, String>, body: String): String {
             calls += Call("POST", url, headers, body)
-            return ""
+            return postResponses[url] ?: ""
         }
 
         override suspend fun patch(url: String, headers: Map<String, String>, body: String): String {
@@ -186,14 +187,17 @@ class SupabaseRestApiTest {
             bggRating = 7.5,
             bggRank = 42,
         )
-        val transport = FakeTransport()
+        val transport = FakeTransport(
+            postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "123"),
+        )
 
-        SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
+        val (_, productId) = SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
             listingId = 7,
             currentGameId = 5,
             details = details,
             fallbackTitle = "Titolo alternativo",
         )
+        assertEquals(123L, productId)
         val gamePatch = transport.calls.first { it.url.contains("game") }
         val gameBody = Json.parseToJsonElement(gamePatch.body!!).jsonObject
 
@@ -212,10 +216,19 @@ class SupabaseRestApiTest {
         assertTrue(gameBody.containsKey("bgg_rank"))
         assertTrue(gameBody.containsKey("image_url"))
         assertTrue(transport.calls.any { it.url.contains("product") })
-        assertTrue(transport.calls.any { it.url.contains("listing?id=eq.7") })
+        val listingPatch = transport.calls.single { it.url.contains("listing?id=eq.7") }
+        val listingBody = Json.parseToJsonElement(listingPatch.body!!).jsonObject
+        assertEquals(JsonPrimitive(5), listingBody["game_id"])
+        assertEquals(JsonPrimitive(123), listingBody["product_id"])
+        val productRpc = transport.calls.single { it.url.endsWith("/rpc/upsert_product_for_game") }
+        val rpcBody = Json.parseToJsonElement(productRpc.body!!).jsonObject
+        assertEquals(JsonPrimitive("https://bgg.example/cover.jpg"), rpcBody["p_image_url"])
+        assertEquals(JsonPrimitive("Descrizione BGG"), rpcBody["p_description"])
 
         val baseGame = details.copy(bggId = 100, expands = emptyList())
-        val baseGameTransport = FakeTransport()
+        val baseGameTransport = FakeTransport(
+            postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "124"),
+        )
         SupabaseRestApi(base, anon, baseGameTransport, json).linkListingToBgg(
             listingId = 0,
             currentGameId = 5,
@@ -224,6 +237,46 @@ class SupabaseRestApiTest {
         )
         val baseGameBody = Json.parseToJsonElement(baseGameTransport.calls.first { it.url.contains("game") }.body!!).jsonObject
         assertEquals(JsonPrimitive("base"), baseGameBody["kind"])
+    }
+
+    @Test
+    fun `linkListingToBgg non associa listing quando RPC product manca o non restituisce ID`() = runTest {
+        val transport = FakeTransport()
+
+        try {
+            SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
+                listingId = 7,
+                currentGameId = 5,
+                details = BoardGameDetails(
+                    bggId = 99,
+                    imageUrl = null,
+                    description = null,
+                    yearPublished = null,
+                    minPlayers = null,
+                    maxPlayers = null,
+                    playingTime = null,
+                    minAge = null,
+                    designers = emptyList(),
+                    categories = emptyList(),
+                    mechanics = emptyList(),
+                    expands = emptyList(),
+                    bggRating = null,
+                    bggRank = null,
+                ),
+                fallbackTitle = "Gioco non presente",
+            )
+            fail("L'associazione deve fallire se l'RPC non restituisce un ID product")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("0010_add_upsert_product_for_game.sql"))
+        }
+
+        assertTrue(transport.calls.any { it.url.endsWith("/rpc/upsert_product_for_game") })
+        assertTrue(transport.calls.none { it.url.contains("listing?id=eq.7") })
+        val rpcBody = Json.parseToJsonElement(
+            transport.calls.single { it.url.endsWith("/rpc/upsert_product_for_game") }.body!!,
+        ).jsonObject
+        assertEquals(JsonNull, rpcBody["p_image_url"])
+        assertEquals(JsonNull, rpcBody["p_description"])
     }
 
     @Test
@@ -261,7 +314,9 @@ class SupabaseRestApiTest {
 
     @Test
     fun `associazione BGG azzera valori precedenti non disponibili`() = runTest {
-        val transport = FakeTransport()
+        val transport = FakeTransport(
+            postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "125"),
+        )
         val details = BoardGameDetails(
             bggId = 99,
             imageUrl = null,

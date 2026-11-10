@@ -7,6 +7,7 @@ import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -175,45 +176,44 @@ class SupabaseRestApi(
                 }
             }
 
-            var targetProductId: Long? = null
-
-            // Cerca un product già collegato a questo game tramite la colonna game_id
-            val productByGameResponse = runCatching {
-                transport.get("$base/rest/v1/product?game_id=eq.${targetGameId}&select=*", headers())
-            }.getOrNull()
-            if (productByGameResponse != null) {
-                runCatching {
-                    val existingProducts = json.decodeFromString<List<ProductDto>>(productByGameResponse)
-                    if (existingProducts.isNotEmpty()) {
-                        targetProductId = existingProducts.first().id
-                    }
-                }
+            val existingProductId = try {
+                val productByGameResponse = transport.get(
+                    "$base/rest/v1/product?game_id=eq.${targetGameId}&select=*",
+                    headers(),
+                )
+                json.decodeFromString<List<ProductDto>>(productByGameResponse)
+                    .firstOrNull()
+                    ?.id
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
             }
-
-            if (targetProductId == null) {
-                // Nessun product trovato per questo game: creane uno nuovo tramite funzione RPC
-                val rpcResponse = runCatching {
+            val targetProductId = existingProductId ?: run {
+                val rpcResponse = try {
                     transport.post(
                         url = "$base/rest/v1/rpc/upsert_product_for_game",
-                        headers = headers(mapOf(
-                            "Content-Type" to "application/json",
-                            "Prefer" to "return=representation",
-                        )),
+                        headers = headers(mapOf("Content-Type" to "application/json")),
                         body = json.encodeToString(buildMap {
                             put("p_game_id", JsonPrimitive(targetGameId))
                             put("p_title", JsonPrimitive(title))
                             put("p_url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
-                            details.imageUrl?.let { put("p_image_url", JsonPrimitive(it)) }
-                            details.description?.takeIf(String::isNotBlank)?.let { put("p_description", JsonPrimitive(it)) }
+                            put("p_image_url", details.imageUrl?.let(::JsonPrimitive) ?: JsonNull)
+                            put(
+                                "p_description",
+                                details.description?.takeIf(String::isNotBlank)?.let(::JsonPrimitive) ?: JsonNull,
+                            )
                         }),
                     )
-                }.getOrNull()
-                if (rpcResponse != null) {
-                    runCatching {
-                        val decoded = json.decodeFromString<JsonPrimitive>(rpcResponse)
-                        targetProductId = decoded.content.toLongOrNull()
-                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw productCreationError(e)
                 }
+                val productId = runCatching {
+                    json.decodeFromString<JsonPrimitive>(rpcResponse).content.toLongOrNull()
+                }.getOrNull()
+                productId?.takeIf { it > 0 } ?: throw productCreationError()
             }
 
             runCatching {
@@ -228,7 +228,7 @@ class SupabaseRestApi(
             if (listingId > 0) {
                 val listingObj = buildMap {
                     put("game_id", JsonPrimitive(targetGameId))
-                    targetProductId?.let { put("product_id", JsonPrimitive(it)) }
+                    put("product_id", JsonPrimitive(targetProductId))
                 }
                 transport.patch(
                     url = "$base/rest/v1/listing?id=eq.$listingId",
@@ -239,12 +239,24 @@ class SupabaseRestApi(
 
             return targetGameId to targetProductId
         } catch (e: Exception) {
+            if (e.message?.contains("0010_add_upsert_product_for_game.sql") == true) {
+                throw e
+            }
             if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
                 throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game' e 'listing'.")
             }
+
             throw e
         }
     }
+
+    private fun productCreationError(cause: Throwable? = null) = IllegalStateException(
+        "Impossibile creare o recuperare il prodotto associato al gioco. " +
+            "Verifica che la migrazione Supabase 0010_add_upsert_product_for_game.sql sia stata applicata " +
+            "e che la funzione public.upsert_product_for_game sia disponibile. " +
+            (cause?.message?.let { "Dettaglio: $it" } ?: "La funzione non ha restituito un ID prodotto valido."),
+        cause,
+    )
 
     override suspend fun saveGameToDatabase(
         item: com.meepleradar.data.model.IncomingItem,
