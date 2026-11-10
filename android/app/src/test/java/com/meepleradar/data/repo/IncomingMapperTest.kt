@@ -327,6 +327,7 @@ class IncomingMapperTest {
         val a = listing(id = 1, sourceId = "s1").copy(productId = 10L)
         val b = listing(id = 2, sourceId = "s2").copy(productId = 10L)
 
+        // product:10 esclude entrambi perché entrambi hanno productId = 10L
         val itemsIgnoredByProduct = buildIncomingItems(
             listings = listOf(a, b),
             games = emptyMap(),
@@ -336,6 +337,7 @@ class IncomingMapperTest {
         )
         assertTrue(itemsIgnoredByProduct.isEmpty())
 
+        // product:10 esclude entrambi anche con game collegato
         val linkedItemsIgnoredByProduct = buildIncomingItems(
             listings = listOf(a.copy(gameId = 5), b.copy(gameId = 5)),
             games = mapOf(5L to game(5, "Citadels")),
@@ -345,6 +347,7 @@ class IncomingMapperTest {
         )
         assertTrue(linkedItemsIgnoredByProduct.isEmpty())
 
+        // listing:1 (membro del gruppo product:10) esclude l'intero gruppo
         val itemsIgnoredByListing = buildIncomingItems(
             listings = listOf(a, b),
             games = emptyMap(),

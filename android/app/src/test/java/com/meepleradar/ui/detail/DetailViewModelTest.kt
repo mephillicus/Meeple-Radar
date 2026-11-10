@@ -1,6 +1,7 @@
 package com.meepleradar.ui.detail
 
 import com.meepleradar.data.model.Action
+import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Offer
@@ -80,16 +81,17 @@ class DetailViewModelTest {
 
         var linkedListingId: Long? = null
         var linkedBggId: Int? = null
+        var linkedProductId: Long? = null
 
         override suspend fun linkListingToBgg(
             listingId: Long,
             currentGameId: Long?,
             details: com.meepleradar.data.remote.BoardGameDetails,
             fallbackTitle: String,
-        ): Long? {
+        ): Pair<Long?, Long?> {
             linkedListingId = listingId
             linkedBggId = details.bggId
-            return currentGameId ?: 1234L
+            return (currentGameId ?: 1234L) to null
         }
 
         override suspend fun updateGameBggStats(
@@ -104,8 +106,11 @@ class DetailViewModelTest {
             statsDescription = description
         }
 
-        override suspend fun saveGameToDatabase(item: IncomingItem) {
+        override suspend fun previewGameSave(item: IncomingItem): GameSavePreview = GameSavePreview()
+
+        override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? {
             // No-op per test
+            return 1234L
         }
 
         override fun lastDbModifiedTimestamp(): Long = 0L

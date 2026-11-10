@@ -4,6 +4,7 @@ import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
+import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Product
@@ -57,9 +58,14 @@ interface ListingRepository {
         currentGameId: Long?,
         details: com.meepleradar.data.remote.BoardGameDetails,
         fallbackTitle: String,
-    ): Long? = currentGameId
+    ): Pair<Long?, Long?> = currentGameId to null
 
-    suspend fun saveGameToDatabase(item: IncomingItem)
+    suspend fun previewGameSave(item: IncomingItem): GameSavePreview
+
+    suspend fun saveGameToDatabase(
+        item: IncomingItem,
+        selectedListingIdsToLink: List<Long>
+    ): Long?
 
     suspend fun updateGameBggStats(
         bggId: Int,
@@ -238,8 +244,8 @@ class DefaultListingRepository(
         currentGameId: Long?,
         details: com.meepleradar.data.remote.BoardGameDetails,
         fallbackTitle: String,
-    ): Long? {
-        val gameId = api.linkListingToBgg(
+    ): Pair<Long?, Long?> {
+        val (gameId, productId) = api.linkListingToBgg(
             listingId = listingId,
             currentGameId = currentGameId,
             details = details,
@@ -259,9 +265,9 @@ class DefaultListingRepository(
                 imageUrl = details.imageUrl,
                 description = existing?.description ?: details.description,
             )
-            localCacheStore?.upsertGame(linkedGame, listingId.takeIf { it > 0 })
+            localCacheStore?.upsertGame(linkedGame, listingId.takeIf { it > 0 }, productId)
         }
-        return gameId
+        return gameId to productId
     }
 
     override suspend fun updateGameBggStats(
@@ -284,10 +290,18 @@ class DefaultListingRepository(
         }
     }
 
-    override suspend fun saveGameToDatabase(item: IncomingItem) {
-        api.saveGameToDatabase(item)
-        val gameId = item.game?.id ?: 0L
-        if (gameId > 0) {
+    override suspend fun previewGameSave(item: IncomingItem): GameSavePreview {
+        val bggId = item.game?.bggId ?: 0
+        val listings = api.findCandidateListingsToLink(item.title, bggId)
+        return GameSavePreview(listings)
+    }
+
+    override suspend fun saveGameToDatabase(
+        item: IncomingItem,
+        selectedListingIdsToLink: List<Long>,
+    ): Long? {
+        val gameId = api.saveGameToDatabase(item, selectedListingIdsToLink)
+        if (gameId != null && gameId > 0) {
             val existing = localCacheStore?.load()?.games?.firstOrNull { it.id == gameId }
             val linkedGame = Game(
                 id = gameId,
@@ -301,6 +315,7 @@ class DefaultListingRepository(
             )
             localCacheStore?.upsertGame(linkedGame, item.key.removePrefix("listing:").toLongOrNull())
         }
+        return gameId
     }
 
     private suspend fun buildItems(

@@ -1,6 +1,7 @@
 package com.meepleradar.ui.favorites
 
 import com.meepleradar.data.model.Action
+import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Source
@@ -60,8 +61,11 @@ class FavoritesViewModelTest {
             actions += key to action
         }
 
-        override suspend fun saveGameToDatabase(item: IncomingItem) {
+        override suspend fun previewGameSave(item: IncomingItem): GameSavePreview = GameSavePreview()
+
+        override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? {
             // No-op per test
+            return null
         }
 
         override fun lastDbModifiedTimestamp(): Long = 0L

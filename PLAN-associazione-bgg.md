@@ -195,14 +195,14 @@ L'AI deve mantenere qui le caselle dei task e aggiungere una voce al diario alla
 
 ### Checklist
 
-- [ ] Task 0 — Baseline e mappa dei flussi
-- [ ] Task 1 — Specifica dei casi e test di classificazione
-- [ ] Task 2 — Contratto di persistenza e sicurezza
-- [ ] Task 3 — API/repository: lettura e upsert idempotente di `game`
-- [ ] Task 4 — Completamento rank, voto e descrizione mancanti
-- [ ] Task 5 — Associazione BGG per elementi di listing/prodotto
-- [ ] Task 6 — Navigazione delle pillole “Miei” e dettaglio locale
-- [ ] Task 7 — Flusso di inserimento manuale prodotto da “Miei”
+- [X] Task 0 — Baseline e mappa dei flussi
+- [X] Task 1 — Specifica dei casi e test di classificazione
+- [X] Task 2 — Contratto di persistenza e sicurezza
+- [X] Task 3 — API/repository: lettura e upsert idempotente di `game`
+- [X] Task 4 — Completamento rank, voto e descrizione mancanti
+- [X] Task 5 — Associazione BGG per elementi di listing/prodotto
+- [X] Task 6 — Navigazione delle pillole “Miei” e dettaglio locale
+- [X] Task 7 — Flusso di inserimento manuale prodotto da “Miei”
 - [ ] Task 8 — Rifinitura UI e accessibilità degli stati
 - [ ] Task 9 — Collaudo complessivo e documentazione
 

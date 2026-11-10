@@ -5,6 +5,7 @@ import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
+import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Product
@@ -51,8 +52,9 @@ class DefaultListingRepositoryTest {
             inserted += row
         }
 
-        override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>) {
+        override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? {
             // No-op per test
+            return null
         }
 
     }

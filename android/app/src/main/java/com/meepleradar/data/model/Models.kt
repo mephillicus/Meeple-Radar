@@ -71,6 +71,10 @@ data class IncomingItem(
     val bggSelectionKeys: List<String> = emptyList(),
 )
 
+data class GameSavePreview(
+    val listings: List<CandidateListingLink> = emptyList(),
+)
+
 data class CandidateListingLink(
     val id: Long,
     val sourceId: String,

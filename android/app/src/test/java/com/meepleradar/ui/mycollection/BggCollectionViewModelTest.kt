@@ -6,6 +6,7 @@ import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.BggCollectionGame
 import com.meepleradar.data.model.BggExpansion
 import com.meepleradar.data.model.Game
+import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Source
@@ -92,8 +93,11 @@ class BggCollectionViewModelTest {
         override suspend fun findItem(key: String, today: LocalDate): IncomingItem? = null
         override suspend fun sources(): List<Source> = emptyList()
         override suspend fun setAction(key: String, action: Action) = Unit
-        override suspend fun saveGameToDatabase(item: IncomingItem) {
+        override suspend fun previewGameSave(item: IncomingItem): GameSavePreview = GameSavePreview()
+
+        override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? {
             // No-op per test
+            return null
         }
         override fun lastDbModifiedTimestamp(): Long = 0L
         override fun newlyAddedCount(): Int = 0

@@ -34,12 +34,12 @@ interface SupabaseApi {
         currentGameId: Long?,
         details: BoardGameDetails,
         fallbackTitle: String,
-    ): Long? = currentGameId
+    ): Pair<Long?, Long?> = currentGameId to null
 
     suspend fun saveGameToDatabase(
         item: com.meepleradar.data.model.IncomingItem,
         selectedListingIdsToLink: List<Long> = emptyList(),
-    ) = Unit
+    ): Long?
 
     suspend fun findCandidateListingsToLink(
         title: String,
@@ -129,7 +129,7 @@ class SupabaseRestApi(
         currentGameId: Long?,
         details: BoardGameDetails,
         fallbackTitle: String,
-    ): Long {
+    ): Pair<Long?, Long?> {
         try {
             val title = details.primaryName ?: details.englishName ?: fallbackTitle
             val isExpansion = details.expands.isNotEmpty()
@@ -175,15 +175,58 @@ class SupabaseRestApi(
                 }
             }
 
+            var targetProductId: Long? = null
+            runCatching {
+                val encodedUrl = java.net.URLEncoder.encode("https://boardgamegeek.com/boardgame/${details.bggId}", "UTF-8")
+                val existingProduct = json.decodeFromString<List<ProductDto>>(
+                    transport.get("$base/rest/v1/product?url=eq.$encodedUrl&select=*", headers()),
+                )
+                if (existingProduct.isNotEmpty()) {
+                    targetProductId = existingProduct.first().id
+                } else {
+                    val productObj = buildMap {
+                        put("title", JsonPrimitive(title))
+                        put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
+                        details.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
+                        details.description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
+                    }
+                    val createdProducts = json.decodeFromString<List<ProductDto>>(
+                        transport.post(
+                            url = "$base/rest/v1/product",
+                            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                            body = json.encodeToString(productObj),
+                        ),
+                    )
+                    targetProductId = createdProducts.firstOrNull()?.id
+                }
+            }
+
+            runCatching {
+                val sourceObj = mapOf("id" to JsonPrimitive("meeple_app"), "name" to JsonPrimitive("MeepleApp"))
+                transport.post(
+                    url = "$base/rest/v1/source",
+                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
+                    body = json.encodeToString(sourceObj),
+                )
+            }
+
             if (listingId > 0) {
-                val listingObj = mapOf("game_id" to JsonPrimitive(targetGameId))
+                val listingObj = buildMap {
+                    put("source_id", JsonPrimitive("meeple_app"))
+                    put("title", JsonPrimitive(title))
+                    put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
+                    put("game_id", JsonPrimitive(targetGameId))
+                    targetProductId?.let { put("product_id", JsonPrimitive(it)) }
+                    put("match_confidence", JsonPrimitive(1.0))
+                }
                 transport.patch(
                     url = "$base/rest/v1/listing?id=eq.$listingId",
                     headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
                     body = json.encodeToString(listingObj),
                 )
             }
-            return targetGameId
+
+            return targetGameId to targetProductId
         } catch (e: Exception) {
             if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
                 throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game' e 'listing'.")
@@ -195,7 +238,7 @@ class SupabaseRestApi(
     override suspend fun saveGameToDatabase(
         item: com.meepleradar.data.model.IncomingItem,
         selectedListingIdsToLink: List<Long>,
-    ) {
+    ): Long? {
         try {
             val title = item.title
             val kind = if (item.game?.kind == "expansion") "expansion" else "base"
@@ -300,6 +343,8 @@ class SupabaseRestApi(
                     body = json.encodeToString(listingObj),
                 )
             }
+
+            return targetGameId
         } catch (e: Exception) {
             if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
                 throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game', 'product', 'listing' e 'source'.")

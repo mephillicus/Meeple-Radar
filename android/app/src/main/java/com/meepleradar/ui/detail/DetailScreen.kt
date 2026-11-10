@@ -44,11 +44,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -157,6 +159,9 @@ fun DetailScreen(
                     onSearchBggCandidates = vm::searchBggCandidates,
                     onSaveToDb = vm::saveToDatabase,
                     onUpdateMissingBggStats = vm::updateMissingBggStats,
+                    onToggleManualProductEditing = vm::toggleManualProductEditing,
+                    onSaveManualProduct = vm::saveManualProduct,
+                    onUpdateManualProductField = vm::updateManualProductField,
                 )
             }
         }
@@ -172,6 +177,14 @@ private fun DetailContent(
     onSearchBggCandidates: (String) -> Unit,
     onSaveToDb: () -> Unit,
     onUpdateMissingBggStats: () -> Unit,
+    onToggleManualProductEditing: () -> Unit,
+    onSaveManualProduct: () -> Unit,
+    onUpdateManualProductField: (
+        title: String?,
+        url: String?,
+        price: Double?,
+        currency: String?,
+    ) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val bestOffers = remember(content.offers) { bestComparableEuroOffers(content.offers) }
@@ -268,6 +281,152 @@ private fun DetailContent(
                     saveError = content.saveToDbError,
                     onSaveToDb = onSaveToDb,
                 )
+            }
+        }
+
+        if (content.isEditingManualProduct) {
+            item {
+                ManualProductForm(
+                    content = content,
+                    onToggleEditing = onToggleManualProductEditing,
+                    onUpdateField = onUpdateManualProductField,
+                    onSave = onSaveManualProduct,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManualProductForm(
+    content: DetailUiState.Content,
+    onToggleEditing: () -> Unit,
+    onUpdateField: (
+        title: String?,
+        url: String?,
+        price: Double?,
+        currency: String?,
+    ) -> Unit,
+    onSave: () -> Unit,
+) {
+    var title by remember { mutableStateOf(content.manualProductTitle ?: "") }
+    var url by remember { mutableStateOf(content.manualProductUrl ?: "") }
+    var price by remember { mutableStateOf(content.manualProductPrice?.toString() ?: "") }
+    var currency by remember { mutableStateOf(content.manualProductCurrency ?: "") }
+
+    LaunchedEffect(
+        content.manualProductTitle,
+        content.manualProductUrl,
+        content.manualProductPrice,
+        content.manualProductCurrency,
+    ) {
+        title = content.manualProductTitle ?: ""
+        url = content.manualProductUrl ?: ""
+        price = content.manualProductPrice?.toString() ?: ""
+        currency = content.manualProductCurrency ?: ""
+    }
+
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Inserimento prodotto manuale",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+
+            OutlinedTextField(
+                value = title,
+                onValueChange = { onUpdateField(it, url, price.toDoubleOrNull(), currency) },
+                label = { Text("Titolo prodotto") },
+                placeholder = { Text("Es. Catan") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            OutlinedTextField(
+                value = url,
+                onValueChange = { onUpdateField(title, it, price.toDoubleOrNull(), currency) },
+                label = { Text("URL prodotto") },
+                placeholder = { Text("Es. https://example.com/prodotto") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = price,
+                    onValueChange = { p -> onUpdateField(title, url, p.toDoubleOrNull(), currency) },
+                    label = { Text("Prezzo") },
+                    placeholder = { Text("0.00") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+
+                OutlinedTextField(
+                    value = currency,
+                    onValueChange = { c -> onUpdateField(title, url, price.toDoubleOrNull(), c) },
+                    label = { Text("Valuta") },
+                    placeholder = { Text("EUR") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            content.manualProductError?.let { error ->
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            if (content.isSavingToDb) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        "Salvataggio in corso…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { onToggleEditing() },
+                    enabled = !content.isSavingToDb,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Annulla")
+                }
+
+                Button(
+                    onClick = { onSave() },
+                    enabled = !content.isSavingToDb && title.isNotBlank() && url.isNotBlank(),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Salva prodotto")
+                }
             }
         }
     }

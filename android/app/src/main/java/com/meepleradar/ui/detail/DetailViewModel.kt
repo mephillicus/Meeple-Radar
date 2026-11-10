@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.meepleradar.data.local.BggSelectionStore
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
+import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.remote.BoardGameDetails
@@ -51,6 +52,15 @@ sealed interface DetailUiState {
         val updateBggStatsSuccess: Boolean = false,
         val updateBggStatsError: String? = null,
         val isFromDatabase: Boolean = false,
+
+        /** Form inserimento manuale prodotto (Task 7/8). */
+        val manualProductTitle: String? = null,
+        val manualProductUrl: String? = null,
+        val manualProductPrice: Double? = null,
+        val manualProductCurrency: String? = null,
+        val manualProductError: String? = null,
+        val isEditingManualProduct: Boolean = false,
+        val savePreview: GameSavePreview? = null,
     ) : DetailUiState
 }
 
@@ -62,6 +72,8 @@ class DetailViewModel(
     private val bggSelectionStore: BggSelectionStore = NoOpBggSelectionStore,
     private val fallbackItem: IncomingItem? = null,
 ) : ViewModel() {
+
+    private var pendingSaveItem: IncomingItem? = null
 
     private val _state = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
     val state: StateFlow<DetailUiState> = _state.asStateFlow()
@@ -222,7 +234,7 @@ class DetailViewModel(
                     val latestDetails = lookup?.findDetailsById(details.bggId) ?: details
                     val customDescription = content.item.customDescription?.takeIf(String::isNotBlank)
                         ?: content.item.game?.description?.takeIf(String::isNotBlank)
-                    val savedGameId = repo.linkListingToBgg(
+                    val (savedGameId, savedProductId) = repo.linkListingToBgg(
                         listingId = listingId,
                         currentGameId = currentGameId,
                         details = latestDetails,
@@ -255,7 +267,7 @@ class DetailViewModel(
                         )
                     }
                 } else {
-                    repo.saveGameToDatabase(content.item)
+                    repo.saveGameToDatabase(content.item, emptyList())
                     updateContent {
                         it.copy(
                             isSavingToDb = false,
@@ -337,6 +349,7 @@ class DetailViewModel(
                     bggId = bggId,
                     bggRating = latestDetails.bggRating,
                     bggRank = latestDetails.bggRank,
+                    description = latestDetails.description,
                 )
                 updateContent {
                     val latestGame = it.item.game
@@ -347,6 +360,7 @@ class DetailViewModel(
                             game = latestGame.copy(
                                 bggRating = latestDetails.bggRating ?: latestGame.bggRating,
                                 bggRank = latestDetails.bggRank ?: latestGame.bggRank,
+                                description = latestDetails.description ?: latestGame.description,
                             ),
                         )
                     }
@@ -366,6 +380,130 @@ class DetailViewModel(
                         isUpdatingBggStats = false,
                         updateBggStatsSuccess = false,
                         updateBggStatsError = e.message ?: "Impossibile aggiornare voto e rank BGG.",
+                    )
+                }
+            }
+        }
+    }
+
+    /** Attiva/disattiva la modalità di inserimento manuale del prodotto (Task 7/8). */
+    fun toggleManualProductEditing() {
+        val content = _state.value as? DetailUiState.Content ?: return
+        updateContent {
+            it.copy(
+                isEditingManualProduct = !it.isEditingManualProduct,
+                manualProductTitle = null,
+                manualProductUrl = null,
+                manualProductPrice = null,
+                manualProductCurrency = null,
+                manualProductError = null,
+            )
+        }
+    }
+
+    /** Aggiorna un campo del form di inserimento manuale prodotto. */
+    fun updateManualProductField(
+        title: String? = null,
+        url: String? = null,
+        price: Double? = null,
+        currency: String? = null,
+    ) {
+        val content = _state.value as? DetailUiState.Content ?: return
+        updateContent {
+            it.copy(
+                manualProductTitle = title,
+                manualProductUrl = url,
+                manualProductPrice = price,
+                manualProductCurrency = currency,
+            )
+        }
+    }
+
+    /** Salva il prodotto inserito manualmente (Task 7/8). Upsert idempotente di game/product/listing. */
+    fun saveManualProduct() {
+        val content = _state.value as? DetailUiState.Content ?: return
+        val title = content.manualProductTitle?.trim()
+        val url = content.manualProductUrl?.trim()
+        val price = content.manualProductPrice
+        val currency = content.manualProductCurrency?.takeIf { it.isNotBlank() }
+
+        if (title.isNullOrBlank()) {
+            updateContent { it.copy(manualProductError = "Inserisci un titolo valido.") }
+            return
+        }
+        if (url.isNullOrBlank()) {
+            updateContent { it.copy(manualProductError = "Inserisci un URL valido.") }
+            return
+        }
+
+        updateContent {
+            it.copy(
+                isSavingToDb = true,
+                saveToDbError = null,
+                manualProductError = null,
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val details = content.boardGameDetails
+                val bggId = details?.bggId ?: content.item.game?.bggId ?: 0
+                if (bggId <= 0) {
+                    throw IllegalStateException("ID BGG non disponibile per il gioco.")
+                }
+
+                val itemToSave = content.item.copy(
+                    title = title,
+                    imageUrl = details?.imageUrl ?: content.item.imageUrl,
+                    game = Game(
+                        id = content.item.game?.id ?: 0L,
+                        name = title,
+                        kind = if (details?.expands?.isNotEmpty() == true) "expansion" else "base",
+                        bggId = bggId,
+                        bggRating = details?.bggRating ?: content.item.game?.bggRating,
+                        bggRank = details?.bggRank ?: content.item.game?.bggRank,
+                        imageUrl = details?.imageUrl ?: content.item.imageUrl,
+                        description = content.item.customDescription ?: content.item.game?.description,
+                    ),
+                    customDescription = null,
+                )
+
+                val preview = repo.previewGameSave(itemToSave)
+                pendingSaveItem = itemToSave
+
+                val selectedIds = preview.listings.filter { it.isSelected }.map { it.id }
+                val savedGameId = repo.saveGameToDatabase(itemToSave, selectedIds)
+                pendingSaveItem = null
+
+                updateContent {
+                    it.copy(
+                        item = if (itemToSave.game != null && savedGameId != null) {
+                            it.item.copy(game = itemToSave.game.copy(id = savedGameId))
+                        } else {
+                            it.item
+                        },
+                        isSavingToDb = false,
+                        isPendingDbSave = false,
+                        isFromDatabase = savedGameId != null,
+                        saveToDbSuccess = true,
+                        savePreview = null,
+                        isEditingManualProduct = false,
+                        manualProductTitle = null,
+                        manualProductUrl = null,
+                        manualProductPrice = null,
+                        manualProductCurrency = null,
+                        manualProductError = null,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                pendingSaveItem = null
+                updateContent {
+                    it.copy(
+                        isSavingToDb = false,
+                        saveToDbError = e.message ?: "Impossibile salvare il prodotto manuale.",
+                        manualProductError = e.message ?: "Impossibile salvare il prodotto manuale.",
                     )
                 }
             }

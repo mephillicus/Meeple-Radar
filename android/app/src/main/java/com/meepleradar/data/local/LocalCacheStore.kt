@@ -24,12 +24,15 @@ data class CachedDatabase(
 interface LocalCacheStore {
     fun load(): CachedDatabase?
 
-    fun upsertGame(game: Game, linkedListingId: Long? = null) {
+    fun upsertGame(game: Game, linkedListingId: Long? = null, linkedProductId: Long? = null) {
         val cached = load() ?: return
         val games = cached.games.filterNot { it.id == game.id } + game
         val listings = if (linkedListingId == null) cached.listings else {
             cached.listings.map { listing ->
-                if (listing.id == linkedListingId) listing.copy(gameId = game.id) else listing
+                if (listing.id == linkedListingId) listing.copy(
+                    gameId = game.id,
+                    productId = linkedProductId,
+                ) else listing
             }
         }
         saveIfChanged(
@@ -85,12 +88,15 @@ class SharedPreferencesLocalCacheStore(
         }
     }
 
-    override fun upsertGame(game: Game, linkedListingId: Long?) {
+    override fun upsertGame(game: Game, linkedListingId: Long?, linkedProductId: Long?) {
         val cached = load() ?: return
         val games = cached.games.filterNot { it.id == game.id } + game
         val listings = if (linkedListingId == null) cached.listings else {
             cached.listings.map { listing ->
-                if (listing.id == linkedListingId) listing.copy(gameId = game.id) else listing
+                if (listing.id == linkedListingId) listing.copy(
+                    gameId = game.id,
+                    productId = linkedProductId,
+                ) else listing
             }
         }
         preferences.edit()

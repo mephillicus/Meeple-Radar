@@ -194,7 +194,7 @@ class SupabaseRestApiTest {
             details = details,
             fallbackTitle = "Titolo alternativo",
         )
-        val gamePatch = transport.calls.first()
+        val gamePatch = transport.calls.first { it.url.contains("game") }
         val gameBody = Json.parseToJsonElement(gamePatch.body!!).jsonObject
 
         assertEquals("PATCH", gamePatch.method)
@@ -211,7 +211,8 @@ class SupabaseRestApiTest {
         assertTrue(gameBody.containsKey("bgg_rating"))
         assertTrue(gameBody.containsKey("bgg_rank"))
         assertTrue(gameBody.containsKey("image_url"))
-        assertEquals("$base/rest/v1/listing?id=eq.7", transport.calls[1].url)
+        assertTrue(transport.calls.any { it.url.contains("product") })
+        assertTrue(transport.calls.any { it.url.contains("listing?id=eq.7") })
 
         val baseGame = details.copy(bggId = 100, expands = emptyList())
         val baseGameTransport = FakeTransport()
@@ -221,7 +222,7 @@ class SupabaseRestApiTest {
             details = baseGame,
             fallbackTitle = "Gioco base",
         )
-        val baseGameBody = Json.parseToJsonElement(baseGameTransport.calls.single().body!!).jsonObject
+        val baseGameBody = Json.parseToJsonElement(baseGameTransport.calls.first { it.url.contains("game") }.body!!).jsonObject
         assertEquals(JsonPrimitive("base"), baseGameBody["kind"])
     }
 
@@ -282,7 +283,7 @@ class SupabaseRestApiTest {
             fallbackTitle = "Gioco",
         )
 
-        val body = Json.parseToJsonElement(transport.calls.single().body!!).jsonObject
+        val body = Json.parseToJsonElement(transport.calls.first { it.url.contains("game") }.body!!).jsonObject
         assertEquals(JsonNull, body["bgg_rating"])
         assertEquals(JsonNull, body["bgg_rank"])
         assertEquals(JsonNull, body["image_url"])
