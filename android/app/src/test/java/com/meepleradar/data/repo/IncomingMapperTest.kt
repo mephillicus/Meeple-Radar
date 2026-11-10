@@ -383,4 +383,42 @@ class IncomingMapperTest {
         )
         assertTrue(itemsIgnoredByListing.isEmpty())
     }
+
+    @Test
+    fun `preferisce il titolo dello store rispetto al listing meeple_app nel raggruppamento per prodotto`() {
+        val syntheticAppListing = listing(id = 2047, sourceId = "meeple_app", title = "Escape from New York", gameId = 1044).copy(productId = 2047L)
+        val realStoreListing = listing(id = 26047, sourceId = "houseofgames", title = "1977 Fuga da New York", gameId = 1044).copy(productId = 2047L)
+
+        val items = buildIncomingItems(
+            listings = listOf(syntheticAppListing, realStoreListing),
+            games = mapOf(1044L to game(1044, "Escape from New York")),
+            sources = sources("houseofgames", "meeple_app"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(2047L to Product(2047L, "Escape from New York", null, null)),
+        )
+
+        assertEquals(1, items.size)
+        assertEquals("product:2047", items[0].key)
+        assertEquals("1977 Fuga da New York", items[0].title)
+    }
+
+    @Test
+    fun `preferisce il titolo localizzato dello store rispetto al nome inglese del game nel raggruppamento`() {
+        val englishStoreListing = listing(id = 2047, sourceId = "dungeondice", title = "Escape from New York", gameId = 1044).copy(productId = 2047L)
+        val italianStoreListing = listing(id = 26047, sourceId = "houseofgames", title = "1977 Fuga da New York", gameId = 1044).copy(productId = 2047L)
+
+        val items = buildIncomingItems(
+            listings = listOf(englishStoreListing, italianStoreListing),
+            games = mapOf(1044L to game(1044, "Escape from New York")),
+            sources = sources("dungeondice", "houseofgames"),
+            ignoredKeys = emptySet(),
+            today = today,
+            products = mapOf(2047L to Product(2047L, "Escape from New York", null, null)),
+        )
+
+        assertEquals(1, items.size)
+        assertEquals("product:2047", items[0].key)
+        assertEquals("1977 Fuga da New York", items[0].title)
+    }
 }

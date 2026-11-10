@@ -75,16 +75,30 @@ fun buildIncomingItems(
                     add("listing:${listing.id}")
                 }
             }.distinct()
+            val preferredListing = groupListings.firstOrNull {
+                it.sourceId != "meeple_app" &&
+                    it.title.isNotBlank() &&
+                    game?.name?.equals(it.title, ignoreCase = true) == false
+            } ?: groupListings.firstOrNull {
+                it.sourceId != "meeple_app" && it.title.isNotBlank()
+            } ?: groupListings.first()
+            val itemTitle = preferredListing.title.takeIf { it.isNotBlank() }
+                ?: product?.title?.takeIf { it.isNotBlank() }
+                ?: game?.name
+                ?: ""
+            val lookupTitle = product?.title?.takeIf(String::isNotBlank)
+                ?: preferredListing.title.takeIf(String::isNotBlank)
+                ?: groupListings.first().title
             IncomingItem(
                 key = key,
-                title = groupListings.first().title.takeIf { it.isNotBlank() } ?: product?.title ?: game?.name ?: "",
+                title = itemTitle,
                 imageUrl = game?.imageUrl ?: product?.imageUrl ?: groupListings.firstNotNullOfOrNull { it.imageUrl },
                 releaseDate = releaseDate,
                 kind = if (releaseDate != null) ItemKind.UPCOMING else ItemKind.NEW_UNDATED,
                 game = game,
                 offers = offers,
                 customDescription = customDescription,
-                lookupTitle = product?.title?.takeIf(String::isNotBlank) ?: groupListings.first().title,
+                lookupTitle = lookupTitle,
                 bggSelectionKeys = bggSelectionKeys,
             )
         }
