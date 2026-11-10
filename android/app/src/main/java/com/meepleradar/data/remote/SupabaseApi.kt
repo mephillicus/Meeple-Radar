@@ -175,29 +175,49 @@ class SupabaseRestApi(
                 }
             }
 
-            var targetProductId: Long? = null
-            runCatching {
-                val encodedUrl = java.net.URLEncoder.encode("https://boardgamegeek.com/boardgame/${details.bggId}", "UTF-8")
-                val existingProduct = json.decodeFromString<List<ProductDto>>(
-                    transport.get("$base/rest/v1/product?url=eq.$encodedUrl&select=*", headers()),
-                )
-                if (existingProduct.isNotEmpty()) {
-                    targetProductId = existingProduct.first().id
-                } else {
-                    val productObj = buildMap {
-                        put("title", JsonPrimitive(title))
-                        put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
-                        details.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
-                        details.description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
-                    }
-                    val createdProducts = json.decodeFromString<List<ProductDto>>(
-                        transport.post(
-                            url = "$base/rest/v1/product",
-                            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                            body = json.encodeToString(productObj),
-                        ),
+            val listingUrl = if (listingId > 0) {
+                runCatching {
+                    val existingListing = json.decodeFromString<List<ListingDto>>(
+                        transport.get("$base/rest/v1/listing?id=eq.$listingId&select=url", headers()),
                     )
-                    targetProductId = createdProducts.firstOrNull()?.id
+                    existingListing.firstOrNull()?.url
+                }.getOrNull()
+            } else null
+
+            val productUrl = listingUrl ?: "https://boardgamegeek.com/boardgame/${details.bggId}"
+
+            var targetProductId: Long? = null
+            val encodedProductUrl = java.net.URLEncoder.encode(productUrl, "UTF-8")
+            val productResponse = runCatching {
+                transport.get("$base/rest/v1/product?url=eq.$encodedProductUrl&select=*", headers())
+            }.getOrNull()
+            if (productResponse != null) {
+                runCatching {
+                    val existingProduct = json.decodeFromString<List<ProductDto>>(productResponse)
+                    if (existingProduct.isNotEmpty()) {
+                        targetProductId = existingProduct.first().id
+                    }
+                }
+            }
+            if (targetProductId == null) {
+                val productObj = buildMap {
+                    put("title", JsonPrimitive(title))
+                    put("url", JsonPrimitive(productUrl))
+                    details.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
+                    details.description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
+                }
+                val createdProducts = runCatching {
+                    transport.post(
+                        url = "$base/rest/v1/product",
+                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                        body = json.encodeToString(productObj),
+                    )
+                }.getOrNull()
+                if (createdProducts != null) {
+                    runCatching {
+                        val decoded = json.decodeFromString<List<ProductDto>>(createdProducts)
+                        targetProductId = decoded.firstOrNull()?.id
+                    }
                 }
             }
 
@@ -212,12 +232,8 @@ class SupabaseRestApi(
 
             if (listingId > 0) {
                 val listingObj = buildMap {
-                    put("source_id", JsonPrimitive("meeple_app"))
-                    put("title", JsonPrimitive(title))
-                    put("url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
                     put("game_id", JsonPrimitive(targetGameId))
                     targetProductId?.let { put("product_id", JsonPrimitive(it)) }
-                    put("match_confidence", JsonPrimitive(1.0))
                 }
                 transport.patch(
                     url = "$base/rest/v1/listing?id=eq.$listingId",
