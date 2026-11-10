@@ -213,18 +213,28 @@ class BggCollectionViewModel(
                         availabilityById[bggId] = ExpansionAvailability(item, ExpansionAvailabilityType.PREORDER)
                     }
                 }
+                val itemsByBggId = mutableMapOf<Int, MutableList<IncomingItem>>()
+                items.forEach { item ->
+                    val bggIds = buildSet {
+                        item.game?.bggId?.let { add(it) }
+                        item.bggSelectionKeys.forEach { k ->
+                            if (k.startsWith("bgg:")) k.removePrefix("bgg:").toIntOrNull()?.let { add(it) }
+                        }
+                    }
+                    bggIds.forEach { bggId ->
+                        itemsByBggId.getOrPut(bggId) { mutableListOf() }.add(item)
+                    }
+                }
                 _state.value = latest.copy(
-                    listingsByBggId = items.groupByNotNull { it.game?.bggId }
-                        .mapValues { (_, group) ->
-                            val representative = group.maxBy { it.offers.size }
-                            representative.copy(
-                                offers = group.flatMap { it.offers }.distinctBy { it.sourceId to it.url },
-                                bggSelectionKeys = group.flatMap { it.bggSelectionKeys }.distinct(),
-                            )
-                        },
+                    listingsByBggId = itemsByBggId.mapValues { (_, group) ->
+                        val representative = group.maxBy { it.offers.size }
+                        representative.copy(
+                            offers = group.flatMap { it.offers }.distinctBy { it.sourceId to it.url },
+                            bggSelectionKeys = group.flatMap { it.bggSelectionKeys }.distinct(),
+                        )
+                    },
                     favoriteKeys = favorites,
-                    favoriteActionKeysByBggId = items.groupByNotNull { it.game?.bggId }
-                        .mapValues { (_, group) -> group.map { it.key }.toSet() },
+                    favoriteActionKeysByBggId = itemsByBggId.mapValues { (_, group) -> group.map { it.key }.toSet() },
                     expansionAvailabilityById = availabilityById,
                 )
             } catch (e: CancellationException) {
@@ -236,8 +246,7 @@ class BggCollectionViewModel(
         }
     }
 
-    private inline fun <T, K : Any> Iterable<T>.groupByNotNull(keySelector: (T) -> K?): Map<K, List<T>> =
-        mapNotNull { item -> keySelector(item)?.let { it to item } }.groupBy({ it.first }, { it.second })
+
 
     private fun loadExpansions(gameId: Int) {
         val current = _state.value as? BggCollectionUiState.Content ?: return

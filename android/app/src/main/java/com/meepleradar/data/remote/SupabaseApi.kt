@@ -197,7 +197,7 @@ class SupabaseRestApi(
                         body = json.encodeToString(buildMap {
                             put("p_game_id", JsonPrimitive(targetGameId))
                             put("p_title", JsonPrimitive(title))
-                            put("p_url", JsonPrimitive("https://boardgamegeek.com/boardgame/${details.bggId}"))
+                            put("p_url", JsonNull)
                             put("p_image_url", details.imageUrl?.let(::JsonPrimitive) ?: JsonNull)
                             put(
                                 "p_description",
@@ -235,6 +235,38 @@ class SupabaseRestApi(
                     headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
                     body = json.encodeToString(listingObj),
                 )
+            } else {
+                val itemUrl = "https://boardgamegeek.com/boardgame/${details.bggId}"
+                val encodedListingUrl = java.net.URLEncoder.encode(itemUrl, "UTF-8")
+                val existingListing = runCatching {
+                    json.decodeFromString<List<ListingDto>>(
+                        transport.get("$base/rest/v1/listing?url=eq.$encodedListingUrl&select=*", headers()),
+                    )
+                }.getOrDefault(emptyList())
+
+                val listingObj = buildMap {
+                    put("source_id", JsonPrimitive("meeple_app"))
+                    put("title", JsonPrimitive(title))
+                    put("url", JsonPrimitive(itemUrl))
+                    put("game_id", JsonPrimitive(targetGameId))
+                    put("product_id", JsonPrimitive(targetProductId))
+                    put("match_confidence", JsonPrimitive(1.0))
+                }
+
+                if (existingListing.isNotEmpty()) {
+                    val existingListingId = existingListing.first().id
+                    transport.patch(
+                        url = "$base/rest/v1/listing?id=eq.$existingListingId",
+                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+                        body = json.encodeToString(listingObj),
+                    )
+                } else {
+                    transport.post(
+                        url = "$base/rest/v1/listing",
+                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
+                        body = json.encodeToString(listingObj),
+                    )
+                }
             }
 
             return targetGameId to targetProductId

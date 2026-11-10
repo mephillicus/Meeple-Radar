@@ -260,6 +260,35 @@ class DefaultListingRepositoryTest {
     }
 
     @Test
+    fun `findItem con chiave bgg restituisce il gioco salvato dal database locale se gia presente`() = runTest {
+        val savedGame = Game(
+            id = 1044L,
+            name = "1977 Fuga da New York",
+            kind = "base",
+            bggId = 362723,
+            bggRating = 7.3,
+            bggRank = 5685,
+            imageUrl = "https://example.com/image.jpg",
+            description = "Descrizione salvata",
+        )
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                games = listOf(savedGame),
+            ),
+        )
+        val repository = DefaultListingRepository(FakeSupabaseApi(), FakeFavoriteStore(), cache)
+
+        val item = repository.findItem("bgg:362723", today)
+
+        org.junit.Assert.assertNotNull(item)
+        assertEquals("bgg:362723", item?.key)
+        assertEquals(1044L, item?.game?.id)
+        assertEquals(7.3, item?.game?.bggRating)
+        assertEquals(5685, item?.game?.bggRank)
+        assertEquals("Descrizione salvata", item?.game?.description)
+    }
+
+    @Test
     fun `associazione BGG aggiorna anche la cache locale del game e del listing`() = runTest {
         val cachedGame = game(5, "Titolo precedente")
         val cachedListing = listing(id = 10, gameId = 5)
