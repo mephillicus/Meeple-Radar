@@ -217,3 +217,80 @@ test('gateongames extract legge la prosa che segue il titolo Scopri', () => {
   expect(product?.descriptionRaw).not.toContain('Scopri Alpaca')
   expect(product?.descriptionRaw).not.toContain('120 carte')
 })
+
+test('dvgiochi discover trova tutti i prodotti di prossime-uscite, anche DA DEFINIRE', async () => {
+  const html = `<html><body>
+    <a href="https://www.dvgiochi.com/catalogo/villa/">
+      <div class="col-xs-30 col-sm-20 col-md-15 bm20">
+        <div class="rm13 bm20 bp10" style="background-color:#ebebeb">
+          <div class="" style="color:white;text-align:center;font-size:18px;font-weight:bold;background-color:#009BAf;">
+            DA DEFINIRE
+          </div>
+          <div style="height:180px;overflow:hidden;font-size:1.3em;text-align:center" class="tm20 lp5 rp5 black">
+            <span class="titolo">&#x2192; in arrivo Villa!</span><br/>
+            <span class="titolo"></span>
+            <div class="tm5">L'affascinante arte dei giardini all&#x2019;italiana.</div>
+            <img src="https://www.dvgiochi.com/uscite/ico_260917172733.gif" alt="" title="" class="img-responsive tm5 " style="max-width:70%;margin: 0 auto;">
+          </div>
+          <div class="" style=" height: 210px;overflow:hidden;"><img src="https://www.dvgiochi.com/uscite/cover_20260917172733.jpg" alt="&#x2192; in arrivo Villa!" title="&#x2192; in arrivo Villa!" border="0" class="img-responsive" style="margin:0 auto;max-width:98%;"></div>
+        </div>
+      </div>
+    </a>
+    <a href="https://www.dvgiochi.com/catalogo/bunny-100-ita/">
+      <div class="col-xs-30 col-sm-20 col-md-15 bm20">
+        <div class="rm13 bm20 bp10" style="background-color:#ebebeb">
+          <div class="" style="color:white;text-align:center;font-size:18px;font-weight:bold;background-color:#009BAf;">
+            DA DEFINIRE
+          </div>
+          <div style="height:180px;overflow:hidden;font-size:1.3em;text-align:center" class="tm20 lp5 rp5 black">
+            <span class="titolo">&#x2192; in arrivo Bunny 100!</span><br/>
+            <span class="titolo"></span>
+            <div class="tm5">Contare fino a 100? Un gioco da... conigli!</div>
+            <img src="https://www.dvgiochi.com/uscite/ico_260917150734.gif" alt="" title="" class="img-responsive tm5 " style="max-width:70%;margin: 0 auto;">
+          </div>
+          <div class="" style=" height: 210px;overflow:hidden;"><img src="https://www.dvgiochi.com/uscite/cover_20260917150734.jpg" alt="&#x2192; in arrivo Bunny 100!" title="&#x2192; in arrivo Bunny 100!" border="0" class="img-responsive" style="margin:0 auto;max-width:98%;"></div>
+        </div>
+      </div>
+    </a>
+    <a href="https://www.dvgiochi.com/catalogo/blablada-ita/">
+      <div class="col-xs-30 col-sm-20 col-md-15 bm20">
+        <div class="rm13 bm20 bp10" style="background-color:#ebebeb">
+          <div class="" style="color:white;text-align:center;font-size:18px;font-weight:bold;background-color:#009BAf;">
+            27
+              OTTOBRE 2026
+          </div>
+          <div style="height:180px;overflow:hidden;font-size:1.3em;text-align:center" class="tm20 lp5 rp5 black">
+            <span class="titolo">&#x2192; in arrivo Blablada!</span><br/>
+            <span class="titolo"></span>
+            <div class="tm5">Lancia i dadi e taglia corto!</div>
+            <img src="https://www.dvgiochi.com/uscite/ico_261009171628.gif" alt="" title="" class="img-responsive tm5 " style="max-width:70%;margin: 0 auto;">
+          </div>
+          <div class="" style=" height: 210px;overflow:hidden;"><img src="https://www.dvgiochi.com/uscite/cover_20260917165227.jpg" alt="&#x2192; in arrivo Blablada!" title="&#x2192; in arrivo Blablada!" border="0" class="img-responsive" style="margin:0 auto;max-width:98%;"></div>
+        </div>
+      </div>
+    </a>
+    <a href="https://www.dvgiochi.com/catalogo/tilt-vietato-ai-minori/">
+      <div class="col-xs-30 col-sm-20 col-md-15 bm20">
+        <div class="rm13 bm20 bp10" style="background-color:#ebebeb">
+          <div class="" style="color:white;text-align:center;font-size:18px;font-weight:bold;background-color:#009BAf;">
+            18
+              SETTEMBRE 2026
+          </div>
+          <div style="height:180px;overflow:hidden;font-size:1.3em;text-align:center" class="tm20 lp5 rp5 black">
+            <span class="titolo">La linea Tilt si allarga ancora con la versione Vietato ai Minori!</span><br/>
+            <span class="titolo"></span>
+            <div class="tm5">Vietato ai minori. Consigliato agli spiriti liberi.</div>
+            <img src="https://www.dvgiochi.com/uscite/ico_260917145315.gif" alt="" title="" class="img-responsive tm5 " style="max-width:70%;margin: 0 auto;">
+          </div>
+          <div class="" style=" height: 210px;overflow:hidden;"><img src="https://www.dvgiochi.com/uscite/cover_20260917145315.jpg" alt="La linea Tilt si allarga ancora con la versione Vietato ai Minori!" title="La linea Tilt si allarga ancora con la versione Vietato ai Minori!" border="0" class="img-responsive" style="margin:0 auto;max-width:98%;"></div>
+        </div>
+      </div>
+    </a>
+  </body></html>`
+  const items = await HTML_SPECS.dvgiochi.discover(async (u) => html)
+  expect(items).toHaveLength(4)
+  expect(items).toContainEqual({ url: 'https://www.dvgiochi.com/catalogo/villa/' })
+  expect(items).toContainEqual({ url: 'https://www.dvgiochi.com/catalogo/bunny-100-ita/' })
+  expect(items).toContainEqual({ url: 'https://www.dvgiochi.com/catalogo/blablada-ita/', releaseDate: '2026-10-27' })
+  expect(items).toContainEqual({ url: 'https://www.dvgiochi.com/catalogo/tilt-vietato-ai-minori/', releaseDate: '2026-09-18' })
+})

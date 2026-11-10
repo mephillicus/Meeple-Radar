@@ -48,6 +48,24 @@ const PURGE_PAGE_SIZE = 1000
 const PURGE_DELETE_BATCH_SIZE = 500
 const UNLINKED_PAGE_SIZE = 1000
 
+async function retryOperation<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err
+      const msg = err instanceof Error ? err.message : String(err)
+      const isTransient = msg.includes('502') || msg.includes('503') || msg.includes('504') || msg.includes('Bad Gateway') || msg.includes('HTML') || msg.includes('timeout') || msg.includes('fetch failed')
+      if (!isTransient || attempt === retries) {
+        throw err
+      }
+      await new Promise((r) => setTimeout(r, delay * attempt))
+    }
+  }
+  throw lastError
+}
+
 export function createSupabaseStore(
   client: SupabaseLike,
   now: () => string = () => new Date().toISOString(),
@@ -83,7 +101,12 @@ export function createSupabaseStore(
     async upsertListings(rows: Listing[]): Promise<void> {
       if (rows.length === 0) return
       const seen = now()
-      const payload = rows.map((r) => ({
+      const map = new Map<string, Listing>()
+      for (const r of rows) {
+        map.set(`${r.sourceId}::${r.externalId}`, r)
+      }
+      const uniqueRows = Array.from(map.values())
+      const payload = uniqueRows.map((r) => ({
         source_id: r.sourceId,
         external_id: r.externalId,
         title: r.title,
@@ -99,9 +122,9 @@ export function createSupabaseStore(
         ...(r.gameId != null && { game_id: r.gameId }),
         last_seen_at: seen,
       }))
-      const { error } = await client
-        .from('listing')
-        .upsert(payload, { onConflict: 'source_id,external_id' })
+      const { error } = (await retryOperation(() =>
+        client.from('listing').upsert(payload, { onConflict: 'source_id,external_id' })
+      )) as { error: { message: string } | null }
       if (error) throw new Error(`upsert listing: ${error.message}`)
     },
 
@@ -159,7 +182,12 @@ export function createSupabaseStore(
 
     async upsertProducts(products: Listing[]): Promise<number[]> {
       if (products.length === 0) return []
-      const payload = products.map((p) => ({
+      const map = new Map<string, Listing>()
+      for (const p of products) {
+        map.set(normalizeTitle(p.title), p)
+      }
+      const uniqueProducts = Array.from(map.values())
+      const payload = uniqueProducts.map((p) => ({
         normalized_title: normalizeTitle(p.title),
         ...(p.title != null && { title: p.title }),
         url: p.url,
@@ -172,19 +200,23 @@ export function createSupabaseStore(
         sources: JSON.stringify([]),
         updated_at: now(),
       }))
-      const { data, error } = await client
-        .from('product')
-        .upsert(payload, { onConflict: 'normalized_title' })
-        .select('id')
+      const { data, error } = (await retryOperation(() =>
+        client
+          .from('product')
+          .upsert(payload, { onConflict: 'normalized_title' })
+          .select('id')
+      )) as { data: Record<string, unknown>[] | null; error: { message: string } | null }
       if (error) throw new Error(`upsert product: ${error.message}`)
       return (data ?? []).map((row: Record<string, unknown>) => Number(row.id))
     },
 
     async linkListingToProduct(listingId: number, productId: number): Promise<void> {
-      const { error } = await client
-        .from('listing')
-        .update({ product_id: productId })
-        .eq('id', listingId)
+      const { error } = (await retryOperation(() =>
+        client
+          .from('listing')
+          .update({ product_id: productId })
+          .eq('id', listingId)
+      )) as { error: { message: string } | null }
       if (error) throw new Error(`linkListingToProduct(${listingId}, ${productId}): ${error.message}`)
     },
 
@@ -324,7 +356,12 @@ export function createSupabaseStore(
 
     async upsertCollectionItem(rows: CollectionItem[]): Promise<void> {
       if (rows.length === 0) return
-      const payload = rows.map((r) => ({
+      const map = new Map<number, CollectionItem>()
+      for (const r of rows) {
+        map.set(r.bggId, r)
+      }
+      const uniqueRows = Array.from(map.values())
+      const payload = uniqueRows.map((r) => ({
         bgg_id: r.bggId,
         name: r.name,
         kind: r.kind,
@@ -332,9 +369,11 @@ export function createSupabaseStore(
         wishlist: r.wishlist,
         synced_at: now(),
       }))
-      const { error } = await client
-        .from('collection_item')
-        .upsert(payload, { onConflict: 'bgg_id' })
+      const { error } = (await retryOperation(() =>
+        client
+          .from('collection_item')
+          .upsert(payload, { onConflict: 'bgg_id' })
+      )) as { error: { message: string } | null }
       if (error) throw new Error(`upsert collection_item: ${error.message}`)
     },
 

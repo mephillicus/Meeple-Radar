@@ -458,7 +458,7 @@ test('findUnlinkedProducts seleziona solo product senza game_id, in ordine di id
 
 test('findProductById legge un product per id o restituisce null', async () => {
   const maybeSingle = vi.fn().mockResolvedValue({
-    data: { id: 3211, title: 'Villa', normalized_title: 'villa', release_date: null },
+    data: { id: 3211, title: 'Villa', normalized_title: 'villa', release_date: null, game_id: null },
     error: null,
   })
   const eq = vi.fn(() => ({ maybeSingle }))
@@ -467,9 +467,9 @@ test('findProductById legge un product per id o restituisce null', async () => {
   const store = createSupabaseStore({ from } as any)
   const product = await store.findProductById(3211)
   expect(from).toHaveBeenCalledWith('product')
-  expect(select).toHaveBeenCalledWith('id, title, normalized_title, release_date')
+  expect(select).toHaveBeenCalledWith('id, title, normalized_title, release_date, game_id')
   expect(eq).toHaveBeenCalledWith('id', 3211)
-  expect(product).toEqual({ id: 3211, title: 'Villa', normalizedTitle: 'villa', releaseDate: null })
+  expect(product).toEqual({ id: 3211, title: 'Villa', normalizedTitle: 'villa', releaseDate: null, gameId: null })
   const none = vi.fn().mockResolvedValue({ data: null, error: null })
   const eqNone = vi.fn(() => ({ maybeSingle: none }))
   const fromNone = vi.fn(() => ({ select: vi.fn(() => ({ eq: eqNone })) }))
