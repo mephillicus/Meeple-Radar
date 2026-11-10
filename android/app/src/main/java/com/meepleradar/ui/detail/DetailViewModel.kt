@@ -240,6 +240,15 @@ class DetailViewModel(
                         details = latestDetails,
                         fallbackTitle = content.item.title,
                     )
+                    if (savedProductId == null) {
+                        updateContent {
+                            it.copy(
+                                isSavingToDb = false,
+                                saveToDbError = "Il prodotto non è stato creato. Verifica i permessi Supabase.",
+                            )
+                        }
+                        return@launch
+                    }
                     updateContent {
                         val savedGame = savedGameId?.let { id ->
                             val existing = content.item.game

@@ -91,7 +91,7 @@ class DetailViewModelTest {
         ): Pair<Long?, Long?> {
             linkedListingId = listingId
             linkedBggId = details.bggId
-            return (currentGameId ?: 1234L) to null
+            return (currentGameId ?: 1234L) to 5678L
         }
 
         override suspend fun updateGameBggStats(
