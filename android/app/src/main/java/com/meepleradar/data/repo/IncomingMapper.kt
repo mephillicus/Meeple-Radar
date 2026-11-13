@@ -118,9 +118,12 @@ private fun isWithin24Hours(firstSeenAtStr: String?, today: LocalDate): Boolean 
     if (firstSeenAtStr.isNullOrBlank()) return false
     return runCatching {
         val dateStr = firstSeenAtStr.replace(" ", "T")
-        val dateTime = java.time.LocalDateTime.parse(dateStr.take(19))
-        val listingDate = dateTime.toLocalDate()
-        !listingDate.isBefore(today.minusDays(1))
+        val listingDate = if (dateStr.length >= 10) {
+            LocalDate.parse(dateStr.take(10))
+        } else {
+            java.time.LocalDateTime.parse(dateStr.take(19)).toLocalDate()
+        }
+        !listingDate.isBefore(today.minusDays(1)) && !listingDate.isAfter(today)
     }.getOrDefault(false)
 }
 

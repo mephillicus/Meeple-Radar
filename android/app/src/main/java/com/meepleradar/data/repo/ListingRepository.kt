@@ -116,11 +116,12 @@ class DefaultListingRepository(
             games = games,
             sources = sources,
             ignoredKeys = emptySet(),
-            today = twoMonthsAgo,
+            today = today,
             sourceIds = null,
             includeUndated = true,
             includePriceless = true,
             products = products,
+            newlyAddedListingIds = cached.newlyAddedListingIds,
         )
 
         return allItems.filter { item ->

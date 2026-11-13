@@ -7,6 +7,7 @@ import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
+import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
@@ -37,6 +38,8 @@ class DefaultListingRepositoryTest {
         private val games: List<Game> = emptyList(),
         private val sources: List<Source> = emptyList(),
         private val actions: List<UserActionRow> = emptyList(),
+        private val linkedProductId: Long? = null,
+        private val savedGameId: Long? = null,
     ) : SupabaseApi {
         val inserted = mutableListOf<UserActionRow>()
 
@@ -52,9 +55,15 @@ class DefaultListingRepositoryTest {
             inserted += row
         }
 
+        override suspend fun linkListingToBgg(
+            listingId: Long,
+            currentGameId: Long?,
+            details: BoardGameDetails,
+            fallbackTitle: String,
+        ): Pair<Long?, Long?> = currentGameId to linkedProductId
+
         override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? {
-            // No-op per test
-            return null
+            return savedGameId
         }
 
     }
@@ -251,6 +260,26 @@ class DefaultListingRepositoryTest {
     }
 
     @Test
+    fun `newsItems imposta isNewlyAdded a true per gli id presenti in newlyAddedListingIds`() = runTest {
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(
+                    listing(id = 230235, gameId = 5, title = "Nuovo Gioco", releaseDate = today.minusDays(5)),
+                ),
+                games = listOf(game(5, "Nuovo Gioco")),
+                sources = listOf(Source("s1", "Store Uno")),
+                newlyAddedListingIds = setOf(230235L),
+            ),
+        )
+        val repository = DefaultListingRepository(FakeSupabaseApi(), FakeFavoriteStore(), cache)
+
+        val items = repository.newsItems(today)
+
+        assertEquals(1, items.size)
+        org.junit.Assert.assertTrue(items[0].isNewlyAdded)
+    }
+
+    @Test
     fun `setAction con chiave product invia productId`() = runTest {
         val api = FakeSupabaseApi()
 
@@ -333,5 +362,93 @@ class DefaultListingRepositoryTest {
 
         assertEquals(8.1, cache.load().games.single().bggRating!!, 0.0001)
         assertEquals(21, cache.load().games.single().bggRank)
+    }
+
+    @Test
+    fun `associazione BGG senza listing aggiorna i listing locali per mostrare subito la card`() = runTest {
+        val existingListing = listing(id = 10, title = "Offerta", gameId = null)
+        val meepleListing = listing(
+            id = 12,
+            sourceId = "meeple_app",
+            title = "Titolo BGG",
+            gameId = 5,
+        ).copy(
+            url = "https://boardgamegeek.com/boardgame/321",
+            imageUrl = "https://bgg.example/cover.jpg",
+            productId = 6,
+        )
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(existingListing),
+                games = listOf(game(5, "Titolo precedente")),
+            ),
+        )
+        val repository = DefaultListingRepository(
+            api = FakeSupabaseApi(listings = listOf(existingListing.copy(gameId = 5), meepleListing), linkedProductId = 6),
+            favoriteStore = FakeFavoriteStore(),
+            localCacheStore = cache,
+        )
+        val details = BoardGameDetails(
+            bggId = 321,
+            imageUrl = "https://bgg.example/cover.jpg",
+            description = "BGG description",
+            yearPublished = 2024,
+            minPlayers = 2,
+            maxPlayers = 4,
+            playingTime = 60,
+            minAge = 10,
+            designers = emptyList(),
+            categories = emptyList(),
+            mechanics = emptyList(),
+            primaryName = "Titolo BGG",
+            bggRating = 7.6,
+            bggRank = 28,
+        )
+
+        repository.linkListingToBgg(0, 5, details, "Fallback")
+
+        assertEquals(setOf(10L, 12L), cache.load().listings.map { it.id }.toSet())
+        assertEquals(5L, cache.load().listings.single { it.id == 12L }.gameId)
+        assertEquals(6L, cache.load().listings.single { it.id == 12L }.productId)
+        assertEquals(6L, cache.load().products.single().id)
+    }
+
+    @Test
+    fun `salvataggio BGG aggiorna i listing locali per mostrare subito la card`() = runTest {
+        val meepleListing = listing(
+            id = 12,
+            sourceId = "meeple_app",
+            title = "Titolo BGG",
+            gameId = 5,
+        ).copy(productId = 6)
+        val cache = FakeLocalCacheStore(CachedDatabase())
+        val repository = DefaultListingRepository(
+            api = FakeSupabaseApi(listings = listOf(meepleListing), savedGameId = 5),
+            favoriteStore = FakeFavoriteStore(),
+            localCacheStore = cache,
+        )
+        val item = IncomingItem(
+            key = "bgg:321",
+            title = "Titolo BGG",
+            imageUrl = null,
+            releaseDate = null,
+            kind = ItemKind.NEW_UNDATED,
+            game = Game(
+                id = 0,
+                name = "Titolo BGG",
+                kind = "base",
+                bggId = 321,
+                bggRating = 7.6,
+                bggRank = 28,
+                imageUrl = null,
+            ),
+            offers = emptyList(),
+        )
+
+        repository.saveGameToDatabase(item, emptyList())
+
+        assertEquals(12L, cache.load().listings.single().id)
+        assertEquals(5L, cache.load().listings.single().gameId)
+        assertEquals(5L, cache.load().games.single().id)
     }
 }
