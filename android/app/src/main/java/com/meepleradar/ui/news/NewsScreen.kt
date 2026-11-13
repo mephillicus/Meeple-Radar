@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -174,6 +175,35 @@ fun NewsScreen(
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        val showOnlyNewlyAdded by vm.showOnlyNewlyAdded.collectAsStateWithLifecycle()
+                        val newlyAddedCount = vm.newlyAddedCount
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (showOnlyNewlyAdded) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(
+                                1.dp,
+                                if (showOnlyNewlyAdded) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                            ),
+                            modifier = Modifier
+                                .height(34.dp)
+                                .clickable { vm.toggleNewlyAddedFilter() },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = if (newlyAddedCount > 0) "+$newlyAddedCount" else "✨",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = if (showOnlyNewlyAdded) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.tertiary,
+                                )
                             }
                         }
 

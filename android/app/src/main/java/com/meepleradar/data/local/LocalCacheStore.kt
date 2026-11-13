@@ -195,6 +195,7 @@ private data class CachedListing(
     val matchConfidence: Double?,
     val productId: Long? = null,
     val description: String? = null,
+    val firstSeenAt: String? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -210,6 +211,7 @@ private data class CachedListing(
         matchConfidence = matchConfidence,
         productId = productId,
         description = description,
+        firstSeenAt = firstSeenAt,
     )
     companion object {
         fun from(l: Listing) = CachedListing(
@@ -226,6 +228,7 @@ private data class CachedListing(
             matchConfidence = l.matchConfidence,
             productId = l.productId,
             description = l.description,
+            firstSeenAt = l.firstSeenAt,
         )
     }
 }

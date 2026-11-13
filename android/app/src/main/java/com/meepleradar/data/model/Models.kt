@@ -33,6 +33,7 @@ data class Listing(
     val matchConfidence: Double?,
     val productId: Long? = null,
     val description: String? = null,
+    val firstSeenAt: String? = null,
 )
 
 data class Product(
@@ -70,6 +71,7 @@ data class IncomingItem(
     val customDescription: String? = null,
     val lookupTitle: String? = null,
     val bggSelectionKeys: List<String> = emptyList(),
+    val isNewlyAdded: Boolean = false,
 )
 
 data class GameSavePreview(

@@ -125,6 +125,49 @@ class SupabaseRestApi(
         }
     }
 
+    private suspend fun upsertMeepleAppListing(
+        bggId: Int,
+        title: String,
+        url: String,
+        imageUrl: String?,
+        gameId: Long,
+        productId: Long,
+    ) {
+        val externalId = "bgg:$bggId"
+        val legacyListing = json.decodeFromString<List<ListingDto>>(
+            transport.get(
+                "$base/rest/v1/listing?source_id=eq.meeple_app&url=eq.${java.net.URLEncoder.encode(url, "UTF-8")}&select=*",
+                headers(),
+            ),
+        ).firstOrNull()
+        val listingObj = buildMap {
+            put("source_id", JsonPrimitive("meeple_app"))
+            put("external_id", JsonPrimitive(externalId))
+            put("title", JsonPrimitive(title))
+            put("url", JsonPrimitive(url))
+            put("image_url", imageUrl?.let(::JsonPrimitive) ?: JsonNull)
+            put("game_id", JsonPrimitive(gameId))
+            put("product_id", JsonPrimitive(productId))
+            put("match_confidence", JsonPrimitive(1.0))
+        }
+        if (legacyListing != null) {
+            transport.patch(
+                url = "$base/rest/v1/listing?id=eq.${legacyListing.id}",
+                headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+                body = json.encodeToString(listingObj),
+            )
+        } else {
+            transport.post(
+                url = "$base/rest/v1/listing?on_conflict=source_id,external_id",
+                headers = headers(mapOf(
+                    "Content-Type" to "application/json",
+                    "Prefer" to "resolution=merge-duplicates,return=representation",
+                )),
+                body = json.encodeToString(listingObj),
+            )
+        }
+    }
+
     override suspend fun linkListingToBgg(
         listingId: Long,
         currentGameId: Long?,
@@ -176,19 +219,13 @@ class SupabaseRestApi(
                 }
             }
 
-            val existingProductId = try {
-                val productByGameResponse = transport.get(
-                    "$base/rest/v1/product?game_id=eq.${targetGameId}&select=*",
-                    headers(),
-                )
-                json.decodeFromString<List<ProductDto>>(productByGameResponse)
-                    .firstOrNull()
-                    ?.id
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
-            }
+            val productByGameResponse = transport.get(
+                "$base/rest/v1/product?game_id=eq.${targetGameId}&select=*",
+                headers(),
+            )
+            val existingProductId = json.decodeFromString<List<ProductDto>>(productByGameResponse)
+                .firstOrNull()
+                ?.id
             val targetProductId = existingProductId ?: run {
                 val rpcResponse = try {
                     transport.post(
@@ -216,57 +253,24 @@ class SupabaseRestApi(
                 productId?.takeIf { it > 0 } ?: throw productCreationError()
             }
 
-            runCatching {
-                val sourceObj = mapOf("id" to JsonPrimitive("meeple_app"), "name" to JsonPrimitive("MeepleApp"))
-                transport.post(
-                    url = "$base/rest/v1/source",
-                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
-                    body = json.encodeToString(sourceObj),
-                )
-            }
-
             if (listingId > 0) {
-                val listingObj = buildMap {
-                    put("game_id", JsonPrimitive(targetGameId))
-                    put("product_id", JsonPrimitive(targetProductId))
-                }
                 transport.patch(
                     url = "$base/rest/v1/listing?id=eq.$listingId",
                     headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
-                    body = json.encodeToString(listingObj),
+                    body = json.encodeToString(mapOf(
+                        "game_id" to JsonPrimitive(targetGameId),
+                        "product_id" to JsonPrimitive(targetProductId),
+                    )),
                 )
             } else {
-                val itemUrl = "https://boardgamegeek.com/boardgame/${details.bggId}"
-                val encodedListingUrl = java.net.URLEncoder.encode(itemUrl, "UTF-8")
-                val existingListing = runCatching {
-                    json.decodeFromString<List<ListingDto>>(
-                        transport.get("$base/rest/v1/listing?url=eq.$encodedListingUrl&select=*", headers()),
-                    )
-                }.getOrDefault(emptyList())
-
-                val listingObj = buildMap {
-                    put("source_id", JsonPrimitive("meeple_app"))
-                    put("title", JsonPrimitive(title))
-                    put("url", JsonPrimitive(itemUrl))
-                    put("game_id", JsonPrimitive(targetGameId))
-                    put("product_id", JsonPrimitive(targetProductId))
-                    put("match_confidence", JsonPrimitive(1.0))
-                }
-
-                if (existingListing.isNotEmpty()) {
-                    val existingListingId = existingListing.first().id
-                    transport.patch(
-                        url = "$base/rest/v1/listing?id=eq.$existingListingId",
-                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
-                        body = json.encodeToString(listingObj),
-                    )
-                } else {
-                    transport.post(
-                        url = "$base/rest/v1/listing",
-                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                        body = json.encodeToString(listingObj),
-                    )
-                }
+                upsertMeepleAppListing(
+                    bggId = details.bggId,
+                    title = title,
+                    url = "https://boardgamegeek.com/boardgame/${details.bggId}",
+                    imageUrl = details.imageUrl,
+                    gameId = targetGameId,
+                    productId = targetProductId,
+                )
             }
 
             return targetGameId to targetProductId
@@ -275,7 +279,7 @@ class SupabaseRestApi(
                 throw e
             }
             if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
-                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game' e 'listing'.")
+                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Verifica le policy RLS per 'anon' sulle tabelle 'game', 'product' e 'listing'.")
             }
 
             throw e
@@ -333,85 +337,50 @@ class SupabaseRestApi(
             )
             val targetGameId = createdGame.first().id
 
-            var targetProductId: Long? = null
-            val productByGameResponse = runCatching {
-                transport.get("$base/rest/v1/product?game_id=eq.${targetGameId}&select=*", headers())
-            }.getOrNull()
-            if (productByGameResponse != null) {
-                runCatching {
-                    val existingProducts = json.decodeFromString<List<ProductDto>>(productByGameResponse)
-                    if (existingProducts.isNotEmpty()) {
-                        targetProductId = existingProducts.first().id
-                    }
-                }
-            }
-            if (targetProductId == null) {
-                val productObj = buildMap {
-                    put("title", JsonPrimitive(title))
-                    put("url", JsonPrimitive(itemUrl))
-                    put("game_id", JsonPrimitive(targetGameId))
-                    item.imageUrl?.let { put("image_url", JsonPrimitive(it)) }
-                    item.customDescription?.let { put("description", JsonPrimitive(it)) }
-                }
-                val createdProducts = runCatching {
-                    transport.post(
-                        url = "$base/rest/v1/product",
-                        headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                        body = json.encodeToString(productObj),
+            val productRpcResponse = transport.post(
+                url = "$base/rest/v1/rpc/upsert_product_for_game",
+                headers = headers(mapOf("Content-Type" to "application/json")),
+                body = json.encodeToString(buildMap {
+                    put("p_game_id", JsonPrimitive(targetGameId))
+                    put("p_title", JsonPrimitive(title))
+                    put("p_url", JsonPrimitive(itemUrl))
+                    put("p_image_url", item.imageUrl?.let(::JsonPrimitive) ?: JsonNull)
+                    put(
+                        "p_description",
+                        (item.customDescription ?: item.game?.description)
+                            ?.takeIf(String::isNotBlank)
+                            ?.let(::JsonPrimitive) ?: JsonNull,
                     )
-                }.getOrNull()
-                if (createdProducts != null) {
-                    runCatching {
-                        val decoded = json.decodeFromString<List<ProductDto>>(createdProducts)
-                        targetProductId = decoded.firstOrNull()?.id
-                    }
-                }
-            }
+                }),
+            )
+            val targetProductId = runCatching {
+                json.decodeFromString<JsonPrimitive>(productRpcResponse).content.toLongOrNull()
+            }.getOrNull()?.takeIf { it > 0 } ?: throw productCreationError()
 
-            runCatching {
-                val sourceObj = mapOf("id" to JsonPrimitive("meeple_app"), "name" to JsonPrimitive("MeepleApp"))
-                transport.post(
-                    url = "$base/rest/v1/source",
-                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "resolution=merge-duplicates,return=minimal")),
-                    body = json.encodeToString(sourceObj),
-                )
-            }
-
-            val encodedListingUrl = java.net.URLEncoder.encode(itemUrl, "UTF-8")
-            val existingListing = runCatching {
-                json.decodeFromString<List<ListingDto>>(
-                    transport.get("$base/rest/v1/listing?url=eq.$encodedListingUrl&select=*", headers()),
-                )
-            }.getOrDefault(emptyList())
-
-            val listingObj = buildMap {
-                put("source_id", JsonPrimitive("meeple_app"))
-                put("title", JsonPrimitive(title))
-                put("url", JsonPrimitive(itemUrl))
-                put("game_id", JsonPrimitive(targetGameId))
-                targetProductId?.let { put("product_id", JsonPrimitive(it)) }
-                put("match_confidence", JsonPrimitive(1.0))
-            }
-
-            if (existingListing.isNotEmpty()) {
-                val existingListingId = existingListing.first().id
+            selectedListingIdsToLink.distinct().forEach { selectedListingId ->
                 transport.patch(
-                    url = "$base/rest/v1/listing?id=eq.$existingListingId",
+                    url = "$base/rest/v1/listing?id=eq.$selectedListingId",
                     headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
-                    body = json.encodeToString(listingObj),
-                )
-            } else {
-                transport.post(
-                    url = "$base/rest/v1/listing",
-                    headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
-                    body = json.encodeToString(listingObj),
+                    body = json.encodeToString(mapOf(
+                        "game_id" to JsonPrimitive(targetGameId),
+                        "product_id" to JsonPrimitive(targetProductId),
+                    )),
                 )
             }
+
+            upsertMeepleAppListing(
+                bggId = bggId,
+                title = title,
+                url = itemUrl,
+                imageUrl = item.imageUrl,
+                gameId = targetGameId,
+                productId = targetProductId,
+            )
 
             return targetGameId
         } catch (e: Exception) {
             if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
-                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Abilita la RLS policy per 'anon' sulle tabelle 'game', 'product', 'listing' e 'source'.")
+                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Verifica le policy RLS per 'anon' sulle tabelle 'game', 'product' e 'listing'.")
             }
             throw e
         }
@@ -530,6 +499,7 @@ private data class ListingDto(
     @SerialName("match_confidence") val matchConfidence: Double? = null,
     @SerialName("product_id") val productId: Long? = null,
     @SerialName("description") val description: String? = null,
+    @SerialName("first_seen_at") val firstSeenAt: String? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -545,6 +515,7 @@ private data class ListingDto(
         matchConfidence = matchConfidence,
         productId = productId,
         description = description,
+        firstSeenAt = firstSeenAt,
     )
 }
 

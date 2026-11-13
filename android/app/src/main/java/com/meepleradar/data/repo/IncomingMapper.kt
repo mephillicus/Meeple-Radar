@@ -31,6 +31,7 @@ fun buildIncomingItems(
     includeUndated: Boolean = true,
     includePriceless: Boolean = true,
     products: Map<Long, Product> = emptyMap(),
+    newlyAddedListingIds: Set<Long> = emptySet(),
 ): List<IncomingItem> =
     listings
         .filter { sourceIds == null || it.sourceId in sourceIds }
@@ -89,6 +90,9 @@ fun buildIncomingItems(
             val lookupTitle = product?.title?.takeIf(String::isNotBlank)
                 ?: preferredListing.title.takeIf(String::isNotBlank)
                 ?: groupListings.first().title
+            val isNewlyAdded = groupListings.any { listing ->
+                listing.id in newlyAddedListingIds || isWithin24Hours(listing.firstSeenAt, today)
+            }
             IncomingItem(
                 key = key,
                 title = itemTitle,
@@ -100,6 +104,7 @@ fun buildIncomingItems(
                 customDescription = customDescription,
                 lookupTitle = lookupTitle,
                 bggSelectionKeys = bggSelectionKeys,
+                isNewlyAdded = isNewlyAdded,
             )
         }
         .filter {
@@ -108,6 +113,16 @@ fun buildIncomingItems(
             isUndatedAllowed && isPricelessAllowed
         }
         .sortedBy { it.title.lowercase(java.util.Locale.ROOT) }
+
+private fun isWithin24Hours(firstSeenAtStr: String?, today: LocalDate): Boolean {
+    if (firstSeenAtStr.isNullOrBlank()) return false
+    return runCatching {
+        val dateStr = firstSeenAtStr.replace(" ", "T")
+        val dateTime = java.time.LocalDateTime.parse(dateStr.take(19))
+        val listingDate = dateTime.toLocalDate()
+        !listingDate.isBefore(today.minusDays(1))
+    }.getOrDefault(false)
+}
 
 private fun Product.publisherOffer(releaseDate: LocalDate?): Offer? {
     val offerUrl = url ?: return null

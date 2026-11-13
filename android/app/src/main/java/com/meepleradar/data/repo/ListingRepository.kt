@@ -293,15 +293,28 @@ class DefaultListingRepository(
 
             localCacheStore?.upsertGame(linkedGame, listingId.takeIf { it > 0 }, productId)
             if (linkedProduct != null && cachedDb != null) {
-                localCacheStore?.saveIfChanged(
+                localCacheStore.saveIfChanged(
                     newListings = localCacheStore.load()?.listings.orEmpty(),
                     newGames = localCacheStore.load()?.games.orEmpty(),
                     newSources = cachedDb.sources,
                     newProducts = newProducts,
                 )
             }
+            if (listingId <= 0) refreshListingsAfterBggWrite()
         }
         return gameId to productId
+    }
+
+    private suspend fun refreshListingsAfterBggWrite() {
+        val cached = localCacheStore?.load() ?: return
+        val refreshedListings = api.listings()
+        val refreshedIds = refreshedListings.mapTo(mutableSetOf()) { it.id }
+        localCacheStore.saveIfChanged(
+            newListings = cached.listings.filterNot { it.id in refreshedIds } + refreshedListings,
+            newGames = cached.games,
+            newSources = cached.sources,
+            newProducts = cached.products,
+        )
     }
 
     override suspend fun updateGameBggStats(
@@ -348,6 +361,7 @@ class DefaultListingRepository(
                 description = existing?.description ?: item.game?.description,
             )
             localCacheStore?.upsertGame(linkedGame, item.key.removePrefix("listing:").toLongOrNull())
+            refreshListingsAfterBggWrite()
         }
         return gameId
     }
@@ -411,6 +425,7 @@ class DefaultListingRepository(
             includeUndated = includeUndated,
             includePriceless = includePriceless,
             products = products,
+            newlyAddedListingIds = cached?.newlyAddedListingIds.orEmpty(),
         )
 
         onProgress?.invoke(100, "Sincronizzazione completata!")

@@ -48,6 +48,17 @@ class NewsViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _showOnlyNewlyAdded = MutableStateFlow(false)
+    val showOnlyNewlyAdded: StateFlow<Boolean> = _showOnlyNewlyAdded.asStateFlow()
+
+    val newlyAddedCount: Int
+        get() = rawItems.count { it.isNewlyAdded }
+
+    fun toggleNewlyAddedFilter() {
+        _showOnlyNewlyAdded.value = !_showOnlyNewlyAdded.value
+        updateFilteredState()
+    }
+
     private var rawItems: List<IncomingItem> = emptyList()
     private var rawFavorites: Set<String> = emptySet()
 
@@ -173,6 +184,8 @@ class NewsViewModel(
             emptyList()
         }
 
+        val showNewlyAdded = _showOnlyNewlyAdded.value
+
         val filtered = rawItems.filter { item ->
             val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
             val dateMatch = !hideUndated || item.releaseDate != null
@@ -187,7 +200,9 @@ class NewsViewModel(
                 queryWords.all { word -> titleLower.contains(word) }
             }
 
-            sourceMatch && dateMatch && priceMatch && availabilityMatch && searchMatch
+            val newlyAddedMatch = !showNewlyAdded || item.isNewlyAdded
+
+            sourceMatch && dateMatch && priceMatch && availabilityMatch && searchMatch && newlyAddedMatch
         }
 
         _state.value = NewsUiState.Content(filtered, rawFavorites)
