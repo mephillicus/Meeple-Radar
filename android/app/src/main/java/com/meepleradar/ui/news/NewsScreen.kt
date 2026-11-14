@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -63,6 +64,7 @@ import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.ui.components.AlphabetFastScroller
 import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.components.ErrorView
+import com.meepleradar.ui.components.EyeVector
 import com.meepleradar.ui.components.ListingCard
 import com.meepleradar.ui.components.LoadingView
 import com.meepleradar.ui.components.ScreenContentInsets
@@ -108,12 +110,43 @@ fun NewsScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        val showOnlyNewlyAdded by vm.showOnlyNewlyAdded.collectAsStateWithLifecycle()
+                        val newlyAddedCount = vm.newlyAddedCount
+
+                        // 1. Filtro NEW Ovale (a SINISTRA della casella di ricerca)
+                        Surface(
+                            shape = CircleShape,
+                            color = if (showOnlyNewlyAdded) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(
+                                1.dp,
+                                if (showOnlyNewlyAdded) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                            ),
+                            modifier = Modifier
+                                .height(34.dp)
+                                .clickable { vm.toggleNewlyAddedFilter() },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = if (newlyAddedCount > 0) "✨ +$newlyAddedCount" else "✨ 0",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = if (showOnlyNewlyAdded) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.tertiary,
+                                )
+                            }
+                        }
+
+                        // 2. Campo di ricerca
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                             color = MaterialTheme.colorScheme.surface,
                             modifier = Modifier
-                                .width(115.dp)
+                                .width(105.dp)
                                 .height(34.dp),
                         ) {
                             Row(
@@ -184,31 +217,21 @@ fun NewsScreen(
                             }
                         }
 
-                        val showOnlyNewlyAdded by vm.showOnlyNewlyAdded.collectAsStateWithLifecycle()
-                        val newlyAddedCount = vm.newlyAddedCount
-
+                        // 3. Tasto Segna tutti come già visti
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (showOnlyNewlyAdded) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
-                            border = BorderStroke(
-                                1.dp,
-                                if (showOnlyNewlyAdded) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                            ),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
                             modifier = Modifier
-                                .height(34.dp)
-                                .clickable { vm.toggleNewlyAddedFilter() },
+                                .size(34.dp)
+                                .clickable { vm.markAllAsSeen() },
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Text(
-                                    text = if (newlyAddedCount > 0) "+$newlyAddedCount" else "✨",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = if (showOnlyNewlyAdded) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.tertiary,
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = EyeVector,
+                                    contentDescription = "Segna tutti come già visti",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
                                 )
                             }
                         }

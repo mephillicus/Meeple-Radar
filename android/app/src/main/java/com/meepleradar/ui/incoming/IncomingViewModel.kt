@@ -90,6 +90,25 @@ class IncomingViewModel(
         updateFilteredState()
     }
 
+    fun markAllAsSeen() {
+        if (rawItems.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                rawItems.forEach { item ->
+                    repo.setAction(item.key, Action.SEEN)
+                    item.bggSelectionKeys.forEach { selKey ->
+                        runCatching { repo.setAction(selKey, Action.SEEN) }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            } finally {
+                refreshSeenStatus()
+            }
+        }
+    }
+
     fun applyFilters(
         sourceIds: Set<String>?,
         hideUndated: Boolean,

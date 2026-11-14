@@ -73,6 +73,7 @@ import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.ui.components.AlphabetFastScroller
 import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.components.ErrorView
+import com.meepleradar.ui.components.EyeVector
 import com.meepleradar.ui.components.ListingCard
 import com.meepleradar.ui.components.LoadingView
 import com.meepleradar.ui.components.MeepleVector
@@ -235,6 +236,25 @@ fun IncomingScreen(
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        // Tasto Segna tutti come già visti
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clickable { vm.markAllAsSeen() },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = EyeVector,
+                                    contentDescription = "Segna tutti come già visti",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
                             }
                         }
 
