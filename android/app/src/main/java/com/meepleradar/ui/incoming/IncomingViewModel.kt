@@ -50,6 +50,9 @@ class IncomingViewModel(
     private val _hidePriceless = MutableStateFlow<Boolean>(false)
     val hidePriceless: StateFlow<Boolean> = _hidePriceless.asStateFlow()
 
+    private val _hideSeen = MutableStateFlow<Boolean>(false)
+    val hideSeen: StateFlow<Boolean> = _hideSeen.asStateFlow()
+
     private val _selectedAvailability = MutableStateFlow(AvailabilityStatus.entries.toSet())
     val selectedAvailability: StateFlow<Set<AvailabilityStatus>> = _selectedAvailability.asStateFlow()
 
@@ -81,11 +84,13 @@ class IncomingViewModel(
         sourceIds: Set<String>?,
         hideUndated: Boolean,
         hidePriceless: Boolean = false,
+        hideSeen: Boolean = false,
         availability: Set<AvailabilityStatus> = AvailabilityStatus.entries.toSet(),
     ) {
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
         _hidePriceless.value = hidePriceless
+        _hideSeen.value = hideSeen
         _selectedAvailability.value = availability
         updateFilteredState()
     }
@@ -94,6 +99,7 @@ class IncomingViewModel(
         _selectedSources.value = null
         _hideUndated.value = false
         _hidePriceless.value = false
+        _hideSeen.value = false
         _selectedAvailability.value = AvailabilityStatus.entries.toSet()
         _searchQuery.value = ""
         updateFilteredState()
@@ -177,10 +183,13 @@ class IncomingViewModel(
             emptyList()
         }
 
+        val hideSeen = _hideSeen.value
+
         val filtered = rawItems.filter { item ->
             val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
             val dateMatch = !hideUndated || item.releaseDate != null
             val priceMatch = !hidePriceless || item.offers.any { it.price != null }
+            val seenMatch = !hideSeen || !item.isSeen
             val isItemPreorder = item.releaseDate != null && !item.releaseDate.isBefore(today)
             val availabilityMatch = selectedAvailability == AvailabilityStatus.entries.toSet() ||
                 (AvailabilityStatus.PREORDER in selectedAvailability && isItemPreorder) ||
@@ -193,7 +202,7 @@ class IncomingViewModel(
                 queryWords.all { word -> titleLower.contains(word) }
             }
 
-            sourceMatch && dateMatch && priceMatch && availabilityMatch && searchMatch
+            sourceMatch && dateMatch && priceMatch && seenMatch && availabilityMatch && searchMatch
         }
 
         _state.value = IncomingUiState.Content(items = filtered, favorites = rawFavorites)

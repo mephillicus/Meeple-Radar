@@ -19,6 +19,8 @@ import com.meepleradar.data.repo.ListingRepository
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 
+import com.meepleradar.data.local.SharedPreferencesSeenStore
+
 class AppContainer(context: Context) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -46,5 +48,6 @@ class AppContainer(context: Context) {
         favoriteStore = SharedPreferencesFavoriteStore(context.applicationContext),
         localCacheStore = SharedPreferencesLocalCacheStore(context.applicationContext, json),
         bggCollectionStore = bggCollectionStore,
+        seenStore = SharedPreferencesSeenStore(context.applicationContext),
     )
 }

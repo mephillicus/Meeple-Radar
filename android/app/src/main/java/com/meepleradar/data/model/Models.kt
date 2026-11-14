@@ -2,7 +2,7 @@ package com.meepleradar.data.model
 
 import java.time.LocalDate
 
-enum class Action { FAVORITE, UNFAVORITED, IGNORED }
+enum class Action { FAVORITE, UNFAVORITED, IGNORED, SEEN }
 
 enum class ItemKind { UPCOMING, NEW_UNDATED }
 
@@ -72,6 +72,7 @@ data class IncomingItem(
     val lookupTitle: String? = null,
     val bggSelectionKeys: List<String> = emptyList(),
     val isNewlyAdded: Boolean = false,
+    val isSeen: Boolean = false,
 )
 
 data class GameSavePreview(

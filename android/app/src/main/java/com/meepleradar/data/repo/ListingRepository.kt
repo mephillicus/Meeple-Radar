@@ -80,6 +80,7 @@ class DefaultListingRepository(
     private val favoriteStore: FavoriteStore,
     private val localCacheStore: LocalCacheStore? = null,
     private val bggCollectionStore: com.meepleradar.data.local.BggCollectionStore? = null,
+    private val seenStore: com.meepleradar.data.local.SeenStore? = null,
 ) : ListingRepository {
 
     private val _newlyAddedCount = MutableStateFlow(localCacheStore?.load()?.newlyAddedCount ?: 0)
@@ -111,6 +112,11 @@ class DefaultListingRepository(
         val sources = cached.sources.associateBy { it.id }
         val products = cached.products.associateBy { it.id }
 
+        val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
+        val actionsMap = latestActionsByKey(userActions)
+        val remoteSeenKeys = actionsMap.filterValues { it == Action.SEEN }.keys
+        val seenKeys = seenStore?.keys().orEmpty() + remoteSeenKeys
+
         val allItems = buildIncomingItems(
             listings = cached.listings,
             games = games,
@@ -122,6 +128,7 @@ class DefaultListingRepository(
             includePriceless = true,
             products = products,
             newlyAddedListingIds = cached.newlyAddedListingIds,
+            seenKeys = seenKeys,
         )
 
         return allItems.filter { item ->
@@ -237,6 +244,7 @@ class DefaultListingRepository(
             Action.FAVORITE -> favoriteStore.setFavorite(key, true)
             Action.UNFAVORITED -> favoriteStore.setFavorite(key, false)
             Action.IGNORED -> favoriteStore.setFavorite(key, false)
+            Action.SEEN -> seenStore?.setSeen(key, true)
         }
 
         runCatching {
@@ -416,6 +424,10 @@ class DefaultListingRepository(
         val sources = (cached?.sources?.takeIf { it.isNotEmpty() } ?: remoteSources).associateBy { it.id }
         val products = (cached?.products?.takeIf { it.isNotEmpty() } ?: remoteProducts).associateBy { it.id }
 
+        val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
+        val remoteSeenKeys = latestActionsByKey(userActions).filterValues { it == Action.SEEN }.keys
+        val seenKeys = seenStore?.keys().orEmpty() + remoteSeenKeys
+
         val result = buildIncomingItems(
             listings = listings,
             games = games,
@@ -427,6 +439,7 @@ class DefaultListingRepository(
             includePriceless = includePriceless,
             products = products,
             newlyAddedListingIds = cached?.newlyAddedListingIds.orEmpty(),
+            seenKeys = seenKeys,
         )
 
         onProgress?.invoke(100, "Sincronizzazione completata!")

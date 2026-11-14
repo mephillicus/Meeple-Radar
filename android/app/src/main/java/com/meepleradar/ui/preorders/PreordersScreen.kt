@@ -79,6 +79,7 @@ fun PreordersScreen(
     val selectedSources by vm.selectedSources.collectAsStateWithLifecycle()
     val hideUndated by vm.hideUndated.collectAsStateWithLifecycle()
     val hidePriceless by vm.hidePriceless.collectAsStateWithLifecycle()
+    val hideSeen by vm.hideSeen.collectAsStateWithLifecycle()
     val selectedAvailability by vm.selectedAvailability.collectAsStateWithLifecycle()
     val searchQueryState by vm.searchQuery.collectAsStateWithLifecycle()
 
@@ -90,7 +91,7 @@ fun PreordersScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             val selSources = selectedSources
-            val hasActiveFilters = hideUndated || hidePriceless ||
+            val hasActiveFilters = hideUndated || hidePriceless || hideSeen ||
                 (selSources != null && selSources.size < sources.size) ||
                 selectedAvailability.size < AvailabilityStatus.entries.size
 
@@ -301,14 +302,16 @@ fun PreordersScreen(
                         .width(320.dp)
                         .clickable(enabled = false) {},
                 ) {
+                    val hideSeen by vm.hideSeen.collectAsStateWithLifecycle()
                     PreordersFilterContent(
                         sources = sources,
                         selectedSources = selectedSources,
                         hideUndated = hideUndated,
                         hidePriceless = hidePriceless,
+                        hideSeen = hideSeen,
                         selectedAvailability = selectedAvailability,
-                        onApply = { newSources, newHideUndated, newHidePriceless, newAvail ->
-                            vm.applyFilters(newSources, newHideUndated, newHidePriceless, newAvail)
+                        onApply = { newSources, newHideUndated, newHidePriceless, newHideSeen, newAvail ->
+                            vm.applyFilters(newSources, newHideUndated, newHidePriceless, newHideSeen, newAvail)
                             isFilterDrawerOpen = false
                         },
                         onReset = {
@@ -329,13 +332,15 @@ private fun PreordersFilterContent(
     selectedSources: Set<String>?,
     hideUndated: Boolean,
     hidePriceless: Boolean,
+    hideSeen: Boolean,
     selectedAvailability: Set<AvailabilityStatus>,
-    onApply: (Set<String>?, Boolean, Boolean, Set<AvailabilityStatus>) -> Unit,
+    onApply: (Set<String>?, Boolean, Boolean, Boolean, Set<AvailabilityStatus>) -> Unit,
     onReset: () -> Unit,
     onClose: () -> Unit,
 ) {
     var localHideUndated by remember(hideUndated) { mutableStateOf(hideUndated) }
     var localHidePriceless by remember(hidePriceless) { mutableStateOf(hidePriceless) }
+    var localHideSeen by remember(hideSeen) { mutableStateOf(hideSeen) }
     var localSelectedSources by remember(selectedSources, sources) {
         mutableStateOf(
             selectedSources?.toMutableSet() ?: sources.map { it.id }.toMutableSet(),
@@ -389,6 +394,12 @@ private fun PreordersFilterContent(
                     selected = localHidePriceless,
                     onClick = { localHidePriceless = !localHidePriceless },
                     label = { Text("Senza prezzo", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
+                )
+
+                FilterChip(
+                    selected = localHideSeen,
+                    onClick = { localHideSeen = !localHideSeen },
+                    label = { Text("Già visti", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
                 )
             }
         }
@@ -608,6 +619,7 @@ private fun PreordersFilterContent(
                         localSelectedSources.toSet(),
                         localHideUndated,
                         localHidePriceless,
+                        localHideSeen,
                         localAvailability.toSet(),
                     )
                 },

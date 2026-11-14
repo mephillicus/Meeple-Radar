@@ -21,6 +21,13 @@ fun bestEurPrice(offers: List<Offer>): Price? =
         .filter { it.currency == "EUR" }
         .minByOrNull { it.amount }
 
+private val ACCESSORY_TITLE_REGEX = Regex(
+    "(?i)\\b(bustin[ae]|sleeves?|bigliett[oi]\\b.*augur|deck\\s*box|portamazzo|playmat|tappetino|dragon\\s*shield|ultimate\\s*guard|mayday|paladin|sapphire|arcane\\s*tinmen)\\b"
+)
+
+private fun Listing.isAccessory(): Boolean =
+    ACCESSORY_TITLE_REGEX.containsMatchIn(title)
+
 fun buildIncomingItems(
     listings: List<Listing>,
     games: Map<Long, Game>,
@@ -32,9 +39,10 @@ fun buildIncomingItems(
     includePriceless: Boolean = true,
     products: Map<Long, Product> = emptyMap(),
     newlyAddedListingIds: Set<Long> = emptySet(),
+    seenKeys: Set<String> = emptySet(),
 ): List<IncomingItem> =
     listings
-        .filter { sourceIds == null || it.sourceId in sourceIds }
+        .filter { (sourceIds == null || it.sourceId in sourceIds) && !it.isAccessory() }
         .groupBy { keyOf(it) }
         .filter { (key, groupListings) ->
             key !in ignoredKeys && groupListings.none { listing ->
@@ -93,6 +101,7 @@ fun buildIncomingItems(
             val isNewlyAdded = groupListings.any { listing ->
                 listing.id in newlyAddedListingIds || isWithin24Hours(listing.firstSeenAt, today)
             }
+            val isSeen = key in seenKeys || bggSelectionKeys.any { it in seenKeys }
             IncomingItem(
                 key = key,
                 title = itemTitle,
@@ -105,6 +114,7 @@ fun buildIncomingItems(
                 lookupTitle = lookupTitle,
                 bggSelectionKeys = bggSelectionKeys,
                 isNewlyAdded = isNewlyAdded,
+                isSeen = isSeen,
             )
         }
         .filter {

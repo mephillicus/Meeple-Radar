@@ -426,6 +426,7 @@ private fun String.toAction(): Action = when (lowercase()) {
     "favorite" -> Action.FAVORITE
     "unfavorite" -> Action.UNFAVORITED
     "ignored" -> Action.IGNORED
+    "seen" -> Action.SEEN
     else -> Action.valueOf(uppercase())
 }
 
@@ -545,6 +546,7 @@ private data class ActionInsertDto(
                 Action.FAVORITE -> "favorite"
                 Action.UNFAVORITED -> "unfavorite"
                 Action.IGNORED -> "ignored"
+                Action.SEEN -> "seen"
             },
         )
     }

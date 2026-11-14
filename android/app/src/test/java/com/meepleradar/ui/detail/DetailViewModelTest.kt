@@ -75,7 +75,7 @@ class DetailViewModelTest {
             actions += key to action
             favoriteItems = when (action) {
                 Action.FAVORITE -> items.filter { it.key == key }
-                Action.UNFAVORITED, Action.IGNORED -> emptyList()
+                Action.UNFAVORITED, Action.IGNORED, Action.SEEN -> emptyList()
             }
         }
 
@@ -736,7 +736,7 @@ class DetailViewModelTest {
         viewModel.toggleFavorite()
         advanceUntilIdle()
 
-        assertEquals(listOf("game:5" to Action.UNFAVORITED), repo.actions)
+        assertEquals(listOf("game:5" to Action.SEEN, "game:5" to Action.UNFAVORITED), repo.actions)
         assertEquals(false, (viewModel.state.value as DetailUiState.Content).isFavorite)
     }
 
@@ -750,7 +750,7 @@ class DetailViewModelTest {
         viewModel.ignore { ignored = true }
         advanceUntilIdle()
 
-        assertEquals(listOf("game:5" to Action.IGNORED), repo.actions)
+        assertEquals(listOf("game:5" to Action.SEEN, "game:5" to Action.IGNORED), repo.actions)
         assertTrue(ignored)
     }
 }

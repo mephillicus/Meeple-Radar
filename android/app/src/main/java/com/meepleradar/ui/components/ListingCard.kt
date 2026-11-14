@@ -111,7 +111,7 @@ fun ListingCard(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
 
-                // Date Chip
+                // Date Chip & Unseen Badge
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Filled.DateRange,
@@ -125,6 +125,14 @@ fun ListingCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (!item.isSeen) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = androidx.compose.foundation.shape.CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(6.dp),
+                        ) {}
+                    }
                 }
 
                 // Price, Rating Badge, and Small Action Buttons (Favorite & Ignore)

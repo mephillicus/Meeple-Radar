@@ -104,6 +104,13 @@ class DetailViewModel(
                     isPendingDbSave = !isFromDatabase,
                     isLoadingDetails = imageLookup != null,
                 )
+
+                runCatching {
+                    repo.setAction(key, Action.SEEN)
+                    item.bggSelectionKeys.forEach { selKey ->
+                        repo.setAction(selKey, Action.SEEN)
+                    }
+                }
                 val lookup = imageLookup ?: return@launch
                 var details: BoardGameDetails? = null
                 try {

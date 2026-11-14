@@ -42,6 +42,9 @@ class PreordersViewModel(
     private val _hidePriceless = MutableStateFlow(false)
     val hidePriceless: StateFlow<Boolean> = _hidePriceless.asStateFlow()
 
+    private val _hideSeen = MutableStateFlow(false)
+    val hideSeen: StateFlow<Boolean> = _hideSeen.asStateFlow()
+
     private val _selectedAvailability = MutableStateFlow(AvailabilityStatus.entries.toSet())
     val selectedAvailability: StateFlow<Set<AvailabilityStatus>> = _selectedAvailability.asStateFlow()
 
@@ -117,11 +120,13 @@ class PreordersViewModel(
         sourceIds: Set<String>?,
         hideUndated: Boolean,
         hidePriceless: Boolean = false,
+        hideSeen: Boolean = false,
         availability: Set<AvailabilityStatus> = AvailabilityStatus.entries.toSet(),
     ) {
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
         _hidePriceless.value = hidePriceless
+        _hideSeen.value = hideSeen
         _selectedAvailability.value = availability
         updateFilteredState()
     }
@@ -130,6 +135,7 @@ class PreordersViewModel(
         _selectedSources.value = null
         _hideUndated.value = false
         _hidePriceless.value = false
+        _hideSeen.value = false
         _selectedAvailability.value = AvailabilityStatus.entries.toSet()
         _searchQuery.value = ""
         updateFilteredState()
@@ -185,11 +191,13 @@ class PreordersViewModel(
         }
 
         val showNewlyAdded = _showOnlyNewlyAdded.value
+        val hideSeen = _hideSeen.value
 
         val filtered = rawItems.filter { item ->
             val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
             val dateMatch = !hideUndated || item.releaseDate != null
             val priceMatch = !hidePriceless || item.offers.any { it.price != null }
+            val seenMatch = !hideSeen || !item.isSeen
             val isItemPreorder = item.releaseDate != null && !item.releaseDate.isBefore(today)
             val availabilityMatch = selectedAvailability == AvailabilityStatus.entries.toSet() ||
                 (AvailabilityStatus.PREORDER in selectedAvailability && isItemPreorder) ||
@@ -204,7 +212,7 @@ class PreordersViewModel(
 
             val newlyAddedMatch = !showNewlyAdded || item.isNewlyAdded
 
-            sourceMatch && dateMatch && priceMatch && availabilityMatch && searchMatch && newlyAddedMatch
+            sourceMatch && dateMatch && priceMatch && seenMatch && availabilityMatch && searchMatch && newlyAddedMatch
         }
 
         _state.value = PreordersUiState.Content(filtered, rawFavorites)
