@@ -107,8 +107,17 @@ class DetailViewModel(
 
                 runCatching {
                     repo.setAction(key, Action.SEEN)
+                    if (item.key != key) {
+                        repo.setAction(item.key, Action.SEEN)
+                    }
                     item.bggSelectionKeys.forEach { selKey ->
-                        repo.setAction(selKey, Action.SEEN)
+                        if (selKey != key && selKey != item.key) {
+                            repo.markLocalSeen(selKey, true)
+                            runCatching { repo.setAction(selKey, Action.SEEN) }
+                        }
+                    }
+                    item.game?.bggId?.let { bggId ->
+                        repo.markLocalSeen("bgg:$bggId", true)
                     }
                 }
                 val lookup = imageLookup ?: return@launch

@@ -501,19 +501,28 @@ private fun FilterDrawerContent(
             ) {
                 FilterChip(
                     selected = localHideUndated,
-                    onClick = { localHideUndated = !localHideUndated },
+                    onClick = {
+                        localHideUndated = !localHideUndated
+                        onApply(localSelectedSources.toSet(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
+                    },
                     label = { Text("Senza data", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
                 )
 
                 FilterChip(
                     selected = localHidePriceless,
-                    onClick = { localHidePriceless = !localHidePriceless },
+                    onClick = {
+                        localHidePriceless = !localHidePriceless
+                        onApply(localSelectedSources.toSet(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
+                    },
                     label = { Text("Senza prezzo", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
                 )
 
                 FilterChip(
                     selected = localHideSeen,
-                    onClick = { localHideSeen = !localHideSeen },
+                    onClick = {
+                        localHideSeen = !localHideSeen
+                        onApply(localSelectedSources.toSet(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
+                    },
                     label = { Text("Già visti", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
                 )
             }
