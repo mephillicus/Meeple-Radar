@@ -47,6 +47,8 @@ interface ListingRepository {
 
     fun seenKeys(): Set<String> = emptySet()
 
+    fun markLocalSeen(key: String, seen: Boolean = true) {}
+
     fun lastDbModifiedTimestamp(): Long
 
     fun newlyAddedCount(): Int
@@ -241,6 +243,10 @@ class DefaultListingRepository(
     }
 
     override fun seenKeys(): Set<String> = seenStore?.keys().orEmpty()
+
+    override fun markLocalSeen(key: String, seen: Boolean) {
+        seenStore?.setSeen(key, seen)
+    }
 
     override suspend fun setAction(key: String, action: Action) {
         val (kind, id) = parseKey(key)

@@ -128,19 +128,18 @@ class NewsViewModel(
 
     fun markAllAsSeen() {
         if (rawItems.isEmpty()) return
+        val itemsToMark = rawItems.toList()
         viewModelScope.launch {
-            try {
-                rawItems.forEach { item ->
-                    repo.setAction(item.key, Action.SEEN)
-                    item.bggSelectionKeys.forEach { selKey ->
-                        runCatching { repo.setAction(selKey, Action.SEEN) }
-                    }
+            itemsToMark.forEach { item ->
+                repo.markLocalSeen(item.key, true)
+                item.bggSelectionKeys.forEach { selKey ->
+                    repo.markLocalSeen(selKey, true)
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-            } finally {
-                refreshSeenStatus()
+            }
+            refreshSeenStatus()
+
+            itemsToMark.forEach { item ->
+                runCatching { repo.setAction(item.key, Action.SEEN) }
             }
         }
     }
