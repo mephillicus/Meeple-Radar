@@ -83,6 +83,7 @@ fun buildIncomingItems(
                     listing.productId?.let { add("product:$it") }
                     add("listing:${listing.id}")
                 }
+                game?.bggId?.let { add("bgg:$it") }
             }.distinct()
             val preferredListing = groupListings.firstOrNull {
                 it.sourceId != "meeple_app" &&

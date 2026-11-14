@@ -45,6 +45,8 @@ interface ListingRepository {
 
     suspend fun setAction(key: String, action: Action)
 
+    fun seenKeys(): Set<String> = emptySet()
+
     fun lastDbModifiedTimestamp(): Long
 
     fun newlyAddedCount(): Int
@@ -238,6 +240,8 @@ class DefaultListingRepository(
         return api.sources()
     }
 
+    override fun seenKeys(): Set<String> = seenStore?.keys().orEmpty()
+
     override suspend fun setAction(key: String, action: Action) {
         val (kind, id) = parseKey(key)
         when (action) {
@@ -252,9 +256,15 @@ class DefaultListingRepository(
                 "game" -> UserActionRow(gameId = id, listingId = null, action = action)
                 "listing" -> UserActionRow(gameId = null, listingId = id, action = action)
                 "product" -> UserActionRow(gameId = null, listingId = null, action = action, productId = id)
+                "bgg" -> {
+                    val savedGame = localCacheStore?.load()?.games?.firstOrNull { it.bggId == id.toInt() }
+                    UserActionRow(gameId = savedGame?.id, listingId = null, action = action)
+                }
                 else -> throw IllegalArgumentException("chiave non valida: $key")
             }
-            api.insertAction(row)
+            if (row.gameId != null || row.listingId != null || row.productId != null) {
+                api.insertAction(row)
+            }
         }
     }
 

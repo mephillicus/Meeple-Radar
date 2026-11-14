@@ -40,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +85,10 @@ fun PreordersScreen(
     val searchQueryState by vm.searchQuery.collectAsStateWithLifecycle()
 
     var isFilterDrawerOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        vm.refreshSeenStatus()
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),

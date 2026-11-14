@@ -116,6 +116,16 @@ class PreordersViewModel(
         updateFilteredState()
     }
 
+    fun refreshSeenStatus() {
+        val seenKeys = repo.seenKeys()
+        if (rawItems.isEmpty()) return
+        rawItems = rawItems.map { item ->
+            val isSeen = item.isSeen || item.key in seenKeys || item.bggSelectionKeys.any { it in seenKeys }
+            if (item.isSeen == isSeen) item else item.copy(isSeen = isSeen)
+        }
+        updateFilteredState()
+    }
+
     fun applyFilters(
         sourceIds: Set<String>?,
         hideUndated: Boolean,
