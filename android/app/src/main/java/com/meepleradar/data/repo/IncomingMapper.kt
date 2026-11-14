@@ -58,7 +58,10 @@ fun buildIncomingItems(
             val product = groupListings.firstNotNullOfOrNull { listing ->
                 listing.productId?.let { products[it] }
             }
-            val releaseDate = product?.releaseDate ?: groupListings.mapNotNull { it.releaseDate }.minOrNull()
+            val futureStoreReleaseDate = groupListings.mapNotNull { it.releaseDate }.filter { !it.isBefore(today) }.minOrNull()
+            val releaseDate = futureStoreReleaseDate
+                ?: groupListings.mapNotNull { it.releaseDate }.minOrNull()
+                ?: product?.releaseDate
             val offers = groupListings.map { listing ->
                 Offer(
                     sourceId = listing.sourceId,
