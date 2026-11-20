@@ -451,4 +451,80 @@ class DefaultListingRepositoryTest {
         assertEquals(5L, cache.load().listings.single().gameId)
         assertEquals(5L, cache.load().games.single().id)
     }
+
+    @Test
+    fun `newsItems esclude gli elementi ignorati e aggiorna newlyAddedCountFlow`() = runTest {
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(
+                    listing(id = 1, gameId = 5, title = "Catan", releaseDate = today.minusDays(5)),
+                    listing(id = 2, gameId = 6, title = "Carcassonne", releaseDate = today.minusDays(3)),
+                ),
+                games = listOf(game(5, "Catan"), game(6, "Carcassonne")),
+                sources = listOf(Source("s1", "Store Uno")),
+                newlyAddedListingIds = setOf(1L, 2L),
+            ),
+        )
+        val api = FakeSupabaseApi(
+            actions = listOf(UserActionRow(gameId = 6, listingId = null, action = Action.IGNORED)),
+        )
+        val repository = DefaultListingRepository(api, FakeFavoriteStore(), cache)
+
+        val items = repository.newsItems(today)
+
+        assertEquals(listOf("game:5"), items.map { it.key })
+        assertEquals(1, repository.newlyAddedCount())
+    }
+
+    @Test
+    fun `newsItems idrata dalla rete quando la cache locale e vuota`() = runTest {
+        val cache = FakeLocalCacheStore(CachedDatabase())
+        val api = FakeSupabaseApi(
+            listings = listOf(
+                listing(id = 10, gameId = 5, title = "Nuovo Gioco", releaseDate = today.minusDays(2)),
+            ),
+            games = listOf(game(5, "Nuovo Gioco")),
+            sources = listOf(Source("s1", "Store Uno")),
+        )
+        val repository = DefaultListingRepository(api, FakeFavoriteStore(), cache)
+
+        val items = repository.newsItems(today)
+
+        assertEquals(listOf("game:5"), items.map { it.key })
+    }
+
+    @Test
+    fun `isSeen remoto resta attivo anche dopo un azione FAVORITE o UNFAVORITED piu recente`() = runTest {
+        val listingNews = listing(id = 1, gameId = 5, title = "Catan", releaseDate = today.minusDays(2))
+        val listingUpcoming = listing(id = 2, gameId = 6, title = "Carcassonne", releaseDate = today.plusDays(2))
+        val games = listOf(game(5, "Catan"), game(6, "Carcassonne"))
+        val sources = listOf(Source("s1", "Store Uno"))
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(listingNews, listingUpcoming),
+                games = games,
+                sources = sources,
+            ),
+        )
+        val api = FakeSupabaseApi(
+            listings = listOf(listingNews, listingUpcoming),
+            games = games,
+            sources = sources,
+            actions = listOf(
+                UserActionRow(gameId = 5, listingId = null, action = Action.FAVORITE),
+                UserActionRow(gameId = 5, listingId = null, action = Action.SEEN),
+                UserActionRow(gameId = 6, listingId = null, action = Action.UNFAVORITED),
+                UserActionRow(gameId = 6, listingId = null, action = Action.SEEN),
+            ),
+        )
+        val repository = DefaultListingRepository(api, FakeFavoriteStore(), cache)
+
+        val news = repository.newsItems(today)
+        assertEquals(listOf("game:5"), news.map { it.key })
+        org.junit.Assert.assertTrue(news.single().isSeen)
+
+        val incoming = repository.incoming(today)
+        val incomingItem = incoming.single { it.key == "game:6" }
+        org.junit.Assert.assertTrue(incomingItem.isSeen)
+    }
 }

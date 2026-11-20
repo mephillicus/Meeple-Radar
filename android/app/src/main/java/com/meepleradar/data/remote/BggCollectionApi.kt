@@ -31,29 +31,13 @@ class BggXmlCollectionApi(
         val encodedUsername = URLEncoder.encode(cleanUsername, Charsets.UTF_8.name())
         val url = "$BGG_API/collection?username=$encodedUsername&own=1&stats=1"
 
-        try {
-            repeat(MAX_ATTEMPTS) { attempt ->
-                val response = transport.get(url, authHeaders(cleanToken)).trim()
-                if (response.startsWith("<items", ignoreCase = true) ||
-                    response.startsWith("<?xml", ignoreCase = true)
-                ) {
-                    return parseOwnedGames(response)
-                }
-                if (attempt < MAX_ATTEMPTS - 1) delay(RETRY_DELAY_MS)
-            }
-        } catch (e: java.io.IOException) {
-            if (e.message?.contains("HTTP 401") == true) {
-                throw IllegalStateException(
-                    "BGG ha rifiutato il token (HTTP 401). Verifica che sia un token applicazione BGG valido.",
-                    e,
-                )
-            }
-            throw e
-        }
-
-        throw IllegalStateException(
-            "BGG non ha ancora restituito la collezione. Riprova tra qualche secondo e verifica che sia pubblica.",
+        val xml = fetchItemsXml(
+            url = url,
+            token = cleanToken,
+            authErrorMessage = "BGG ha rifiutato il token (HTTP 401). Verifica che sia un token applicazione BGG valido.",
+            timeoutErrorMessage = "BGG non ha ancora restituito la collezione. Riprova tra qualche secondo e verifica che sia pubblica.",
         )
+        return parseOwnedGames(xml)
     }
 
     override suspend fun expansions(bggIds: List<Int>, apiToken: String): List<BggExpansion> {
@@ -70,29 +54,12 @@ class BggXmlCollectionApi(
                     if (waitMs > 0L) delay(waitMs)
                 }
                 val url = "$BGG_API/thing?id=${batch.joinToString(",")}&type=boardgame,boardgameexpansion"
-                val xml = try {
-                    (0 until MAX_ATTEMPTS).firstNotNullOfOrNull { attempt ->
-                        val response = transport.get(url, authHeaders(token)).trim()
-                        if (response.startsWith("<items", ignoreCase = true) ||
-                            response.startsWith("<?xml", ignoreCase = true)
-                        ) {
-                            response
-                        } else {
-                            if (attempt < MAX_ATTEMPTS - 1) delay(RETRY_DELAY_MS)
-                            null
-                        }
-                    } ?: throw IllegalStateException(
-                        "BGG non ha ancora restituito l'elenco delle espansioni. Riprova tra qualche secondo.",
-                    )
-                } catch (e: java.io.IOException) {
-                    if (e.message?.contains("HTTP 401") == true) {
-                        throw IllegalStateException(
-                            "BGG ha rifiutato il token durante il caricamento delle espansioni (HTTP 401).",
-                            e,
-                        )
-                    }
-                    throw e
-                }
+                val xml = fetchItemsXml(
+                    url = url,
+                    token = token,
+                    authErrorMessage = "BGG ha rifiutato il token durante il caricamento delle espansioni (HTTP 401).",
+                    timeoutErrorMessage = "BGG non ha ancora restituito l'elenco delle espansioni. Riprova tra qualche secondo.",
+                )
                 lastExpansionRequestAt = System.currentTimeMillis()
                 result += parseExpansions(xml)
             }
@@ -100,6 +67,61 @@ class BggXmlCollectionApi(
             result.distinctBy { it.expandsBggId to it.bggId }
                 .sortedWith(compareBy({ orderMap[it.expandsBggId] ?: Int.MAX_VALUE }, { it.name.lowercase(java.util.Locale.ROOT) }))
         }
+    }
+
+    private suspend fun fetchItemsXml(
+        url: String,
+        token: String,
+        authErrorMessage: String,
+        timeoutErrorMessage: String,
+    ): String {
+        var lastTransientError: java.io.IOException? = null
+        repeat(MAX_ATTEMPTS) { attempt ->
+            val response = try {
+                transport.get(url, authHeaders(token)).trim()
+            } catch (e: java.io.IOException) {
+                val msg = e.message.orEmpty()
+                if (msg.contains("HTTP 401")) {
+                    throw IllegalStateException(authErrorMessage, e)
+                }
+                if (msg.contains("HTTP 429") || msg.contains("HTTP 503")) {
+                    lastTransientError = e
+                    if (attempt < MAX_ATTEMPTS - 1) {
+                        delay(RETRY_DELAY_MS * (attempt + 1))
+                        return@repeat
+                    }
+                    throw e
+                }
+                throw e
+            }
+
+            extractBggError(response)?.let { throw IllegalStateException(it) }
+
+            if (isReadyItemsXml(response)) {
+                return response
+            }
+
+            if (attempt < MAX_ATTEMPTS - 1) {
+                delay(RETRY_DELAY_MS)
+            }
+        }
+        throw IllegalStateException(timeoutErrorMessage, lastTransientError)
+    }
+
+    private fun isReadyItemsXml(response: String): Boolean {
+        if (DOCTYPE_PATTERN.containsMatchIn(response)) return true
+        return ITEMS_OPEN_TAG_PATTERN.containsMatchIn(response)
+    }
+
+    private fun extractBggError(response: String): String? {
+        if (!ERRORS_OPEN_TAG_PATTERN.containsMatchIn(response)) return null
+        val detail = MESSAGE_TAG_PATTERN.find(response)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        return detail?.let { "Errore BGG: $it" }
+            ?: "BGG ha restituito un errore. Verifica il nome utente."
     }
 
     private fun parseExpansions(xml: String): List<BggExpansion> {
@@ -209,11 +231,14 @@ class BggXmlCollectionApi(
 
     private companion object {
         const val BGG_API = "https://boardgamegeek.com/xmlapi2"
-        const val MAX_ATTEMPTS = 6
+        const val MAX_ATTEMPTS = 8
         const val RETRY_DELAY_MS = 2000L
         const val MIN_THING_INTERVAL_MS = 1000L
         const val THING_BATCH_SIZE = 20
         val HEADERS = mapOf("Accept" to "application/xml", "User-Agent" to "MeepleRadar/1.0")
         val DOCTYPE_PATTERN = Regex("<!DOCTYPE", RegexOption.IGNORE_CASE)
+        val ITEMS_OPEN_TAG_PATTERN = Regex("<items[\\s>/]", RegexOption.IGNORE_CASE)
+        val ERRORS_OPEN_TAG_PATTERN = Regex("<errors[\\s>]", RegexOption.IGNORE_CASE)
+        val MESSAGE_TAG_PATTERN = Regex("<message>([^<]+)</message>", RegexOption.IGNORE_CASE)
     }
 }

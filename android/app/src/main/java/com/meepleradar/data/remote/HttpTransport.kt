@@ -18,9 +18,17 @@ interface HttpTransport {
 }
 
 internal fun bodyOrThrow(response: Response): String = response.use { res ->
-    if (!res.isSuccessful) throw IOException("HTTP ${res.code}")
-    res.body.string()
+    val responseBody = res.body.string()
+    if (!res.isSuccessful) {
+        val detail = responseBody.take(MAX_ERROR_BODY_LENGTH)
+        throw IOException(
+            if (detail.isBlank()) "HTTP ${res.code}" else "HTTP ${res.code}: $detail",
+        )
+    }
+    responseBody
 }
+
+private const val MAX_ERROR_BODY_LENGTH = 1000
 
 class OkHttpTransport(private val client: OkHttpClient) : HttpTransport {
 

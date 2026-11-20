@@ -1,8 +1,11 @@
 package com.meepleradar.ui.components
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -21,14 +24,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +44,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 val MeepleVector: ImageVector = ImageVector.Builder(
     name = "Meeple",
@@ -297,11 +305,13 @@ fun ScreenHeader(
             if (titleContent != null) {
                 titleContent()
             } else {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             }
             if (timestampText != null) {
                 Text(
@@ -317,6 +327,203 @@ fun ScreenHeader(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             trailingContent?.invoke()
+        }
+    }
+}
+
+@Composable
+fun UnseenFilterPill(
+    unseenCount: Int,
+    hideSeen: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val activeBg = MaterialTheme.colorScheme.primary
+    val inactiveBg = MaterialTheme.colorScheme.surfaceVariant
+    val dotColor = when {
+        hideSeen -> MaterialTheme.colorScheme.onPrimary
+        unseenCount > 0 -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    }
+    val textColor = when {
+        hideSeen -> MaterialTheme.colorScheme.onPrimary
+        unseenCount > 0 -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        shape = CircleShape,
+        color = if (hideSeen) activeBg else inactiveBg,
+        border = BorderStroke(
+            1.dp,
+            if (hideSeen) activeBg else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+        ),
+        modifier = modifier
+            .height(34.dp)
+            .clickable(onClick = onToggle),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = dotColor,
+                modifier = Modifier.size(7.dp),
+            ) {}
+            Text(
+                text = unseenCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                maxLines = 1,
+                softWrap = false,
+                color = textColor,
+            )
+        }
+    }
+}
+
+@Composable
+fun MarkAllSeenButton(
+    unseenCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        modifier = modifier
+            .size(34.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = EyeVector,
+                contentDescription = "Segna tutti come già visti",
+                tint = if (unseenCount > 0) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                },
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+@Composable
+fun MarkAllSeenConfirmDialog(
+    unseenCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (unseenCount > 0) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Segna tutti come già visti") },
+            text = {
+                Text(
+                    if (unseenCount == 1) {
+                        "Vuoi segnare 1 gioco non ancora visualizzato come già visto?"
+                    } else {
+                        "Vuoi segnare tutti i $unseenCount giochi non ancora visualizzati come già visti?"
+                    },
+                )
+            },
+            confirmButton = {
+                Button(onClick = onConfirm) {
+                    Text("Segna visti")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Annulla")
+                }
+            },
+        )
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("Tutti già visti") },
+            text = { Text("Tutti i giochi presenti in questa lista risultano già visti.") },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("OK")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+fun HideFilterChipsSection(
+    hideUndated: Boolean,
+    hidePriceless: Boolean,
+    hideSeen: Boolean,
+    onToggleUndated: () -> Unit,
+    onTogglePriceless: () -> Unit,
+    onToggleSeen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "Nascondi",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            FilterChip(
+                selected = hideUndated,
+                onClick = onToggleUndated,
+                label = {
+                    Text(
+                        text = "Senza data",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                },
+            )
+
+            FilterChip(
+                selected = hidePriceless,
+                onClick = onTogglePriceless,
+                label = {
+                    Text(
+                        text = "Senza prezzo",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                },
+            )
+
+            FilterChip(
+                selected = hideSeen,
+                onClick = onToggleSeen,
+                label = {
+                    Text(
+                        text = "Già visti",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                },
+            )
         }
     }
 }

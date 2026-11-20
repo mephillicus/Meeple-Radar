@@ -162,4 +162,75 @@ class BggCollectionApiTest {
         assertEquals(309116, expansions.single().bggId)
         assertEquals(173346, expansions.single().expandsBggId)
     }
+
+    @Test
+    fun `ritenta la risposta XML 202 con prologo xml e tag message prima di parsare la collezione`() = runTest {
+        val queuedXml = """
+            <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+            <message>
+                Your request for this collection has been accepted and will be processed. Please try again later for access.
+            </message>
+        """.trimIndent()
+        val readyXml = """
+            <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+            <items totalitems="1">
+              <item objecttype="thing" objectid="42" subtype="boardgame">
+                <name sortindex="1">Brass: Birmingham</name>
+                <status own="1"/>
+              </item>
+            </items>
+        """.trimIndent()
+        val transport = FakeTransport(listOf(queuedXml, readyXml))
+
+        val games = BggXmlCollectionApi(transport).ownedGames("utente", "token")
+
+        assertEquals(listOf("Brass: Birmingham"), games.map { it.name })
+        assertEquals(2, transport.requests.size)
+    }
+
+    @Test
+    fun `ritenta anche su HTTP 429 durante il caricamento espansioni`() = runTest {
+        var calls = 0
+        val transport = object : HttpTransport {
+            override suspend fun get(url: String, headers: Map<String, String>): String {
+                calls++
+                if (calls == 1) throw IOException("HTTP 429: Too Many Requests")
+                return """
+                    <items>
+                      <item id="42" type="boardgame">
+                        <link type="boardgameexpansion" id="101" value="Espansione"/>
+                      </item>
+                    </items>
+                """.trimIndent()
+            }
+
+            override suspend fun post(url: String, headers: Map<String, String>, body: String): String = ""
+        }
+
+        val expansions = BggXmlCollectionApi(transport).expansions(listOf(42), "token")
+
+        assertEquals(listOf(101), expansions.map { it.bggId })
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun `fallisce subito senza ritentare se BGG restituisce un tag errors`() = runTest {
+        val errorXml = """
+            <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+            <errors>
+              <error>
+                <message>Invalid username specified</message>
+              </error>
+            </errors>
+        """.trimIndent()
+        val transport = FakeTransport(listOf(errorXml))
+
+        try {
+            BggXmlCollectionApi(transport).ownedGames("utente-inesistente", "token")
+            fail("atteso un errore per utente inesistente")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("Invalid username specified"))
+            assertEquals(1, transport.requests.size)
+        }
+    }
 }

@@ -1,5 +1,6 @@
 package com.meepleradar.data.repo
 
+import com.meepleradar.data.local.CachedDatabase
 import com.meepleradar.data.local.FavoriteStore
 import com.meepleradar.data.local.LocalCacheStore
 import com.meepleradar.data.model.Action
@@ -12,9 +13,13 @@ import com.meepleradar.data.model.Source
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 
 interface ListingRepository {
     suspend fun incoming(
@@ -35,9 +40,22 @@ interface ListingRepository {
         onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem>
 
+    suspend fun favoriteKeys(today: LocalDate): Set<String> =
+        favorites(today).map { it.key }.toSet()
+
     suspend fun newsItems(today: LocalDate): List<IncomingItem>
 
+    suspend fun refreshNewsItems(today: LocalDate): List<IncomingItem> {
+        incoming(today, forceRefresh = true)
+        return newsItems(today)
+    }
+
     suspend fun preorderItems(today: LocalDate): List<IncomingItem>
+
+    suspend fun refreshPreorderItems(today: LocalDate): List<IncomingItem> {
+        incoming(today, forceRefresh = true)
+        return preorderItems(today)
+    }
 
     suspend fun findItem(key: String, today: LocalDate): IncomingItem?
 
@@ -49,13 +67,21 @@ interface ListingRepository {
 
     fun markLocalSeen(key: String, seen: Boolean = true) {}
 
+    fun markAllLocalSeen(keys: Collection<String>) {
+        keys.forEach { markLocalSeen(it, true) }
+    }
+
     fun lastDbModifiedTimestamp(): Long
+
+    fun lastDbModifiedTimestampFlow(): StateFlow<Long> = MutableStateFlow(lastDbModifiedTimestamp())
 
     fun newlyAddedCount(): Int
 
     fun newlyAddedCountFlow(): StateFlow<Int>
 
     fun preorderCount(): Int
+
+    fun preorderCountFlow(): StateFlow<Int> = MutableStateFlow(preorderCount())
 
     suspend fun linkListingToBgg(
         listingId: Long,
@@ -87,79 +113,137 @@ class DefaultListingRepository(
     private val seenStore: com.meepleradar.data.local.SeenStore? = null,
 ) : ListingRepository {
 
-    private val _newlyAddedCount = MutableStateFlow(localCacheStore?.load()?.newlyAddedCount ?: 0)
+    private val _newlyAddedCount = MutableStateFlow(localCacheStore?.newlyAddedCount() ?: 0)
+    private val _preorderCount = MutableStateFlow(0)
+    private val _lastDbModifiedTimestamp = MutableStateFlow(localCacheStore?.lastModifiedTimestamp() ?: 0L)
 
-    override fun lastDbModifiedTimestamp(): Long =
-        localCacheStore?.load()?.lastModifiedTimestamp ?: 0L
+    private val actionsLock = Any()
+
+    @Volatile
+    private var cachedUserActions: List<UserActionRow>? = null
+
+    @Volatile
+    private var cachedUserActionsAtMs: Long = 0L
+
+    override fun lastDbModifiedTimestamp(): Long {
+        val current = _lastDbModifiedTimestamp.value
+        if (current > 0L) return current
+        return localCacheStore?.lastModifiedTimestamp() ?: 0L
+    }
+
+    override fun lastDbModifiedTimestampFlow(): StateFlow<Long> = _lastDbModifiedTimestamp.asStateFlow()
 
     override fun newlyAddedCount(): Int = _newlyAddedCount.value
 
     override fun newlyAddedCountFlow(): StateFlow<Int> = _newlyAddedCount.asStateFlow()
 
     override fun preorderCount(): Int {
+        val current = _preorderCount.value
+        if (current > 0) return current
         val cached = localCacheStore?.load() ?: return 0
-        val today = LocalDate.now()
-        val preorderListings = cached.listings.filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
-        return preorderListings.map { keyOf(it) }.toSet().size
+        val count = computePreorderCount(cached, LocalDate.now())
+        _preorderCount.value = count
+        return count
     }
 
-    override suspend fun preorderItems(today: LocalDate): List<IncomingItem> {
-        val all = incoming(today, includeUndated = false, includePriceless = true, forceRefresh = false)
-        return all.filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
+    override fun preorderCountFlow(): StateFlow<Int> = _preorderCount.asStateFlow()
+
+    override suspend fun preorderItems(today: LocalDate): List<IncomingItem> =
+        loadPreorderItems(today, forceRefresh = false)
+
+    override suspend fun refreshPreorderItems(today: LocalDate): List<IncomingItem> =
+        loadPreorderItems(today, forceRefresh = true)
+
+    private suspend fun loadPreorderItems(today: LocalDate, forceRefresh: Boolean): List<IncomingItem> {
+        val all = incoming(today, includeUndated = false, includePriceless = true, forceRefresh = forceRefresh)
+        val preorders = all.filter { it.releaseDate != null && !it.releaseDate.isBefore(today) }
+        _preorderCount.value = preorders.size
+        return preorders
     }
 
-    override suspend fun newsItems(today: LocalDate): List<IncomingItem> {
-        val cached = localCacheStore?.load() ?: return emptyList()
+    override suspend fun newsItems(today: LocalDate): List<IncomingItem> =
+        loadNewsItems(today, forceRefresh = false)
+
+    override suspend fun refreshNewsItems(today: LocalDate): List<IncomingItem> =
+        loadNewsItems(today, forceRefresh = true)
+
+    private suspend fun loadNewsItems(today: LocalDate, forceRefresh: Boolean): List<IncomingItem> {
+        val (userActions, db) = coroutineScope {
+            val actionsDeferred = async { getUserActions(forceRefresh = forceRefresh) }
+            val dbDeferred = async { ensureDatabase(forceRefresh = forceRefresh) }
+            actionsDeferred.await() to dbDeferred.await()
+        }
+        if (db.listings.isEmpty()) {
+            _newlyAddedCount.value = 0
+            return emptyList()
+        }
+
+        val actionsMap = latestActionsByKey(userActions)
+        val ignoredKeys = actionsMap.filterValues { it == Action.IGNORED }.keys
+        val remoteSeenKeys = userActions.filter { it.action == Action.SEEN }.mapNotNull { it.keyOrNull() }.toSet()
+        val seenKeys = seenStore?.keys().orEmpty() + remoteSeenKeys
         val twoMonthsAgo = today.minusMonths(2)
 
-        val games = cached.games.associateBy { it.id }
-        val sources = cached.sources.associateBy { it.id }
-        val products = cached.products.associateBy { it.id }
+        val news = withContext(Dispatchers.Default) {
+            val games = db.games.associateBy { it.id }
+            val sources = db.sources.associateBy { it.id }
+            val products = db.products.associateBy { it.id }
 
-        val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
-        val actionsMap = latestActionsByKey(userActions)
-        val remoteSeenKeys = actionsMap.filterValues { it == Action.SEEN }.keys
-        val seenKeys = seenStore?.keys().orEmpty() + remoteSeenKeys
+            val allItems = buildIncomingItems(
+                listings = db.listings,
+                games = games,
+                sources = sources,
+                ignoredKeys = ignoredKeys,
+                today = today,
+                sourceIds = null,
+                includeUndated = true,
+                includePriceless = true,
+                products = products,
+                newlyAddedListingIds = db.newlyAddedListingIds,
+                seenKeys = seenKeys,
+            )
 
-        val allItems = buildIncomingItems(
-            listings = cached.listings,
-            games = games,
-            sources = sources,
-            ignoredKeys = emptySet(),
-            today = today,
-            sourceIds = null,
-            includeUndated = true,
-            includePriceless = true,
-            products = products,
-            newlyAddedListingIds = cached.newlyAddedListingIds,
-            seenKeys = seenKeys,
-        )
-
-        return allItems.filter { item ->
-            val date = item.releaseDate
-            val isPreorder = date != null && !date.isBefore(today)
-            val isTooOld = date != null && date.isBefore(twoMonthsAgo)
-            !isPreorder && !isTooOld
+            allItems.filter { item ->
+                val date = item.releaseDate
+                val isPreorder = date != null && !date.isBefore(today)
+                val isTooOld = date != null && date.isBefore(twoMonthsAgo)
+                !isPreorder && !isTooOld
+            }
         }
+
+        _newlyAddedCount.value = news.count { it.isNewlyAdded }
+        _preorderCount.value = computePreorderCount(db, today)
+        _lastDbModifiedTimestamp.value = db.lastModifiedTimestamp
+        return news
+    }
+
+    override suspend fun favoriteKeys(today: LocalDate): Set<String> {
+        val userActions = getUserActions(forceRefresh = false)
+        val actionsMap = latestActionsByKey(userActions)
+        val ignored = actionsMap.filterValues { it == Action.IGNORED }.keys
+        val remoteFavoriteKeys = actionsMap.filterValues { it == Action.FAVORITE }.keys
+        return (favoriteStore.keys() + remoteFavoriteKeys) - ignored
     }
 
     override suspend fun findItem(key: String, today: LocalDate): IncomingItem? {
-        val cached = localCacheStore?.load()
-        val games = cached?.games?.associateBy { it.id } ?: emptyMap()
-        val sources = cached?.sources?.associateBy { it.id } ?: emptyMap()
-        val products = cached?.products?.associateBy { it.id } ?: emptyMap()
+        val cached = withContext(Dispatchers.IO) { localCacheStore?.load() }
+        val allItems = withContext(Dispatchers.Default) {
+            val games = cached?.games?.associateBy { it.id } ?: emptyMap()
+            val sources = cached?.sources?.associateBy { it.id } ?: emptyMap()
+            val products = cached?.products?.associateBy { it.id } ?: emptyMap()
 
-        val allItems = buildIncomingItems(
-            listings = cached?.listings.orEmpty(),
-            games = games,
-            sources = sources,
-            ignoredKeys = emptySet(),
-            today = LocalDate.MIN,
-            sourceIds = null,
-            includeUndated = true,
-            includePriceless = true,
-            products = products,
-        )
+            buildIncomingItems(
+                listings = cached?.listings.orEmpty(),
+                games = games,
+                sources = sources,
+                ignoredKeys = emptySet(),
+                today = LocalDate.MIN,
+                sourceIds = null,
+                includeUndated = true,
+                includePriceless = true,
+                products = products,
+            )
+        }
 
         val directMatch = allItems.firstOrNull { it.key == key }
         if (directMatch != null) return directMatch
@@ -209,12 +293,23 @@ class DefaultListingRepository(
         onProgress: ((percent: Int, message: String) -> Unit)?,
     ): List<IncomingItem> {
         onProgress?.invoke(10, "Verifica azioni utente…")
-        val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
-        val ignored = latestActionsByKey(userActions)
+        val userActions = getUserActions(forceRefresh = forceRefresh)
+        val actionsMap = latestActionsByKey(userActions)
+        val ignored = actionsMap
             .filterValues { it == Action.IGNORED }
             .keys
             .toSet()
-        return buildItems(ignored, today, sourceIds, includeUndated, includePriceless, forceRefresh, onProgress)
+        val remoteSeenKeys = userActions.filter { it.action == Action.SEEN }.mapNotNull { it.keyOrNull() }.toSet()
+        return buildItems(
+            ignoredKeys = ignored,
+            remoteSeenKeys = remoteSeenKeys,
+            today = today,
+            sourceIds = sourceIds,
+            includeUndated = includeUndated,
+            includePriceless = includePriceless,
+            forceRefresh = forceRefresh,
+            onProgress = onProgress,
+        )
     }
 
     override suspend fun favorites(
@@ -226,16 +321,26 @@ class DefaultListingRepository(
         onProgress: ((percent: Int, message: String) -> Unit)?,
     ): List<IncomingItem> {
         onProgress?.invoke(10, "Verifica azioni utente…")
-        val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
+        val userActions = getUserActions(forceRefresh = forceRefresh)
         val actionsMap = latestActionsByKey(userActions)
         val ignored = actionsMap.filterValues { it == Action.IGNORED }.keys
         val remoteFavoriteKeys = actionsMap.filterValues { it == Action.FAVORITE }.keys
+        val remoteSeenKeys = userActions.filter { it.action == Action.SEEN }.mapNotNull { it.keyOrNull() }.toSet()
         val favoriteKeys = favoriteStore.keys() + remoteFavoriteKeys
-        return buildItems(ignored, LocalDate.MIN, sourceIds, includeUndated, includePriceless, forceRefresh, onProgress).filter { it.key in favoriteKeys }
+        return buildItems(
+            ignoredKeys = ignored,
+            remoteSeenKeys = remoteSeenKeys,
+            today = LocalDate.MIN,
+            sourceIds = sourceIds,
+            includeUndated = includeUndated,
+            includePriceless = includePriceless,
+            forceRefresh = forceRefresh,
+            onProgress = onProgress,
+        ).filter { it.key in favoriteKeys }
     }
 
     override suspend fun sources(): List<Source> {
-        val cached = localCacheStore?.load()
+        val cached = withContext(Dispatchers.IO) { localCacheStore?.load() }
         if (cached != null && cached.sources.isNotEmpty()) {
             return cached.sources
         }
@@ -248,6 +353,10 @@ class DefaultListingRepository(
         seenStore?.setSeen(key, seen)
     }
 
+    override fun markAllLocalSeen(keys: Collection<String>) {
+        seenStore?.setAllSeen(keys)
+    }
+
     override suspend fun setAction(key: String, action: Action) {
         val (kind, id) = parseKey(key)
         when (action) {
@@ -257,8 +366,8 @@ class DefaultListingRepository(
             Action.SEEN -> seenStore?.setSeen(key, true)
         }
 
-        runCatching {
-            val row = when (kind) {
+        val row = runCatching {
+            when (kind) {
                 "game" -> UserActionRow(gameId = id, listingId = null, action = action)
                 "listing" -> UserActionRow(gameId = null, listingId = id, action = action)
                 "product" -> UserActionRow(gameId = null, listingId = null, action = action, productId = id)
@@ -268,8 +377,23 @@ class DefaultListingRepository(
                 }
                 else -> throw IllegalArgumentException("chiave non valida: $key")
             }
-            if (row.gameId != null || row.listingId != null || row.productId != null) {
-                api.insertAction(row)
+        }.getOrNull()
+
+        if (row != null && (row.gameId != null || row.listingId != null || row.productId != null)) {
+            synchronized(actionsLock) {
+                cachedUserActions = listOf(row) + cachedUserActions.orEmpty()
+                if (cachedUserActionsAtMs == 0L) {
+                    cachedUserActionsAtMs = System.currentTimeMillis()
+                }
+            }
+            runCatching { api.insertAction(row) }
+        }
+
+        if (action == Action.IGNORED) {
+            localCacheStore?.load()?.let { cached ->
+                val actionsMap = latestActionsByKey(cachedUserActions.orEmpty())
+                val ignoredKeys = actionsMap.filterValues { it == Action.IGNORED }.keys
+                syncDerivedFlows(cached, ignoredKeys, LocalDate.now())
             }
         }
     }
@@ -318,12 +442,15 @@ class DefaultListingRepository(
 
             localCacheStore?.upsertGame(linkedGame, listingId.takeIf { it > 0 }, productId)
             if (linkedProduct != null && cachedDb != null) {
-                localCacheStore.saveIfChanged(
+                val (updated, _) = localCacheStore.saveIfChanged(
                     newListings = localCacheStore.load()?.listings.orEmpty(),
                     newGames = localCacheStore.load()?.games.orEmpty(),
                     newSources = cachedDb.sources,
                     newProducts = newProducts,
                 )
+                syncDerivedFlows(updated, currentIgnoredKeys(), LocalDate.now())
+            } else {
+                localCacheStore?.load()?.let { syncDerivedFlows(it, currentIgnoredKeys(), LocalDate.now()) }
             }
             if (listingId <= 0) refreshListingsAfterBggWrite()
         }
@@ -334,12 +461,13 @@ class DefaultListingRepository(
         val cached = localCacheStore?.load() ?: return
         val refreshedListings = api.listings()
         val refreshedIds = refreshedListings.mapTo(mutableSetOf()) { it.id }
-        localCacheStore.saveIfChanged(
+        val (updated, _) = localCacheStore.saveIfChanged(
             newListings = cached.listings.filterNot { it.id in refreshedIds } + refreshedListings,
             newGames = cached.games,
             newSources = cached.sources,
             newProducts = cached.products,
         )
+        syncDerivedFlows(updated, currentIgnoredKeys(), LocalDate.now())
     }
 
     override suspend fun updateGameBggStats(
@@ -358,6 +486,7 @@ class DefaultListingRepository(
                         description = description?.takeIf(String::isNotBlank) ?: game.description,
                     ),
                 )
+                localCacheStore.load()?.let { syncDerivedFlows(it, currentIgnoredKeys(), LocalDate.now()) }
             }
         }
     }
@@ -391,8 +520,82 @@ class DefaultListingRepository(
         return gameId
     }
 
+    private suspend fun getUserActions(forceRefresh: Boolean): List<UserActionRow> {
+        val now = System.currentTimeMillis()
+        if (!forceRefresh) {
+            val cached = cachedUserActions
+            if (cached != null && now - cachedUserActionsAtMs < USER_ACTIONS_TTL_MS) {
+                return cached
+            }
+        }
+        val fetched = runCatching { api.userActions() }.getOrNull()
+        return if (fetched != null) {
+            synchronized(actionsLock) {
+                cachedUserActions = fetched
+                cachedUserActionsAtMs = System.currentTimeMillis()
+            }
+            fetched
+        } else {
+            cachedUserActions.orEmpty()
+        }
+    }
+
+    private fun currentIgnoredKeys(): Set<String> =
+        latestActionsByKey(cachedUserActions.orEmpty())
+            .filterValues { it == Action.IGNORED }
+            .keys
+
+    private suspend fun ensureDatabase(
+        forceRefresh: Boolean,
+        onProgress: ((percent: Int, message: String) -> Unit)? = null,
+    ): CachedDatabase {
+        onProgress?.invoke(25, "Caricamento database locale…")
+        var cached = withContext(Dispatchers.IO) { localCacheStore?.load() }
+
+        if (forceRefresh || cached == null || cached.listings.isEmpty()) {
+            onProgress?.invoke(40, "Connessione a Supabase…")
+            val (remoteListings, remoteGames, remoteSources, remoteProducts) = coroutineScope {
+                val listingsDeferred = async { runCatching { api.listings() }.getOrDefault(cached?.listings.orEmpty()) }
+                val gamesDeferred = async { runCatching { api.games() }.getOrDefault(cached?.games.orEmpty()) }
+                val sourcesDeferred = async { runCatching { api.sources() }.getOrDefault(cached?.sources.orEmpty()) }
+                val productsDeferred = async { runCatching { api.products() }.getOrDefault(cached?.products.orEmpty()) }
+                RemoteSnapshot(
+                    listings = listingsDeferred.await(),
+                    games = gamesDeferred.await(),
+                    sources = sourcesDeferred.await(),
+                    products = productsDeferred.await(),
+                )
+            }
+
+            onProgress?.invoke(85, "Analisi modifiche e differenze…")
+            cached = if (localCacheStore != null && remoteListings.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    localCacheStore.saveIfChanged(
+                        newListings = remoteListings,
+                        newGames = remoteGames,
+                        newSources = remoteSources,
+                        newProducts = remoteProducts,
+                    ).first
+                }
+            } else {
+                CachedDatabase(
+                    listings = remoteListings,
+                    games = remoteGames,
+                    sources = remoteSources,
+                    products = remoteProducts,
+                    lastModifiedTimestamp = cached?.lastModifiedTimestamp ?: 0L,
+                    newlyAddedCount = cached?.newlyAddedCount ?: 0,
+                    newlyAddedListingIds = cached?.newlyAddedListingIds.orEmpty(),
+                )
+            }
+        }
+
+        return cached
+    }
+
     private suspend fun buildItems(
         ignoredKeys: Set<String>,
+        remoteSeenKeys: Set<String>,
         today: LocalDate,
         sourceIds: Set<String>?,
         includeUndated: Boolean,
@@ -400,67 +603,93 @@ class DefaultListingRepository(
         forceRefresh: Boolean,
         onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): List<IncomingItem> {
-        onProgress?.invoke(25, "Caricamento database locale…")
-        var cached = localCacheStore?.load()
-
-        val remoteListings: List<Listing>
-        val remoteGames: List<Game>
-        val remoteSources: List<Source>
-        val remoteProducts: List<Product>
-
-        if (forceRefresh || cached == null || cached.listings.isEmpty()) {
-            onProgress?.invoke(40, "Connessione a Supabase…")
-            remoteListings = runCatching { api.listings() }.getOrDefault(cached?.listings.orEmpty())
-            remoteGames = runCatching { api.games() }.getOrDefault(cached?.games.orEmpty())
-            remoteSources = runCatching { api.sources() }.getOrDefault(cached?.sources.orEmpty())
-            remoteProducts = runCatching { api.products() }.getOrDefault(cached?.products.orEmpty())
-
-            onProgress?.invoke(85, "Analisi modifiche e differenze…")
-            if (localCacheStore != null && remoteListings.isNotEmpty()) {
-                val (updatedDb, _) = localCacheStore.saveIfChanged(
-                    newListings = remoteListings,
-                    newGames = remoteGames,
-                    newSources = remoteSources,
-                    newProducts = remoteProducts,
-                )
-                cached = updatedDb
-                _newlyAddedCount.value = updatedDb.newlyAddedCount
-            }
-        } else {
-            remoteListings = cached.listings
-            remoteGames = cached.games
-            remoteSources = cached.sources
-            remoteProducts = cached.products
-        }
+        val db = ensureDatabase(forceRefresh = forceRefresh, onProgress = onProgress)
 
         onProgress?.invoke(95, "Elaborazione preferiti e filtri…")
 
-        val listings = cached?.listings?.takeIf { it.isNotEmpty() } ?: remoteListings
-        val games = (cached?.games?.takeIf { it.isNotEmpty() } ?: remoteGames).associateBy { it.id }
-        val sources = (cached?.sources?.takeIf { it.isNotEmpty() } ?: remoteSources).associateBy { it.id }
-        val products = (cached?.products?.takeIf { it.isNotEmpty() } ?: remoteProducts).associateBy { it.id }
-
-        val userActions = runCatching { api.userActions() }.getOrDefault(emptyList())
-        val remoteSeenKeys = latestActionsByKey(userActions).filterValues { it == Action.SEEN }.keys
         val seenKeys = seenStore?.keys().orEmpty() + remoteSeenKeys
 
-        val result = buildIncomingItems(
-            listings = listings,
-            games = games,
-            sources = sources,
-            ignoredKeys = ignoredKeys,
-            today = today,
-            sourceIds = sourceIds,
-            includeUndated = includeUndated,
-            includePriceless = includePriceless,
-            products = products,
-            newlyAddedListingIds = cached?.newlyAddedListingIds.orEmpty(),
-            seenKeys = seenKeys,
-        )
+        val result = withContext(Dispatchers.Default) {
+            val games = db.games.associateBy { it.id }
+            val sources = db.sources.associateBy { it.id }
+            val products = db.products.associateBy { it.id }
+
+            buildIncomingItems(
+                listings = db.listings,
+                games = games,
+                sources = sources,
+                ignoredKeys = ignoredKeys,
+                today = today,
+                sourceIds = sourceIds,
+                includeUndated = includeUndated,
+                includePriceless = includePriceless,
+                products = products,
+                newlyAddedListingIds = db.newlyAddedListingIds,
+                seenKeys = seenKeys,
+            )
+        }
+
+        val effectiveToday = if (today == LocalDate.MIN) LocalDate.now() else today
+        syncDerivedFlows(db, ignoredKeys, effectiveToday)
 
         onProgress?.invoke(100, "Sincronizzazione completata!")
         return result
     }
+
+    private fun syncDerivedFlows(db: CachedDatabase, ignoredKeys: Set<String>, today: LocalDate) {
+        _lastDbModifiedTimestamp.value = db.lastModifiedTimestamp
+        _preorderCount.value = computePreorderCount(db, today)
+        _newlyAddedCount.value = computeNewlyAddedNewsCount(db, ignoredKeys, today)
+    }
+
+    private fun computePreorderCount(db: CachedDatabase, today: LocalDate): Int =
+        db.listings
+            .filter { !it.isAccessory() && it.releaseDate != null && !it.releaseDate.isBefore(today) }
+            .map { keyOf(it) }
+            .toSet()
+            .size
+
+    private fun computeNewlyAddedNewsCount(
+        db: CachedDatabase,
+        ignoredKeys: Set<String>,
+        today: LocalDate,
+    ): Int {
+        if (db.listings.isEmpty()) return 0
+        val twoMonthsAgo = today.minusMonths(2)
+        val products = db.products.associateBy { it.id }
+        return db.listings
+            .filter { !it.isAccessory() }
+            .groupBy { keyOf(it) }
+            .count { (key, groupListings) ->
+                val isIgnored = key in ignoredKeys || groupListings.any { listing ->
+                    "listing:${listing.id}" in ignoredKeys ||
+                        listing.gameId?.let { "game:$it" in ignoredKeys } == true ||
+                        listing.productId?.let { "product:$it" in ignoredKeys } == true
+                }
+                if (isIgnored) return@count false
+
+                val hasNewlyAdded = groupListings.any { listing ->
+                    listing.id in db.newlyAddedListingIds || isWithin24Hours(listing.firstSeenAt, today)
+                }
+                if (!hasNewlyAdded) return@count false
+
+                val product = groupListings.firstNotNullOfOrNull { l -> l.productId?.let { products[it] } }
+                val futureDate = groupListings.mapNotNull { it.releaseDate }.filter { !it.isBefore(today) }.minOrNull()
+                val releaseDate = futureDate
+                    ?: groupListings.mapNotNull { it.releaseDate }.minOrNull()
+                    ?: product?.releaseDate
+                val isPreorder = releaseDate != null && !releaseDate.isBefore(today)
+                val isTooOld = releaseDate != null && releaseDate.isBefore(twoMonthsAgo)
+                !isPreorder && !isTooOld
+            }
+    }
+
+    private data class RemoteSnapshot(
+        val listings: List<Listing>,
+        val games: List<Game>,
+        val sources: List<Source>,
+        val products: List<Product>,
+    )
 
     private fun parseKey(key: String): Pair<String, Long> {
         val parts = key.split(':', limit = 2)
@@ -480,4 +709,8 @@ class DefaultListingRepository(
         actions.mapNotNull { row -> row.keyOrNull()?.let { it to row.action } }
             .distinctBy { (key, _) -> key }
             .toMap()
+
+    private companion object {
+        const val USER_ACTIONS_TTL_MS = 60_000L
+    }
 }

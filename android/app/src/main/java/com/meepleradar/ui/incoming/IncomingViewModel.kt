@@ -11,6 +11,7 @@ import com.meepleradar.data.repo.ListingRepository
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,10 +66,21 @@ class IncomingViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    val newlyAddedCountFlow: StateFlow<Int> = repo.newlyAddedCountFlow()
     val newlyAddedCount: Int get() = repo.newlyAddedCount()
+
+    private val _unseenCount = MutableStateFlow(0)
+    val unseenCount: StateFlow<Int> = _unseenCount.asStateFlow()
+
+    fun toggleHideSeen() {
+        _hideSeen.value = !_hideSeen.value
+        updateFilteredState()
+    }
 
     private var rawItems: List<IncomingItem> = emptyList()
     private var rawFavorites: Set<String> = emptySet()
+    private var hasLoaded: Boolean = false
+    private var loadedCacheTimestamp: Long = -1L
 
     init {
         loadSources()
@@ -81,28 +93,47 @@ class IncomingViewModel(
     }
 
     fun refreshSeenStatus() {
-        val seenKeys = repo.seenKeys()
-        if (rawItems.isEmpty()) return
-        rawItems = rawItems.map { item ->
-            val isSeen = item.isSeen || item.key in seenKeys || item.bggSelectionKeys.any { it in seenKeys }
-            if (item.isSeen == isSeen) item else item.copy(isSeen = isSeen)
+        if (!hasLoaded) return
+        viewModelScope.launch {
+            try {
+                val currentTimestamp = repo.lastDbModifiedTimestamp()
+                if (currentTimestamp != loadedCacheTimestamp) {
+                    val updated = repo.incoming(today, includeUndated = true, includePriceless = true, forceRefresh = false)
+                    if (updated.isNotEmpty()) {
+                        rawItems = updated
+                        loadedCacheTimestamp = currentTimestamp
+                    }
+                }
+                rawFavorites = repo.favoriteKeys(today)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            } finally {
+                val seenKeys = repo.seenKeys()
+                rawItems = rawItems.map { item ->
+                    val isSeen = item.isSeen || item.key in seenKeys || item.bggSelectionKeys.any { it in seenKeys }
+                    if (item.isSeen == isSeen) item else item.copy(isSeen = isSeen)
+                }
+                updateFilteredState()
+            }
         }
-        updateFilteredState()
     }
 
     fun markAllAsSeen() {
-        if (rawItems.isEmpty()) return
-        val itemsToMark = rawItems.toList()
-        viewModelScope.launch {
-            itemsToMark.forEach { item ->
-                repo.markLocalSeen(item.key, true)
-                item.bggSelectionKeys.forEach { selKey ->
-                    repo.markLocalSeen(selKey, true)
-                }
+        val unseenItems = rawItems.filterNot { it.isSeen }
+        if (unseenItems.isEmpty()) return
+        val keysToMark = buildList {
+            unseenItems.forEach { item ->
+                add(item.key)
+                addAll(item.bggSelectionKeys)
             }
-            refreshSeenStatus()
+        }
+        repo.markAllLocalSeen(keysToMark)
+        rawItems = rawItems.map { item -> if (item.isSeen) item else item.copy(isSeen = true) }
+        updateFilteredState()
 
-            itemsToMark.forEach { item ->
+        viewModelScope.launch(Dispatchers.IO) {
+            unseenItems.forEach { item ->
                 runCatching { repo.setAction(item.key, Action.SEEN) }
             }
         }
@@ -144,15 +175,11 @@ class IncomingViewModel(
                     includePriceless = true,
                     forceRefresh = false,
                 )
-                rawFavorites = repo.favorites(
-                    today = today,
-                    sourceIds = null,
-                    includeUndated = true,
-                    includePriceless = true,
-                    forceRefresh = false,
-                ).map { it.key }.toSet()
+                rawFavorites = repo.favoriteKeys(today)
 
-                _lastModifiedTimestamp.value = repo.lastDbModifiedTimestamp()
+                loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
+                _lastModifiedTimestamp.value = loadedCacheTimestamp
+                hasLoaded = true
                 updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
@@ -177,15 +204,11 @@ class IncomingViewModel(
                         _syncProgress.value = SyncProgressState.Progress(percent, message)
                     },
                 )
-                rawFavorites = repo.favorites(
-                    today = today,
-                    sourceIds = null,
-                    includeUndated = true,
-                    includePriceless = true,
-                    forceRefresh = false,
-                ).map { it.key }.toSet()
+                rawFavorites = repo.favoriteKeys(today)
 
-                _lastModifiedTimestamp.value = repo.lastDbModifiedTimestamp()
+                loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
+                _lastModifiedTimestamp.value = loadedCacheTimestamp
+                hasLoaded = true
                 _syncProgress.value = SyncProgressState.Finished
                 updateFilteredState()
             } catch (e: CancellationException) {
@@ -233,6 +256,7 @@ class IncomingViewModel(
             sourceMatch && dateMatch && priceMatch && seenMatch && availabilityMatch && searchMatch
         }
 
+        _unseenCount.value = rawItems.count { !it.isSeen }
         _state.value = IncomingUiState.Content(items = filtered, favorites = rawFavorites)
     }
 

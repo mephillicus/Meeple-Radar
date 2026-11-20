@@ -24,6 +24,10 @@ data class CachedDatabase(
 interface LocalCacheStore {
     fun load(): CachedDatabase?
 
+    fun lastModifiedTimestamp(): Long = load()?.lastModifiedTimestamp ?: 0L
+
+    fun newlyAddedCount(): Int = load()?.newlyAddedCount ?: 0
+
     fun upsertGame(game: Game, linkedListingId: Long? = null, linkedProductId: Long? = null) {
         val cached = load() ?: return
         val games = cached.games.filterNot { it.id == game.id } + game
@@ -57,53 +61,75 @@ class SharedPreferencesLocalCacheStore(
 ) : LocalCacheStore {
 
     private val preferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+    private val lock = Any()
+
+    @Volatile
+    private var cachedInMemory: CachedDatabase? = null
+
+    override fun lastModifiedTimestamp(): Long =
+        cachedInMemory?.lastModifiedTimestamp ?: preferences.getLong(KEY_TIMESTAMP, 0L)
+
+    override fun newlyAddedCount(): Int =
+        cachedInMemory?.newlyAddedCount ?: preferences.getInt(KEY_NEWLY_ADDED_COUNT, 0)
 
     override fun load(): CachedDatabase? {
-        val listingsJson = preferences.getString(KEY_LISTINGS, null) ?: return null
-        val gamesJson = preferences.getString(KEY_GAMES, null) ?: "[]"
-        val sourcesJson = preferences.getString(KEY_SOURCES, null) ?: "[]"
-        val productsJson = preferences.getString(KEY_PRODUCTS, null) ?: "[]"
-        val timestamp = preferences.getLong(KEY_TIMESTAMP, 0L)
-        val addedCount = preferences.getInt(KEY_NEWLY_ADDED_COUNT, 0)
-        val addedIdsString = preferences.getString(KEY_NEWLY_ADDED_IDS, "") ?: ""
-        val addedIds = if (addedIdsString.isBlank()) emptySet() else addedIdsString.split(',').mapNotNull { it.toLongOrNull() }.toSet()
+        cachedInMemory?.let { return it }
+        return synchronized(lock) {
+            cachedInMemory?.let { return@synchronized it }
+            val listingsJson = preferences.getString(KEY_LISTINGS, null) ?: return@synchronized null
+            val gamesJson = preferences.getString(KEY_GAMES, null) ?: "[]"
+            val sourcesJson = preferences.getString(KEY_SOURCES, null) ?: "[]"
+            val productsJson = preferences.getString(KEY_PRODUCTS, null) ?: "[]"
+            val timestamp = preferences.getLong(KEY_TIMESTAMP, 0L)
+            val addedCount = preferences.getInt(KEY_NEWLY_ADDED_COUNT, 0)
+            val addedIdsString = preferences.getString(KEY_NEWLY_ADDED_IDS, "") ?: ""
+            val addedIds = if (addedIdsString.isBlank()) emptySet() else addedIdsString.split(',').mapNotNull { it.toLongOrNull() }.toSet()
 
-        return try {
-            val cachedListings = json.decodeFromString<List<CachedListing>>(listingsJson).map { it.toDomain() }
-            val cachedGames = json.decodeFromString<List<CachedGame>>(gamesJson).map { it.toDomain() }
-            val cachedSources = json.decodeFromString<List<CachedSource>>(sourcesJson).map { it.toDomain() }
-            val cachedProducts = json.decodeFromString<List<CachedProduct>>(productsJson).map { it.toDomain() }
+            try {
+                val cachedListings = json.decodeFromString<List<CachedListing>>(listingsJson).map { it.toDomain() }
+                val cachedGames = json.decodeFromString<List<CachedGame>>(gamesJson).map { it.toDomain() }
+                val cachedSources = json.decodeFromString<List<CachedSource>>(sourcesJson).map { it.toDomain() }
+                val cachedProducts = json.decodeFromString<List<CachedProduct>>(productsJson).map { it.toDomain() }
 
-            CachedDatabase(
-                listings = cachedListings,
-                games = cachedGames,
-                sources = cachedSources,
-                products = cachedProducts,
-                lastModifiedTimestamp = timestamp,
-                newlyAddedCount = addedCount,
-                newlyAddedListingIds = addedIds,
-            )
-        } catch (e: Exception) {
-            null
+                CachedDatabase(
+                    listings = cachedListings,
+                    games = cachedGames,
+                    sources = cachedSources,
+                    products = cachedProducts,
+                    lastModifiedTimestamp = timestamp,
+                    newlyAddedCount = addedCount,
+                    newlyAddedListingIds = addedIds,
+                ).also { cachedInMemory = it }
+            } catch (e: Exception) {
+                null
+            }
         }
     }
 
     override fun upsertGame(game: Game, linkedListingId: Long?, linkedProductId: Long?) {
-        val cached = load() ?: return
-        val games = cached.games.filterNot { it.id == game.id } + game
-        val listings = if (linkedListingId == null) cached.listings else {
-            cached.listings.map { listing ->
-                if (listing.id == linkedListingId) listing.copy(
-                    gameId = game.id,
-                    productId = linkedProductId,
-                ) else listing
-            }
+        synchronized(lock) {
+            val cached = load() ?: return
+            val games = (cached.games.filterNot { it.id == game.id } + game).sortedBy { it.id }
+            val listings = (if (linkedListingId == null) cached.listings else {
+                cached.listings.map { listing ->
+                    if (listing.id == linkedListingId) listing.copy(
+                        gameId = game.id,
+                        productId = linkedProductId,
+                    ) else listing
+                }
+            }).sortedBy { it.id }
+            val timestamp = System.currentTimeMillis()
+            cachedInMemory = cached.copy(
+                listings = listings,
+                games = games,
+                lastModifiedTimestamp = timestamp,
+            )
+            preferences.edit()
+                .putString(KEY_GAMES, json.encodeToString(games.map { CachedGame.from(it) }))
+                .putString(KEY_LISTINGS, json.encodeToString(listings.map { CachedListing.from(it) }))
+                .putLong(KEY_TIMESTAMP, timestamp)
+                .apply()
         }
-        preferences.edit()
-            .putString(KEY_GAMES, json.encodeToString(games.sortedBy { it.id }.map { CachedGame.from(it) }))
-            .putString(KEY_LISTINGS, json.encodeToString(listings.sortedBy { it.id }.map { CachedListing.from(it) }))
-            .putLong(KEY_TIMESTAMP, System.currentTimeMillis())
-            .apply()
     }
 
     override fun saveIfChanged(
@@ -111,7 +137,7 @@ class SharedPreferencesLocalCacheStore(
         newGames: List<Game>,
         newSources: List<Source>,
         newProducts: List<Product>,
-    ): Pair<CachedDatabase, Boolean> {
+    ): Pair<CachedDatabase, Boolean> = synchronized(lock) {
         val current = load()
 
         val sortedNewListings = newListings.sortedBy { it.id }
@@ -133,10 +159,15 @@ class SharedPreferencesLocalCacheStore(
 
         val timestamp = if (hasChanges) System.currentTimeMillis() else (current?.lastModifiedTimestamp ?: System.currentTimeMillis())
 
-        val previousListingIds = current?.listings?.map { it.id }?.toSet() ?: emptySet()
+        val previousListingIds = current?.listings?.mapTo(mutableSetOf()) { it.id } ?: emptySet()
+        val newListingIds = sortedNewListings.mapTo(mutableSetOf()) { it.id }
         val addedListings = if (current == null) emptyList() else sortedNewListings.filter { it.id !in previousListingIds }
-        val newlyAddedCount = if (hasChanges) addedListings.size else (current?.newlyAddedCount ?: 0)
-        val newlyAddedIds = if (hasChanges) addedListings.map { it.id }.toSet() else (current?.newlyAddedListingIds ?: emptySet())
+        val newlyAddedIds = when {
+            current == null -> emptySet()
+            addedListings.isNotEmpty() -> addedListings.mapTo(mutableSetOf()) { it.id }
+            else -> current.newlyAddedListingIds.filterTo(mutableSetOf()) { it in newListingIds }
+        }
+        val newlyAddedCount = newlyAddedIds.size
 
         if (hasChanges) {
             val dtoListings = sortedNewListings.map { CachedListing.from(it) }
@@ -164,8 +195,9 @@ class SharedPreferencesLocalCacheStore(
             newlyAddedCount = newlyAddedCount,
             newlyAddedListingIds = newlyAddedIds,
         )
+        cachedInMemory = updatedDb
 
-        return Pair(updatedDb, hasChanges)
+        Pair(updatedDb, hasChanges)
     }
 
     private companion object {

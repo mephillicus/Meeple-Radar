@@ -91,7 +91,8 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                             icon = { Icon(Icons.Filled.Home, contentDescription = null) },
                             label = { Text("Lista") },
                         )
-                        val newlyAddedCount by container.repository.newlyAddedCountFlow().collectAsStateWithLifecycle(initialValue = container.repository.newlyAddedCount())
+                        val newlyAddedCount by container.repository.newlyAddedCountFlow().collectAsStateWithLifecycle()
+                        val preorderCount by container.repository.preorderCountFlow().collectAsStateWithLifecycle()
                         NavigationBarItem(
                             selected = currentRoute == ROUTE_NEWS,
                             onClick = { navController.switchTab(ROUTE_NEWS) },
@@ -110,6 +111,8 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                                                 text = "$newlyAddedCount",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontSize = 9.sp,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 color = MaterialTheme.colorScheme.onTertiary,
                                                 fontWeight = FontWeight.Bold,
                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
@@ -120,7 +123,6 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                             },
                             label = { Text("Novità") },
                         )
-                        val preorderCount = container.repository.preorderCount()
                         NavigationBarItem(
                             selected = currentRoute == ROUTE_PREORDERS,
                             onClick = { navController.switchTab(ROUTE_PREORDERS) },
@@ -146,6 +148,8 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                                                 text = "$preorderCount",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontSize = 9.sp,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 color = MaterialTheme.colorScheme.onPrimary,
                                                 fontWeight = FontWeight.Bold,
                                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
@@ -170,8 +174,9 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                         )
                     }
 
+                    val lastDbModifiedTimestamp by container.repository.lastDbModifiedTimestampFlow().collectAsStateWithLifecycle()
                     Text(
-                        text = "Aggiornato: ${formatTimestamp(container.repository.lastDbModifiedTimestamp())}",
+                        text = "Aggiornato: ${formatTimestamp(lastDbModifiedTimestamp)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier

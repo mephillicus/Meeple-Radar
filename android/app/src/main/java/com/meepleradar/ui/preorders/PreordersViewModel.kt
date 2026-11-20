@@ -11,6 +11,8 @@ import com.meepleradar.data.repo.ListingRepository
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,16 +56,27 @@ class PreordersViewModel(
     private val _showOnlyNewlyAdded = MutableStateFlow(false)
     val showOnlyNewlyAdded: StateFlow<Boolean> = _showOnlyNewlyAdded.asStateFlow()
 
-    val newlyAddedCount: Int
-        get() = rawItems.count { it.isNewlyAdded }
+    private val _newlyAddedCount = MutableStateFlow(0)
+    val newlyAddedCount: StateFlow<Int> = _newlyAddedCount.asStateFlow()
+
+    private val _unseenCount = MutableStateFlow(0)
+    val unseenCount: StateFlow<Int> = _unseenCount.asStateFlow()
 
     fun toggleNewlyAddedFilter() {
         _showOnlyNewlyAdded.value = !_showOnlyNewlyAdded.value
         updateFilteredState()
     }
 
+    fun toggleHideSeen() {
+        _hideSeen.value = !_hideSeen.value
+        updateFilteredState()
+    }
+
     private var rawItems: List<IncomingItem> = emptyList()
     private var rawFavorites: Set<String> = emptySet()
+    private var hasLoaded: Boolean = false
+    private var loadedCacheTimestamp: Long = -1L
+    private var loadJob: Job? = null
 
     init {
         loadSources()
@@ -71,11 +84,15 @@ class PreordersViewModel(
     }
 
     fun loadPreorders() {
+        loadJob?.cancel()
         _state.value = PreordersUiState.Loading
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             try {
                 rawItems = repo.preorderItems(today)
-                rawFavorites = repo.favorites(today).map { it.key }.toSet()
+                rawFavorites = repo.favoriteKeys(today)
+                loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
+                hasLoaded = true
+                _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
                 updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
@@ -86,12 +103,18 @@ class PreordersViewModel(
     }
 
     fun refresh() {
+        loadJob?.cancel()
         _state.value = PreordersUiState.Loading
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             try {
-                repo.incoming(today, forceRefresh = true)
-                rawItems = repo.preorderItems(today)
-                rawFavorites = repo.favorites(today).map { it.key }.toSet()
+                rawItems = repo.refreshPreorderItems(today)
+                rawFavorites = repo.favoriteKeys(today)
+                if (_sources.value.isEmpty()) {
+                    _sources.value = runCatching { repo.sources() }.getOrDefault(emptyList())
+                }
+                loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
+                hasLoaded = true
+                _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
                 updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
@@ -117,28 +140,46 @@ class PreordersViewModel(
     }
 
     fun refreshSeenStatus() {
-        val seenKeys = repo.seenKeys()
-        if (rawItems.isEmpty()) return
-        rawItems = rawItems.map { item ->
-            val isSeen = item.isSeen || item.key in seenKeys || item.bggSelectionKeys.any { it in seenKeys }
-            if (item.isSeen == isSeen) item else item.copy(isSeen = isSeen)
+        if (!hasLoaded) return
+        viewModelScope.launch {
+            try {
+                val currentTimestamp = repo.lastDbModifiedTimestamp()
+                if (currentTimestamp != loadedCacheTimestamp) {
+                    val updated = repo.preorderItems(today)
+                    rawItems = updated
+                    loadedCacheTimestamp = currentTimestamp
+                }
+                rawFavorites = repo.favoriteKeys(today)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            } finally {
+                val seenKeys = repo.seenKeys()
+                rawItems = rawItems.map { item ->
+                    val isSeen = item.isSeen || item.key in seenKeys || item.bggSelectionKeys.any { it in seenKeys }
+                    if (item.isSeen == isSeen) item else item.copy(isSeen = isSeen)
+                }
+                _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
+                updateFilteredState()
+            }
         }
-        updateFilteredState()
     }
 
     fun markAllAsSeen() {
-        if (rawItems.isEmpty()) return
-        val itemsToMark = rawItems.toList()
-        viewModelScope.launch {
-            itemsToMark.forEach { item ->
-                repo.markLocalSeen(item.key, true)
-                item.bggSelectionKeys.forEach { selKey ->
-                    repo.markLocalSeen(selKey, true)
-                }
+        val unseenItems = rawItems.filterNot { it.isSeen }
+        if (unseenItems.isEmpty()) return
+        val keysToMark = buildList {
+            unseenItems.forEach { item ->
+                add(item.key)
+                addAll(item.bggSelectionKeys)
             }
-            refreshSeenStatus()
+        }
+        repo.markAllLocalSeen(keysToMark)
+        rawItems = rawItems.map { item -> if (item.isSeen) item else item.copy(isSeen = true) }
+        updateFilteredState()
 
-            itemsToMark.forEach { item ->
+        viewModelScope.launch(Dispatchers.IO) {
+            unseenItems.forEach { item ->
                 runCatching { repo.setAction(item.key, Action.SEEN) }
             }
         }
@@ -166,6 +207,7 @@ class PreordersViewModel(
         _hideSeen.value = false
         _selectedAvailability.value = AvailabilityStatus.entries.toSet()
         _searchQuery.value = ""
+        _showOnlyNewlyAdded.value = false
         updateFilteredState()
     }
 
@@ -196,6 +238,7 @@ class PreordersViewModel(
             try {
                 repo.setAction(item.key, Action.IGNORED)
                 rawItems = rawItems.filterNot { it.key == item.key }
+                _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
                 updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
@@ -243,6 +286,8 @@ class PreordersViewModel(
             sourceMatch && dateMatch && priceMatch && seenMatch && availabilityMatch && searchMatch && newlyAddedMatch
         }
 
+        _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
+        _unseenCount.value = rawItems.count { !it.isSeen }
         _state.value = PreordersUiState.Content(filtered, rawFavorites)
     }
 }

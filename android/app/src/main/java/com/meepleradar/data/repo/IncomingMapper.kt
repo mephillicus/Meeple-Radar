@@ -25,7 +25,7 @@ private val ACCESSORY_TITLE_REGEX = Regex(
     "(?i)\\b(bustin[ae]|sleeves?|bigliett[oi]\\b.*augur|deck\\s*box|portamazzo|playmat|tappetino|dragon\\s*shield|ultimate\\s*guard|mayday|paladin|sapphire|arcane\\s*tinmen)\\b"
 )
 
-private fun Listing.isAccessory(): Boolean =
+internal fun Listing.isAccessory(): Boolean =
     ACCESSORY_TITLE_REGEX.containsMatchIn(title)
 
 fun buildIncomingItems(
@@ -86,7 +86,7 @@ fun buildIncomingItems(
                     listing.productId?.let { add("product:$it") }
                     add("listing:${listing.id}")
                 }
-                game?.bggId?.let { add("bgg:$it") }
+                game?.bggId?.takeIf { it > 0 }?.let { add("bgg:$it") }
             }.distinct()
             val preferredListing = groupListings.firstOrNull {
                 it.sourceId != "meeple_app" &&
@@ -128,7 +128,7 @@ fun buildIncomingItems(
         }
         .sortedBy { it.title.lowercase(java.util.Locale.ROOT) }
 
-private fun isWithin24Hours(firstSeenAtStr: String?, today: LocalDate): Boolean {
+internal fun isWithin24Hours(firstSeenAtStr: String?, today: LocalDate): Boolean {
     if (firstSeenAtStr.isNullOrBlank()) return false
     return runCatching {
         val dateStr = firstSeenAtStr.replace(" ", "T")
@@ -137,7 +137,7 @@ private fun isWithin24Hours(firstSeenAtStr: String?, today: LocalDate): Boolean 
         } else {
             java.time.LocalDateTime.parse(dateStr.take(19)).toLocalDate()
         }
-        !listingDate.isBefore(today.minusDays(1)) && !listingDate.isAfter(today)
+        !listingDate.isBefore(today.minusDays(1)) && !listingDate.isAfter(today.plusDays(1))
     }.getOrDefault(false)
 }
 

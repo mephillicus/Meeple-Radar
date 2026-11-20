@@ -95,7 +95,7 @@ class DetailViewModel(
                     return@launch
                 }
 
-                val isFavorite = repo.favorites(today).any { it.key == key }
+                val isFavorite = key in repo.favoriteKeys(today)
                 _state.value = DetailUiState.Content(
                     item = item,
                     offers = orderedOffersForDisplay(item.offers),

@@ -124,11 +124,14 @@ fun ListingCard(
                         text = dateLabel(item),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     if (!item.isSeen) {
                         Spacer(Modifier.width(8.dp))
                         Surface(
-                            shape = androidx.compose.foundation.shape.CircleShape,
+                            shape = CircleShape,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(6.dp),
                         ) {}

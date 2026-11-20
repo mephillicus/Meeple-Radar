@@ -64,11 +64,14 @@ import androidx.compose.foundation.shape.CircleShape
 import com.meepleradar.ui.components.AlphabetFastScroller
 import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.components.ErrorView
-import com.meepleradar.ui.components.EyeVector
+import com.meepleradar.ui.components.HideFilterChipsSection
 import com.meepleradar.ui.components.ListingCard
 import com.meepleradar.ui.components.LoadingView
+import com.meepleradar.ui.components.MarkAllSeenButton
+import com.meepleradar.ui.components.MarkAllSeenConfirmDialog
 import com.meepleradar.ui.components.ScreenContentInsets
 import com.meepleradar.ui.components.ScreenHeader
+import com.meepleradar.ui.components.UnseenFilterPill
 
 @Composable
 fun PreordersScreen(
@@ -85,8 +88,12 @@ fun PreordersScreen(
     val hideSeen by vm.hideSeen.collectAsStateWithLifecycle()
     val selectedAvailability by vm.selectedAvailability.collectAsStateWithLifecycle()
     val searchQueryState by vm.searchQuery.collectAsStateWithLifecycle()
+    val showOnlyNewlyAdded by vm.showOnlyNewlyAdded.collectAsStateWithLifecycle()
+    val newlyAddedCount by vm.newlyAddedCount.collectAsStateWithLifecycle()
+    val unseenCount by vm.unseenCount.collectAsStateWithLifecycle()
 
     var isFilterDrawerOpen by remember { mutableStateOf(false) }
+    var showMarkAllSeenDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.refreshSeenStatus()
@@ -110,10 +117,7 @@ fun PreordersScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        val showOnlyNewlyAdded by vm.showOnlyNewlyAdded.collectAsStateWithLifecycle()
-                        val newlyAddedCount = vm.newlyAddedCount
-
-                        // 1. Filtro NEW Ovale (a SINISTRA della casella di ricerca)
+                        // 1. Filtro NEW Ovale
                         Surface(
                             shape = CircleShape,
                             color = if (showOnlyNewlyAdded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
@@ -135,107 +139,27 @@ fun PreordersScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     color = if (showOnlyNewlyAdded) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
                                 )
                             }
                         }
 
-                        // 2. Campo di ricerca
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                            color = MaterialTheme.colorScheme.surface,
-                            modifier = Modifier
-                                .width(105.dp)
-                                .height(34.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                BasicTextField(
-                                    value = searchQueryState,
-                                    onValueChange = { query -> vm.setSearchQuery(query) },
-                                    singleLine = true,
-                                    textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
-                                    modifier = Modifier.weight(1f),
-                                    decorationBox = { innerTextField ->
-                                        if (searchQueryState.isEmpty()) {
-                                            Text(
-                                                "Cerca...",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                            )
-                                        }
-                                        innerTextField()
-                                    },
-                                )
+                        // 2. Filtro rapido Non visti (nascondi già visti)
+                        UnseenFilterPill(
+                            unseenCount = unseenCount,
+                            hideSeen = hideSeen,
+                            onToggle = { vm.toggleHideSeen() },
+                        )
 
-                                Box(
-                                    modifier = Modifier.size(20.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Crossfade(
-                                        targetState = searchQueryState.isNotEmpty(),
-                                        animationSpec = tween(durationMillis = 180),
-                                        label = "searchAction",
-                                    ) { showClear ->
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .then(
-                                                    if (showClear) {
-                                                        Modifier.clickable(
-                                                            onClickLabel = "Cancella",
-                                                            role = Role.Button,
-                                                        ) { vm.setSearchQuery("") }
-                                                    } else {
-                                                        Modifier
-                                                    },
-                                                ),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            if (showClear) {
-                                                Icon(
-                                                    Icons.Filled.Close,
-                                                    contentDescription = "Cancella",
-                                                    modifier = Modifier.size(12.dp),
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            } else {
-                                                Icon(
-                                                    Icons.Filled.Search,
-                                                    contentDescription = "Cerca",
-                                                    modifier = Modifier.size(13.dp),
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        // 3. Tasto Segna tutti come già visti (con conferma)
+                        MarkAllSeenButton(
+                            unseenCount = unseenCount,
+                            onClick = { showMarkAllSeenDialog = true },
+                        )
 
-                        // 3. Tasto Segna tutti come già visti
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clickable { vm.markAllAsSeen() },
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = EyeVector,
-                                    contentDescription = "Segna tutti come già visti",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                        }
-
+                        // 3. Aggiorna e Filtri
                         Row(
                             modifier = Modifier
                                 .height(34.dp)
@@ -274,6 +198,85 @@ fun PreordersScreen(
                     }
                 },
             )
+
+            // Campo di ricerca compatto su riga dedicata
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 8.dp)
+                    .height(36.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    BasicTextField(
+                        value = searchQueryState,
+                        onValueChange = { query -> vm.setSearchQuery(query) },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { innerTextField ->
+                            if (searchQueryState.isEmpty()) {
+                                Text(
+                                    "Cerca nei preordini...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                )
+                            }
+                            innerTextField()
+                        },
+                    )
+
+                    Box(
+                        modifier = Modifier.size(20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Crossfade(
+                            targetState = searchQueryState.isNotEmpty(),
+                            animationSpec = tween(durationMillis = 180),
+                            label = "searchAction",
+                        ) { showClear ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .then(
+                                        if (showClear) {
+                                            Modifier.clickable(
+                                                onClickLabel = "Cancella",
+                                                role = Role.Button,
+                                            ) { vm.setSearchQuery("") }
+                                        } else {
+                                            Modifier
+                                        },
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (showClear) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Cancella",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Filled.Search,
+                                        contentDescription = "Cerca",
+                                        modifier = Modifier.size(15.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             when (val current = state) {
                 PreordersUiState.Loading -> LoadingView()
@@ -330,7 +333,6 @@ fun PreordersScreen(
                         .width(320.dp)
                         .clickable(enabled = false) {},
                 ) {
-                    val hideSeen by vm.hideSeen.collectAsStateWithLifecycle()
                     PreordersFilterContent(
                         sources = sources,
                         selectedSources = selectedSources,
@@ -351,6 +353,17 @@ fun PreordersScreen(
                 }
             }
         }
+    }
+
+    if (showMarkAllSeenDialog) {
+        MarkAllSeenConfirmDialog(
+            unseenCount = unseenCount,
+            onConfirm = {
+                showMarkAllSeenDialog = false
+                vm.markAllAsSeen()
+            },
+            onDismiss = { showMarkAllSeenDialog = false },
+        )
     }
 }
 
@@ -397,49 +410,27 @@ private fun PreordersFilterContent(
 
         HorizontalDivider()
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Nascondi",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                FilterChip(
-                    selected = localHideUndated,
-                    onClick = {
-                        localHideUndated = !localHideUndated
-                        onApply(localSelectedSources.toSet(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
-                    },
-                    label = { Text("Senza data", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
-                )
-
-                FilterChip(
-                    selected = localHidePriceless,
-                    onClick = {
-                        localHidePriceless = !localHidePriceless
-                        onApply(localSelectedSources.toSet(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
-                    },
-                    label = { Text("Senza prezzo", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
-                )
-
-                FilterChip(
-                    selected = localHideSeen,
-                    onClick = {
-                        localHideSeen = !localHideSeen
-                        onApply(localSelectedSources.toSet(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
-                    },
-                    label = { Text("Già visti", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp) },
-                )
-            }
+        val sourcesForApply = {
+            if (sources.isEmpty() || localSelectedSources.size == sources.size) null else localSelectedSources.toSet()
         }
+
+        HideFilterChipsSection(
+            hideUndated = localHideUndated,
+            hidePriceless = localHidePriceless,
+            hideSeen = localHideSeen,
+            onToggleUndated = {
+                localHideUndated = !localHideUndated
+                onApply(sourcesForApply(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
+            },
+            onTogglePriceless = {
+                localHidePriceless = !localHidePriceless
+                onApply(sourcesForApply(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
+            },
+            onToggleSeen = {
+                localHideSeen = !localHideSeen
+                onApply(sourcesForApply(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
+            },
+        )
 
         HorizontalDivider()
 

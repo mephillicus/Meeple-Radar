@@ -42,7 +42,15 @@ sealed interface BggCollectionUiState {
         val expansionsByGame: Map<Int, ExpansionLoadState> = emptyMap(),
         val expandedSections: Map<Int, Set<ExpansionOwnership>> = emptyMap(),
         val expansionAvailabilityById: Map<Int, ExpansionAvailability> = emptyMap(),
-    ) : BggCollectionUiState
+    ) : BggCollectionUiState {
+        fun hasAvailableExpansion(gameBggId: Int): Boolean {
+            val expansions = (expansionsByGame[gameBggId] as? ExpansionLoadState.Loaded)?.items.orEmpty()
+            return expansions.any { it.bggId in expansionAvailabilityById }
+        }
+
+        val gamesWithAvailableExpansionsCount: Int
+            get() = games.count { !it.isExpansionGame() && hasAvailableExpansion(it.bggId) }
+    }
 }
 
 sealed interface ExpansionLoadState {
@@ -81,7 +89,7 @@ class BggCollectionViewModel(
                 it.updatedAt,
                 favoriteKeys = emptySet(),
                 expansionsByGame = if (it.expansionsLoaded) {
-                    expansionStates(it.expansions, it.games.filterNot { game -> game.isExpansion() }.map { game -> game.bggId })
+                    expansionStates(it.expansions, it.games.filterNot { game -> game.isExpansionGame() }.map { game -> game.bggId })
                 } else {
                     emptyMap()
                 },
@@ -89,6 +97,8 @@ class BggCollectionViewModel(
         } ?: BggCollectionUiState.Setup(),
     )
     val state: StateFlow<BggCollectionUiState> = _state.asStateFlow()
+    private val _onlyWithExpansionDot = MutableStateFlow(false)
+    val onlyWithExpansionDot: StateFlow<Boolean> = _onlyWithExpansionDot.asStateFlow()
     private var cachedApiToken: String? = cached?.apiToken
     private var cachedExpansions: List<BggExpansion> = cached?.expansions.orEmpty()
     private var expansionsLoaded = cached?.expansionsLoaded == true
@@ -126,11 +136,20 @@ class BggCollectionViewModel(
         fetch(current.username, apiToken, current)
     }
 
+    fun toggleOnlyWithExpansionDot() {
+        _onlyWithExpansionDot.value = !_onlyWithExpansionDot.value
+    }
+
+    fun setOnlyWithExpansionDot(enabled: Boolean) {
+        _onlyWithExpansionDot.value = enabled
+    }
+
     fun logout() {
         store.clear()
         cachedApiToken = null
         cachedExpansions = emptyList()
         expansionsLoaded = false
+        _onlyWithExpansionDot.value = false
         _state.value = BggCollectionUiState.Setup()
     }
 
@@ -310,9 +329,9 @@ class BggCollectionViewModel(
                     } ?: game
                 }
                 val expansionStates = if (expansionsAreLoaded) {
-                    expansionStates(expansions, games.filterNot { it.isExpansion() }.map { it.bggId })
+                    expansionStates(expansions, games.filterNot { it.isExpansionGame() }.map { it.bggId })
                 } else {
-                    games.filterNot { it.isExpansion() }.associate { game ->
+                    games.filterNot { it.isExpansionGame() }.associate { game ->
                         game.bggId to ExpansionLoadState.Error(
                             requireNotNull(expansionsError),
                         )
@@ -350,9 +369,11 @@ class BggCollectionViewModel(
             }
         }
     }
-
-    private fun BggCollectionGame.isExpansion(): Boolean =
-        kind.equals("expansion", ignoreCase = true) ||
-            kind.equals("boardgameexpansion", ignoreCase = true) ||
-            expandsBggId != null
 }
+
+private const val EXPANSION_KIND = "boardgameexpansion"
+
+internal fun BggCollectionGame.isExpansionGame(): Boolean =
+    kind.equals("expansion", ignoreCase = true) ||
+        kind.equals(EXPANSION_KIND, ignoreCase = true) ||
+        expandsBggId != null

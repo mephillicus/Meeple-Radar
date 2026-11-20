@@ -241,4 +241,47 @@ class BggCollectionViewModelTest {
         assertEquals(ExpansionAvailabilityType.PREORDER, state.expansionAvailabilityById[309116]?.type)
         assertEquals(ExpansionAvailabilityType.NEWS, state.expansionAvailabilityById[501]?.type)
     }
+
+    @Test
+    fun `filtro giochi con pallino conta e identifica solo i giochi base con espansioni in lista`() = runTest(dispatcher) {
+        val baseWithDot = game.copy(bggId = 173346, name = "7 Wonders Duel")
+        val baseWithoutDot = game.copy(bggId = 42, name = "The Old King's Crown")
+        val api = FakeApi(Result.success(listOf(baseWithDot, baseWithoutDot))).apply {
+            expansionsResult = Result.success(
+                listOf(
+                    BggExpansion(309116, "Agora", baseWithDot.bggId, "https://boardgamegeek.com/boardgameexpansion/309116"),
+                    BggExpansion(999, "Altra Espansione", baseWithoutDot.bggId, "https://boardgamegeek.com/boardgameexpansion/999"),
+                ),
+            )
+        }
+        val repository = FakeListingRepository().apply {
+            preorders = listOf(
+                IncomingItem(
+                    key = "game:309116",
+                    title = "Agora",
+                    imageUrl = null,
+                    releaseDate = LocalDate.now().plusDays(10),
+                    kind = ItemKind.UPCOMING,
+                    game = Game(309116, "Agora", "expansion", 309116, null, null, null),
+                    offers = emptyList(),
+                ),
+            )
+        }
+        val viewModel = BggCollectionViewModel(api, FakeStore(), repository)
+
+        viewModel.connect("username", "token")
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as BggCollectionUiState.Content
+        assertTrue(state.hasAvailableExpansion(baseWithDot.bggId))
+        assertTrue(!state.hasAvailableExpansion(baseWithoutDot.bggId))
+        assertEquals(1, state.gamesWithAvailableExpansionsCount)
+
+        assertTrue(!viewModel.onlyWithExpansionDot.value)
+        viewModel.toggleOnlyWithExpansionDot()
+        assertTrue(viewModel.onlyWithExpansionDot.value)
+
+        viewModel.logout()
+        assertTrue(!viewModel.onlyWithExpansionDot.value)
+    }
 }

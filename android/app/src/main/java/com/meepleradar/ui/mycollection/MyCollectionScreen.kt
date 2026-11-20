@@ -48,6 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,6 +84,7 @@ fun MyCollectionScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val onlyWithExpansionDot by vm.onlyWithExpansionDot.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
     var showFilters by remember { mutableStateOf(false) }
     var showLogoutConfirmation by remember { mutableStateOf(false) }
@@ -92,25 +96,29 @@ fun MyCollectionScreen(
         contentWindowInsets = ScreenContentInsets,
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            val isContent = state is BggCollectionUiState.Content
+            val contentState = state as? BggCollectionUiState.Content
+            val hasActiveFilters = !showBaseGames || !showExpansionPills || onlyWithExpansionDot
+            val gamesWithDotCount = contentState?.gamesWithAvailableExpansionsCount ?: 0
+
             ScreenHeader(
                 title = "Miei",
                 onRefresh = { vm.refresh() },
                 trailingContent = {
-                    if (isContent) {
+                    if (contentState != null) {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            SearchBox(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
+                            ExpansionDotFilterPill(
+                                count = gamesWithDotCount,
+                                active = onlyWithExpansionDot,
+                                onToggle = { vm.toggleOnlyWithExpansionDot() },
                             )
                             Row(
                                 modifier = Modifier
                                     .height(34.dp)
                                     .background(
-                                        if (!showBaseGames || !showExpansionPills) {
+                                        if (hasActiveFilters) {
                                             MaterialTheme.colorScheme.primaryContainer
                                         } else {
                                             MaterialTheme.colorScheme.surfaceVariant
@@ -123,7 +131,7 @@ fun MyCollectionScreen(
                             ) {
                                 IconButton(
                                     onClick = { vm.refresh() },
-                                    enabled = (state as? BggCollectionUiState.Content)?.refreshing != true,
+                                    enabled = !contentState.refreshing,
                                     modifier = Modifier.size(30.dp),
                                 ) {
                                     Icon(
@@ -139,7 +147,7 @@ fun MyCollectionScreen(
                                     Icon(
                                         Icons.Filled.Settings,
                                         contentDescription = "Filtri",
-                                        tint = if (!showBaseGames || !showExpansionPills) {
+                                        tint = if (hasActiveFilters) {
                                             MaterialTheme.colorScheme.primary
                                         } else {
                                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -152,6 +160,13 @@ fun MyCollectionScreen(
                     }
                 },
             )
+
+            if (contentState != null) {
+                SearchBox(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                )
+            }
 
             when (val current = state) {
                 is BggCollectionUiState.Setup -> SetupContent(
@@ -172,6 +187,7 @@ fun MyCollectionScreen(
                     val visibleGames = current.games.filter { game ->
                         !game.isExpansionGame() &&
                             showBaseGames &&
+                            (!onlyWithExpansionDot || current.hasAvailableExpansion(game.bggId)) &&
                             (normalizedQuery.isEmpty() || game.name.lowercase(Locale.ROOT).contains(normalizedQuery))
                     }
 
@@ -193,8 +209,14 @@ fun MyCollectionScreen(
                             }
                             if (visibleGames.isEmpty()) {
                                 EmptyView(
-                                    if (current.games.none { !it.isExpansionGame() }) "La collezione BGG non contiene giochi base posseduti"
-                                    else "Nessun gioco corrisponde alla ricerca o ai filtri",
+                                    when {
+                                        current.games.none { !it.isExpansionGame() } ->
+                                            "La collezione BGG non contiene giochi base posseduti"
+                                        onlyWithExpansionDot && gamesWithDotCount == 0 ->
+                                            "Nessun gioco nella collezione ha espansioni in novità o preordine"
+                                        else ->
+                                            "Nessun gioco corrisponde alla ricerca o ai filtri"
+                                    },
                                     modifier = Modifier.weight(1f),
                                 )
                             } else {
@@ -246,8 +268,10 @@ fun MyCollectionScreen(
         CollectionFilterDialog(
             showBaseGames = showBaseGames,
             showExpansionPills = showExpansionPills,
+            onlyWithExpansionDot = onlyWithExpansionDot,
             onShowBaseGamesChange = { showBaseGames = it },
             onShowExpansionPillsChange = { showExpansionPills = it },
+            onOnlyWithExpansionDotChange = { vm.setOnlyWithExpansionDot(it) },
             onDismiss = { showFilters = false },
         )
     }
@@ -328,17 +352,82 @@ private fun SetupContent(
 }
 
 @Composable
+private fun ExpansionDotFilterPill(
+    count: Int,
+    active: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val newsDotColor = when {
+        active -> Color(0xFFA5D6A7)
+        count > 0 -> if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    }
+    val preorderDotColor = when {
+        active -> Color(0xFFBBDEFB)
+        count > 0 -> if (isDark) Color(0xFF90CAF9) else Color(0xFF1976D2)
+        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    }
+    val bgColor = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val borderColor = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+    val textColor = when {
+        active -> MaterialTheme.colorScheme.onPrimary
+        count > 0 -> MaterialTheme.colorScheme.onSurface
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        shape = CircleShape,
+        color = bgColor,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier
+            .height(34.dp)
+            .semantics {
+                contentDescription = if (active) {
+                    "Mostra tutti i giochi della collezione"
+                } else {
+                    "Mostra solo giochi con espansioni in lista ($count)"
+                }
+            }
+            .clickable(onClick = onToggle),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Surface(shape = CircleShape, color = newsDotColor, modifier = Modifier.size(6.dp)) {}
+            Surface(shape = CircleShape, color = preorderDotColor, modifier = Modifier.size(6.dp)) {}
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                maxLines = 1,
+                softWrap = false,
+                color = textColor,
+            )
+        }
+    }
+}
+
+@Composable
 private fun SearchBox(value: String, onValueChange: (String) -> Unit) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
         color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.width(115.dp).height(34.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 8.dp)
+            .height(36.dp),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             BasicTextField(
                 value = value,
@@ -349,7 +438,7 @@ private fun SearchBox(value: String, onValueChange: (String) -> Unit) {
                 decorationBox = { innerTextField ->
                     if (value.isEmpty()) {
                         Text(
-                            "Cerca...",
+                            "Cerca nella collezione...",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         )
@@ -364,7 +453,7 @@ private fun SearchBox(value: String, onValueChange: (String) -> Unit) {
                 Icon(
                     if (value.isEmpty()) Icons.Filled.Search else Icons.Filled.Close,
                     contentDescription = if (value.isEmpty()) "Cerca" else "Cancella ricerca",
-                    modifier = Modifier.size(13.dp),
+                    modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -576,7 +665,7 @@ private fun ExpansionListColumn(
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         if (expansions.isEmpty()) {
             Text("Nessuna", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
@@ -737,8 +826,10 @@ private fun CollectionFooter(
 private fun CollectionFilterDialog(
     showBaseGames: Boolean,
     showExpansionPills: Boolean,
+    onlyWithExpansionDot: Boolean,
     onShowBaseGamesChange: (Boolean) -> Unit,
     onShowExpansionPillsChange: (Boolean) -> Unit,
+    onOnlyWithExpansionDotChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -756,6 +847,11 @@ private fun CollectionFilterDialog(
                     onClick = { onShowExpansionPillsChange(!showExpansionPills) },
                     label = { Text("Sotto-pillole espansioni") },
                 )
+                FilterChip(
+                    selected = onlyWithExpansionDot,
+                    onClick = { onOnlyWithExpansionDotChange(!onlyWithExpansionDot) },
+                    label = { Text("Solo con espansioni in lista") },
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Applica") } },
@@ -764,6 +860,7 @@ private fun CollectionFilterDialog(
                 onClick = {
                     onShowBaseGamesChange(true)
                     onShowExpansionPillsChange(true)
+                    onOnlyWithExpansionDotChange(false)
                     onDismiss()
                 },
             ) { Text("Azzera") }
@@ -776,9 +873,3 @@ private fun formatTimestamp(timestamp: Long): String {
     val dateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault())
     return dateTime.format(DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ITALIAN))
 }
-
-private const val EXPANSION_KIND = "boardgameexpansion"
-
-private fun BggCollectionGame.isExpansionGame(): Boolean =
-    expandsBggId != null || kind.equals("expansion", ignoreCase = true) ||
-        kind.equals(EXPANSION_KIND, ignoreCase = true)
