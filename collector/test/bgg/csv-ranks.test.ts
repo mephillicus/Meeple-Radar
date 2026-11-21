@@ -32,6 +32,15 @@ test('matchCsv: hit esatto singolo, bucket ambiguo -> null, mancante -> null', (
   expect(matchCsv(index, 'assente')).toBeNull()
 })
 
+test('matchCsv: fallback normalizeForBggMatch gestisce suffissi italiani, accenti e trattini', () => {
+  const index = buildRanksIndex(parseRanksCsv(
+    HEADER + '\n13,"Catan",1995,500,7,7.1,100000,0,,\n14,"Cafe International",1989,2000,6,6.5,5000,0,,\n15,"Dune: Imperium",2020,6,8.2,8.4,50000,0,,\n'))
+  expect(matchCsv(index, 'catan edizione italiana')?.bggId).toBe(13)
+  expect(matchCsv(index, 'catan 2ª edizione')?.bggId).toBe(13)
+  expect(matchCsv(index, 'café international')?.bggId).toBe(14)
+  expect(matchCsv(index, 'duneimperium', 'Dune–Imperium')?.bggId).toBe(15)
+})
+
 test('loadRanksIndex: primo path esistente vince, nessun path -> null', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ranks-'))
   fs.writeFileSync(path.join(dir, 'boardgames_ranks.csv'), HEADER + '\n1,"X",2000,1,7,7.5,10,0,,\n')

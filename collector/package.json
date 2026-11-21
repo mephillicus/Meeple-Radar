@@ -8,7 +8,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "collect": "tsx src/run.ts"
+    "collect": "tsx src/run.ts",
+    "collect:collection": "tsx src/run-collection.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

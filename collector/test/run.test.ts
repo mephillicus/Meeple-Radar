@@ -272,3 +272,84 @@ test('report.bgg.collection e autofavorite vengono scritti dal callback collecti
   expect(report.bgg?.collection).toEqual({ synced: 70, owned: 30, wishlist: 5 })
   expect(report.bgg?.autofavorite).toEqual({ inserted: 2, skipped: 1 })
 })
+
+test('usa i metodi batch quando presenti sullo store eliminando il loop N+1', async () => {
+  const store = {
+    ...storeBase(),
+    findListingsByTitles: vi.fn().mockResolvedValue(new Map([
+      ['a', [{ id: 101, title: 'A', url: 'https://e.com/a', price: 20, currency: 'EUR', releaseDate: null, imageUrl: null, gameId: null, sourceId: 's1' }]],
+      ['b', [{ id: 102, title: 'B', url: 'https://e.com/b', price: 30, currency: 'EUR', releaseDate: null, imageUrl: null, gameId: null, sourceId: 's1' }]],
+    ])),
+    upsertProductsBatch: vi.fn().mockResolvedValue(new Map([['a', 11], ['b', 12]])),
+    linkListingsToProduct: vi.fn().mockResolvedValue(undefined),
+  } as any
+  const adapters = {
+    shopify: async () => [
+      { externalId: '1', title: 'A', url: 'https://e.com/a', priceRaw: '20' },
+      { externalId: '2', title: 'B', url: 'https://e.com/b', priceRaw: '30' },
+    ],
+  } as any
+
+  const report = await runCollector({
+    sources: [src('s1', 'shopify')],
+    adapters,
+    store,
+    getSourceHttpErrors: () => ({ '429': 1 }),
+  })
+
+  expect(store.findListingsByTitles).toHaveBeenCalledTimes(2)
+  expect(store.findListingsByTitle).not.toHaveBeenCalled()
+  expect(store.upsertProductsBatch).toHaveBeenCalledTimes(1)
+  expect(store.upsertProducts).not.toHaveBeenCalled()
+  expect(store.linkListingsToProduct).toHaveBeenCalledWith([101], 11)
+  expect(store.linkListingsToProduct).toHaveBeenCalledWith([102], 12)
+  expect(store.linkListingToProduct).not.toHaveBeenCalled()
+  expect(report.metrics?.['s1']).toMatchObject({
+    discoveredCount: 2,
+    extractedCount: 2,
+    httpErrorsByStatus: { '429': 1 },
+  })
+  expect(report.metrics?.['s1'].durationMs).toBeGreaterThanOrEqual(0)
+})
+
+test('esegue le fonti con pool a concorrenza limitata', async () => {
+  const store = storeBase()
+  let active = 0
+  let maxActive = 0
+  const adapters = {
+    shopify: async () => {
+      active++
+      maxActive = Math.max(maxActive, active)
+      await new Promise((r) => setTimeout(r, 20))
+      active--
+      return []
+    },
+  } as any
+
+  const report = await runCollector({
+    sources: [src('s1', 'shopify'), src('s2', 'shopify'), src('s3', 'shopify'), src('s4', 'shopify')],
+    adapters,
+    store,
+    concurrency: 2,
+  })
+
+  expect(report.ok).toBe(true)
+  expect(maxActive).toBe(2)
+  expect(Object.keys(report.perSource)).toHaveLength(4)
+})
+
+test('errori in alerts o healthCheck sono best-effort e non falliscono la run', async () => {
+  const store = storeBase()
+  const adapters = { shopify: async () => [] } as any
+  const report = await runCollector({
+    sources: [src('s1', 'shopify')],
+    adapters,
+    store,
+    alerts: vi.fn().mockRejectedValue(new Error('alerts failed')),
+    healthCheck: vi.fn().mockRejectedValue(new Error('health failed')),
+  })
+  expect(report.ok).toBe(true)
+  expect(report.alerts?.error).toBe('alerts failed')
+  expect(report.health?.error).toBe('health failed')
+  expect(report.failures).toEqual({})
+})

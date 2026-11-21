@@ -551,3 +551,138 @@ test('collectionOwnedBggIds restituisce i bgg_id dei giochi posseduti', async ()
   expect(eq).toHaveBeenCalledWith('owned', true)
   expect(ids).toEqual(new Set([173346, 309116]))
 })
+
+test('findListingsByTitles interroga in batch con .in() e raggruppa per normalized_title', async () => {
+  const inFn = vi.fn().mockResolvedValue({
+    data: [
+      { id: 1, title: 'Catan', normalized_title: 'catan', url: 'https://e.com/c', price: 30, currency: 'EUR', release_date: null, image_url: null, game_id: null, source_id: 's1', product_id: null },
+      { id: 2, title: 'Catan', normalized_title: 'catan', url: 'https://e.com/c2', price: 28, currency: 'EUR', release_date: null, image_url: null, game_id: null, source_id: 's2', product_id: null },
+      { id: 3, title: 'Dune', normalized_title: 'dune', url: 'https://e.com/d', price: 50, currency: 'EUR', release_date: null, image_url: null, game_id: null, source_id: 's1', product_id: null },
+    ],
+    error: null,
+  })
+  const select = vi.fn(() => ({ in: inFn }))
+  const from = vi.fn(() => ({ select }))
+  const store = createSupabaseStore({ from } as any)
+  const map = await store.findListingsByTitles!(['catan', 'dune', 'catan'])
+  expect(inFn).toHaveBeenCalledTimes(1)
+  expect(inFn).toHaveBeenCalledWith('normalized_title', ['catan', 'dune'])
+  expect(map.get('catan')).toHaveLength(2)
+  expect(map.get('dune')).toHaveLength(1)
+})
+
+test('upsertProductsBatch raggruppa per insieme di chiavi identico per evitare NULL PostgREST', async () => {
+  const calls: Record<string, unknown>[][] = []
+  let nextId = 100
+  const upsert = vi.fn((chunk: Record<string, unknown>[]) => {
+    calls.push(chunk)
+    return {
+      select: vi.fn().mockResolvedValue({
+        data: chunk.map((r) => ({ id: nextId++, normalized_title: r.normalized_title })),
+        error: null,
+      }),
+    }
+  })
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-11-21T00:00:00Z')
+
+  const map = await store.upsertProductsBatch!([
+    { sourceId: 's1', externalId: '1', title: 'WithPrice', url: 'https://e.com/1', price: 29.99, currency: 'EUR', availability: null, releaseDate: null, description: 'Never written', imageUrl: null, gameId: null },
+    { sourceId: 's1', externalId: '2', title: 'NoPrice', url: 'https://e.com/2', price: null, currency: null, availability: null, releaseDate: null, description: null, imageUrl: null, gameId: null },
+    { sourceId: 's1', externalId: '3', title: 'WithPrice2', url: 'https://e.com/3', price: 39.99, currency: 'EUR', availability: null, releaseDate: null, description: null, imageUrl: null, gameId: null },
+  ])
+
+  // Due gruppi di shape distinti: {WithPrice, WithPrice2} e {NoPrice}
+  expect(calls).toHaveLength(2)
+  for (const chunk of calls) {
+    const firstKeys = Object.keys(chunk[0]).sort()
+    for (const row of chunk) {
+      expect(Object.keys(row).sort()).toEqual(firstKeys)
+      expect(row).not.toHaveProperty('description')
+    }
+  }
+  expect(map.size).toBe(3)
+  expect(map.has('withprice')).toBe(true)
+  expect(map.has('noprice')).toBe(true)
+  expect(map.has('withprice2')).toBe(true)
+})
+
+test('linkListingsToProduct aggiorna in batch con .in("id", ids)', async () => {
+  const inFn = vi.fn().mockResolvedValue({ error: null })
+  const update = vi.fn(() => ({ in: inFn }))
+  const from = vi.fn(() => ({ update }))
+  const store = createSupabaseStore({ from } as any)
+  await store.linkListingsToProduct!([10, 11, 10, 12], 77)
+  expect(from).toHaveBeenCalledWith('listing')
+  expect(update).toHaveBeenCalledWith({ product_id: 77 })
+  expect(inFn).toHaveBeenCalledWith('id', [10, 11, 12])
+})
+
+test('createGame supporta imageUrl, description e expandsBggId', async () => {
+  const insert = vi.fn().mockResolvedValue({ data: [{ id: 88 }], error: null })
+  const from = vi.fn(() => ({ insert }))
+  const store = createSupabaseStore({ from } as any)
+  const id = await store.createGame({
+    name: 'Rise of Ix',
+    kind: 'expansion',
+    bggId: 342031,
+    imageUrl: 'https://cf.geekdo-images.com/ix.jpg',
+    description: 'Expansion for Dune: Imperium',
+    expandsBggId: 316554,
+  })
+  expect(id).toBe(88)
+  expect(insert.mock.calls[0][0]).toMatchObject({
+    name: 'Rise of Ix',
+    kind: 'expansion',
+    bgg_id: 342031,
+    image_url: 'https://cf.geekdo-images.com/ix.jpg',
+    description: 'Expansion for Dune: Imperium',
+    expands_bgg_id: 316554,
+  })
+})
+
+test('compactUserActions chiama rpc compact_user_action_seen e purgeStale la invoca best-effort', async () => {
+  const rpc = vi.fn().mockResolvedValue({ data: 42, error: null })
+  const body = paged([])
+  const from = vi.fn(() => ({
+    select: vi.fn(() => ({
+      not: vi.fn(() => body),
+      is: vi.fn(() => body),
+      lt: vi.fn(() => body),
+      eq: vi.fn(() => ({ not: vi.fn(() => body) })),
+    })),
+    delete: () => ({ in: vi.fn().mockResolvedValue({ error: null }) }),
+  }))
+  const store = createSupabaseStore({ from, rpc } as any)
+  expect(await store.compactUserActions!()).toBe(42)
+  expect(rpc).toHaveBeenCalledWith('compact_user_action_seen')
+
+  // Anche se la RPC fallisce, purgeStale non fallisce
+  rpc.mockRejectedValueOnce(new Error('function not found'))
+  const purged = await store.purgeStale('2025-10-20')
+  expect(purged).toEqual({ listings: 0, products: 0 })
+})
+
+test('insertUserAlerts usa upsert idempotente con onConflict dedupe_key e ignoreDuplicates', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [{ id: 1 }], error: null })
+  const upsert = vi.fn(() => ({ select }))
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any)
+  const count = await store.insertUserAlerts!([
+    {
+      alertType: 'price_drop',
+      gameId: 5,
+      productId: 20,
+      listingId: 10,
+      title: 'Dune',
+      payload: { dropPct: 20 },
+      dedupeKey: 'price_drop:10:40:2026-11-21',
+    },
+  ])
+  expect(count).toBe(1)
+  expect(from).toHaveBeenCalledWith('user_alert')
+  expect(upsert).toHaveBeenCalledWith(
+    [expect.objectContaining({ alert_type: 'price_drop', dedupe_key: 'price_drop:10:40:2026-11-21' })],
+    { onConflict: 'dedupe_key', ignoreDuplicates: true },
+  )
+})

@@ -59,3 +59,10 @@ export type Source = {
   enabled: boolean
   collection?: string
 }
+
+export type SourceMetrics = {
+  discoveredCount: number
+  extractedCount: number
+  durationMs: number
+  httpErrorsByStatus: Record<string, number>
+}

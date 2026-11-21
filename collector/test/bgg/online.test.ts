@@ -62,3 +62,30 @@ test('resolveGate: match solo approssimativo (contenuto) non basta', () => {
   const items = [parseGeekItem(JSON.stringify({ item: { name: 'Catan: Il Viaggio', subtype: 'boardgame', yearpublished: 2019, alternatenames: [] } }), 1)!]
   expect(resolveGate('Catan', null, items)).toBeNull()
 })
+
+test('parseGeekItem: estrae imageUrl, description pulita ed expandsBggId', () => {
+  const json = JSON.stringify({
+    item: {
+      name: '7 Wonders Duel: Agora',
+      subtype: 'boardgameexpansion',
+      yearpublished: 2020,
+      images: { original: 'https://cf.geekdo-images.com/agora.jpg' },
+      description: '<p>Enter the <strong>Senate</strong> &amp; win&rsquo;s glory.</p><p>Second paragraph.</p>',
+      links: {
+        expandsboardgame: [{ objectid: '173346', name: '7 Wonders Duel' }],
+      },
+    },
+  })
+  const item = parseGeekItem(json, 309116)
+  expect(item).toMatchObject({
+    bggId: 309116,
+    imageUrl: 'https://cf.geekdo-images.com/agora.jpg',
+    description: "Enter the Senate & win's glory. Second paragraph.",
+    expandsBggId: 173346,
+  })
+})
+
+test('resolveGate: fallback normalizeForBggMatch per suffissi italiani e accenti', () => {
+  const items = [parseGeekItem(JSON.stringify({ item: { name: 'Catan', subtype: 'boardgame', yearpublished: 1995 } }), 13)!]
+  expect(resolveGate('Catan (Edizione Italiana)', null, items)?.bggId).toBe(13)
+})

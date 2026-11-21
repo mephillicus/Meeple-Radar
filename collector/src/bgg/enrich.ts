@@ -20,7 +20,7 @@ export type BggReport = {
   autofavorite?: { inserted: number; skipped: number; error?: string }
 }
 
-export const ONLINE_BUDGET = 10
+export const ONLINE_BUDGET = 25
 export const CANDIDATE_CAP = 3
 export const ONLINE_SPACING_MS = 2000
 export const RETRY_DELAY_MS = 30000
@@ -67,7 +67,7 @@ export async function runBggEnrichment(deps: {
   // Lato CSV (bulk, zero rete)
   for (const product of products) {
     try {
-      const row = matchCsv(deps.ranks, product.normalizedTitle)
+      const row = matchCsv(deps.ranks, product.normalizedTitle, product.title)
       if (row === null) {
         onlineCandidates.push(product)
         continue
@@ -155,6 +155,9 @@ export async function runBggEnrichment(deps: {
         kind,
         bggId,
         ...(ranked ? { bggRating: ranked.average, bggRank: ranked.rank } : {}),
+        ...(chosen.imageUrl != null ? { imageUrl: chosen.imageUrl } : {}),
+        ...(chosen.description != null ? { description: chosen.description } : {}),
+        ...(chosen.expandsBggId != null ? { expandsBggId: chosen.expandsBggId } : {}),
       })
     } else {
       gameId = found.id

@@ -16,8 +16,27 @@ const storeBase = (products: { id: number; title: string; normalizedTitle: strin
 } as any)
 
 const skipBase = () => ({ shouldSkip: vi.fn().mockReturnValue(false), record: vi.fn().mockReturnValue(1), save: vi.fn() })
-const geek = (id: number, name: string, opts: { year?: number; alt?: string[]; subtype?: string } = {}): GeekItem =>
-  ({ bggId: id, name, alternateNames: opts.alt ?? [], subtype: opts.subtype ?? 'boardgame', yearpublished: opts.year ?? 2019 })
+const geek = (
+  id: number,
+  name: string,
+  opts: {
+    year?: number
+    alt?: string[]
+    subtype?: string
+    imageUrl?: string | null
+    description?: string | null
+    expandsBggId?: number | null
+  } = {},
+): GeekItem => ({
+  bggId: id,
+  name,
+  alternateNames: opts.alt ?? [],
+  subtype: opts.subtype ?? 'boardgame',
+  yearpublished: opts.year ?? 2019,
+  ...(opts.imageUrl !== undefined ? { imageUrl: opts.imageUrl } : {}),
+  ...(opts.description !== undefined ? { description: opts.description } : {}),
+  ...(opts.expandsBggId !== undefined ? { expandsBggId: opts.expandsBggId } : {}),
+})
 
 test('lato CSV bulk: linka, crea game col titolo italiano e riempie i listings', async () => {
   const store = storeBase([
@@ -53,15 +72,69 @@ test('lato online: titolo italiano non nel CSV, gate via alternatenames, rating 
   expect(skipped.record).not.toHaveBeenCalled()
 })
 
-test('budget online: 12 candidati -> al massimo ONLINE_BUDGET ricerche', async () => {
-  const products = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, title: `Gioco ${i}`, normalizedTitle: `gioco ${i}` }))
+test('budget online: oltre ONLINE_BUDGET candidati -> al massimo ONLINE_BUDGET ricerche', async () => {
+  expect(ONLINE_BUDGET).toBe(25)
+  const total = ONLINE_BUDGET + 2
+  const products = Array.from({ length: total }, (_, i) => ({ id: i + 1, title: `Gioco ${i}`, normalizedTitle: `gioco ${i}` }))
   const store = storeBase(products)
   const searchIds = vi.fn().mockResolvedValue([])
   const sleep = vi.fn().mockResolvedValue(undefined)
   const report = await runBggEnrichment({ store, ranks: buildRanksIndex([]), searchIds, fetchGeekItem: vi.fn(), skipped: skipBase(), sleep })
   expect(searchIds).toHaveBeenCalledTimes(ONLINE_BUDGET)
   expect(report.viaCsv).toBe(0)
-  expect(report.unresolved).toBe(12)
+  expect(report.unresolved).toBe(total)
+})
+
+test('lato online: passa imageUrl, description ed expandsBggId a createGame senza toccare product.description', async () => {
+  const store = {
+    ...storeBase([{ id: 9, title: 'Agora (Edizione Italiana)', normalizedTitle: 'agora edizione italiana' }]),
+    fillProductDescription: vi.fn(),
+  } as any
+  const sleep = vi.fn().mockResolvedValue(undefined)
+  const searchIds = vi.fn().mockResolvedValue([309116])
+  const fetchGeekItem = vi.fn().mockResolvedValue(
+    geek(309116, 'Agora', {
+      subtype: 'boardgameexpansion',
+      year: 2020,
+      imageUrl: 'https://cf.geekdo-images.com/agora.jpg',
+      description: 'BGG expansion description',
+      expandsBggId: 173346,
+    }),
+  )
+  const report = await runBggEnrichment({
+    store,
+    ranks: buildRanksIndex([]),
+    searchIds,
+    fetchGeekItem,
+    skipped: skipBase(),
+    sleep,
+  })
+  expect(report.viaSearch).toBe(1)
+  expect(store.createGame).toHaveBeenCalledWith(expect.objectContaining({
+    name: 'Agora (Edizione Italiana)',
+    kind: 'expansion',
+    bggId: 309116,
+    imageUrl: 'https://cf.geekdo-images.com/agora.jpg',
+    description: 'BGG expansion description',
+    expandsBggId: 173346,
+  }))
+  expect(store.fillProductDescription).not.toHaveBeenCalled()
+})
+
+test('lato CSV bulk: matcha anche titoli con suffisso edizione italiana via normalizeForBggMatch', async () => {
+  const store = storeBase([
+    { id: 1, title: 'Carcassonne (Edizione Italiana)', normalizedTitle: 'carcassonne edizione italiana' },
+  ])
+  const searchIds = vi.fn()
+  const report = await runBggEnrichment({
+    store,
+    ranks: ranks(),
+    searchIds,
+    fetchGeekItem: vi.fn(),
+    skipped: skipBase(),
+  })
+  expect(report.viaCsv).toBe(1)
+  expect(searchIds).not.toHaveBeenCalled()
 })
 
 test('skip-file: prodotto a 3 tentativi non consuma slot online', async () => {

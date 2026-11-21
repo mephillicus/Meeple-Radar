@@ -3,8 +3,11 @@ name: collect
 on:
   schedule:
     - cron: "0 6 * * 6"
-    - cron: "0 7 * * *"
   workflow_dispatch: {}
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
 
 jobs:
   collect:
@@ -17,6 +20,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Restore BGG skipped cache
+        uses: actions/cache@v4
+        with:
+          path: collector/data/bgg-online-skipped.json
+          key: bgg-skipped-${{ github.run_id }}
+          restore-keys: |
+            bgg-skipped-
       - name: Show environment
         run: |
           node -v
@@ -33,8 +43,10 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          HEALTH_WEBHOOK_URL: ${{ secrets.HEALTH_WEBHOOK_URL }}
 
   collection-sync:
+    needs: collect
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -45,7 +57,7 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
-      - run: npm run collect
+      - run: npm run collect:collection
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

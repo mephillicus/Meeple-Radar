@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url'
-import type { Listing, RawProduct, Source, SourceKind } from './types.js'
+import type { Listing, RawProduct, Source, SourceKind, SourceMetrics } from './types.js'
 import { normalizeListing, normalizeTitle } from './normalize.js'
-import { createSupabaseClient, type ListingStore } from './db.js'
+import { createSupabaseClient, type ListingRow, type ListingStore } from './db.js'
 import { loadConfig } from './config.js'
 import { buildRegistry } from './adapters/registry.js'
 import { createGameFinder } from './adapters/gemini.js'
@@ -13,13 +13,17 @@ import { bggSearchUrl, parseGeekItem, parseSearchIds } from './bgg/online.js'
 import { runBggEnrichment, type BggReport } from './bgg/enrich.js'
 import { createSkipStore } from './bgg/skipped.js'
 import { createCurlFetcher } from './adapters/headless/fetch.js'
-import { defaultFetch, USER_AGENT } from './adapters/http.js'
+import { defaultFetch, USER_AGENT, type HttpClient } from './adapters/http.js'
+import { runHealthCheck, type HealthReport } from './health.js'
+import { runAlerts, type AlertsReport } from './alerts.js'
 
 export type Adapter = (source: Source) => Promise<RawProduct[]>
 
 // Testi generati dal titolo e non scritti da un editore: non finiscono mai su
 // product.description. Restano su descriptionRaw per estrarre la data.
 const GENERATED_TEXT_KINDS: ReadonlySet<SourceKind> = new Set(['news', 'gemini'])
+
+const DEFAULT_CONCURRENCY = 3
 
 export type RunReport = {
   ok: boolean
@@ -28,6 +32,46 @@ export type RunReport = {
   zeroed: string[]
   purged?: { listings: number; products: number }
   bgg?: BggReport
+  metrics?: Record<string, SourceMetrics>
+  health?: HealthReport
+  alerts?: AlertsReport
+}
+
+function createTrackedHttpClient(
+  base: HttpClient,
+  bucket: Record<string, number>,
+): HttpClient {
+  return async (url, headers) => {
+    try {
+      const res = await base(url, headers)
+      if (res.status !== 200) {
+        const key = String(res.status)
+        bucket[key] = (bucket[key] ?? 0) + 1
+      }
+      return res
+    } catch (err) {
+      const name = err && typeof err === 'object' ? (err as { name?: unknown }).name : undefined
+      const key = name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'network'
+      bucket[key] = (bucket[key] ?? 0) + 1
+      throw err
+    }
+  }
+}
+
+async function fetchListingsMap(
+  store: ListingStore,
+  titles: string[],
+): Promise<Map<string, ListingRow[]>> {
+  const unique = Array.from(new Set(titles.filter((t) => t.length > 0)))
+  if (unique.length === 0) return new Map()
+  if (store.findListingsByTitles) {
+    return store.findListingsByTitles(unique)
+  }
+  const map = new Map<string, ListingRow[]>()
+  for (const t of unique) {
+    map.set(t, await store.findListingsByTitle(t))
+  }
+  return map
 }
 
 export async function runCollector(args: {
@@ -35,6 +79,8 @@ export async function runCollector(args: {
   adapters: Record<SourceKind, Adapter>
   store: ListingStore
   now?: () => Date
+  concurrency?: number
+  getSourceHttpErrors?: (sourceId: string) => Record<string, number>
   enrich?: () => Promise<BggReport>
   collection?: () => Promise<{
     synced: number
@@ -43,11 +89,25 @@ export async function runCollector(args: {
     autofavorite: { inserted: number; skipped: number }
     error?: string
   }>
+  healthCheck?: (report: RunReport) => Promise<HealthReport>
+  alerts?: () => Promise<AlertsReport>
 }): Promise<RunReport> {
-  const { sources, adapters, store, now: nowFn = () => new Date(), enrich, collection } = args
+  const {
+    sources,
+    adapters,
+    store,
+    now: nowFn = () => new Date(),
+    concurrency = DEFAULT_CONCURRENCY,
+    getSourceHttpErrors,
+    enrich,
+    collection,
+    healthCheck,
+    alerts,
+  } = args
   const perSource: Record<string, number> = {}
   const failures: Record<string, string> = {}
   const zeroed: string[] = []
+  const metrics: Record<string, SourceMetrics> = {}
   const startedAt = nowFn()
   const cutoff = retentionCutoff(startedAt)
   let purged: RunReport['purged']
@@ -59,10 +119,13 @@ export async function runCollector(args: {
     failures['purgeStale'] = err instanceof Error ? err.message : String(err)
   }
 
-  for (const source of sources) {
-    if (!source.enabled) continue
+  const processSource = async (source: Source): Promise<void> => {
+    const sourceStartMs = Date.now()
+    let discoveredCount = 0
+    let extractedCount = 0
     try {
       const raw = await adapters[source.kind](source)
+      discoveredCount = raw.length
       if (raw.length === 0) zeroed.push(source.id)
       // Pairing raw/riga PRIMA del filtro cutoff: un filtro per indice su rows
       // separate sfalserebbe gli indici e farebbe perdere articleDescription.
@@ -70,68 +133,125 @@ export async function runCollector(args: {
         .map((r) => ({ raw: r, row: normalizeListing(source.id, r) }))
         .map((p) => (GENERATED_TEXT_KINDS.has(source.kind) ? { ...p, row: { ...p.row, description: null } } : p))
         .filter((p) => p.row.releaseDate === null || p.row.releaseDate >= cutoff)
-      if (source.kind === 'roundups') {
-        const fresh: typeof paired = []
-        for (const p of paired) {
-          const matches = await store.findListingsByTitle(normalizeTitle(p.row.title))
-          if (!matches.some((m) => m.sourceId === source.id)) fresh.push(p)
-        }
-        paired = fresh
+
+      if (source.kind === 'roundups' && paired.length > 0) {
+        const existingByTitle = await fetchListingsMap(
+          store,
+          paired.map((p) => normalizeTitle(p.row.title)),
+        )
+        paired = paired.filter((p) => {
+          const matches = existingByTitle.get(normalizeTitle(p.row.title)) ?? []
+          return !matches.some((m) => m.sourceId === source.id)
+        })
       }
+
+      extractedCount = paired.length
       await store.upsertListings(paired.map((p) => p.row))
 
-      for (const p of paired) {
+      if (paired.length > 0) {
         const isEditorial = source.kind === 'news' || source.kind === 'roundups'
-        const { row } = p
-        const matches = await store.findListingsByTitle(normalizeTitle(row.title))
-        // In una run editoriale (news/roundups) la riga corrente non porta
-        // prezzo né data nel prodotto: quei campi arrivano a product solo dai
-        // fill write-once, così il dato del negozio vince sempre.
-        const related: Listing[] = [
-          ...matches.map((m) => ({
-            sourceId: m.sourceId,
-            externalId: m.id.toString(),
-            title: m.title,
-            url: m.url,
-            price: m.price,
-            currency: m.currency,
-            availability: null,
-            releaseDate: m.releaseDate,
-            description: null,
-            imageUrl: m.imageUrl,
-            gameId: m.gameId,
-          })),
-          isEditorial ? { ...row, releaseDate: null, price: null, currency: null } : row,
-        ]
+        const matchesByTitle = await fetchListingsMap(
+          store,
+          paired.map((p) => normalizeTitle(p.row.title)),
+        )
 
-        const canonical = canonicalizeProduct(related)
-        if (!canonical) continue
+        const prepared: {
+          p: (typeof paired)[number]
+          canonical: Listing
+          canonicalNormTitle: string
+          payload: Listing
+        }[] = []
 
-        // In una run editoriale (news/roundups) l'upsert del prodotto non
-        // porta mai prezzo né data: quei campi arrivano su product solo dai
-        // fill write-once, quindi le chiavi vanno tolte del tutto, l'upsert
-        // sostituisce le colonne presenti nel payload. Anche la richiesta di
-        // azzeramento resta fuori: una data scritta da un fill non si tocca.
-        // Le righe listing continuano a portarli.
-        const payload = (isEditorial
-          ? (({ price, currency, releaseDate, clearReleaseDate, ...rest }) => rest)(canonical)
-          : canonical) as Listing
-        const productIds = await store.upsertProducts([payload])
-        const productId = productIds[0]
-        if (productId === undefined) continue
+        for (const p of paired) {
+          const { row } = p
+          const matches = matchesByTitle.get(normalizeTitle(row.title)) ?? []
+          // In una run editoriale (news/roundups) la riga corrente non porta
+          // prezzo né data nel prodotto: quei campi arrivano a product solo dai
+          // fill write-once, così il dato del negozio vince sempre.
+          const related: Listing[] = [
+            ...matches.map((m) => ({
+              sourceId: m.sourceId,
+              externalId: m.id.toString(),
+              title: m.title,
+              url: m.url,
+              price: m.price,
+              currency: m.currency,
+              availability: null,
+              releaseDate: m.releaseDate,
+              description: null,
+              imageUrl: m.imageUrl,
+              gameId: m.gameId,
+            })),
+            isEditorial ? { ...row, releaseDate: null, price: null, currency: null } : row,
+          ]
 
-        // Write-once: lo store aggiorna solo dove la colonna e ancora null,
-        // quindi il guard qui sopra serve solo a non sprecare una chiamata.
-        if (canonical.description) await store.fillProductDescription(productId, canonical.description)
-        // La citazione verbatim dell'articolo viaggia fuori da row.description
-        // (azzerato per GENERATED_TEXT_KINDS) ed entra solo se ancora assente.
-        if (p.raw.articleDescription) await store.fillProductDescription(productId, p.raw.articleDescription)
-        if (isEditorial && row.releaseDate) await store.fillProductReleaseDate(productId, row.releaseDate)
-        if (p.raw.publisher) await store.fillProductPublisher(productId, p.raw.publisher)
+          const canonical = canonicalizeProduct(related)
+          if (!canonical) continue
 
-        const allMatches = await store.findListingsByTitle(normalizeTitle(canonical.title))
-        for (const listingRow of allMatches) {
-          await store.linkListingToProduct(listingRow.id, productId)
+          // In una run editoriale (news/roundups) l'upsert del prodotto non
+          // porta mai prezzo né data: quei campi arrivano su product solo dai
+          // fill write-once, quindi le chiavi vanno tolte del tutto, l'upsert
+          // sostituisce le colonne presenti nel payload. Anche la richiesta di
+          // azzeramento resta fuori: una data scritta da un fill non si tocca.
+          // Le righe listing continuano a portarli.
+          const payload = (isEditorial
+            ? (({ price, currency, releaseDate, clearReleaseDate, ...rest }) => rest)(canonical)
+            : canonical) as Listing
+
+          prepared.push({
+            p,
+            canonical,
+            canonicalNormTitle: normalizeTitle(canonical.title),
+            payload,
+          })
+        }
+
+        const productIdByTitle = new Map<string, number>()
+        if (store.upsertProductsBatch) {
+          const batchIds = await store.upsertProductsBatch(prepared.map((item) => item.payload))
+          for (const [k, v] of batchIds) productIdByTitle.set(k, v)
+        } else {
+          for (const item of prepared) {
+            const ids = await store.upsertProducts([item.payload])
+            if (ids[0] !== undefined) productIdByTitle.set(item.canonicalNormTitle, ids[0])
+          }
+        }
+
+        // Write-once fills: lo store aggiorna solo dove la colonna e ancora null.
+        for (const { p, canonical, canonicalNormTitle } of prepared) {
+          const productId = productIdByTitle.get(canonicalNormTitle)
+          if (productId === undefined) continue
+          if (canonical.description) await store.fillProductDescription(productId, canonical.description)
+          // La citazione verbatim dell'articolo viaggia fuori da row.description
+          // (azzerato per GENERATED_TEXT_KINDS) ed entra solo se ancora assente.
+          if (p.raw.articleDescription) await store.fillProductDescription(productId, p.raw.articleDescription)
+          if (isEditorial && p.row.releaseDate) await store.fillProductReleaseDate(productId, p.row.releaseDate)
+          if (p.raw.publisher) await store.fillProductPublisher(productId, p.raw.publisher)
+        }
+
+        // Link listings to products in batch (o fallback singolo per mock parziali).
+        const allMatchesByTitle = await fetchListingsMap(
+          store,
+          prepared.map((item) => item.canonicalNormTitle),
+        )
+        const linkedTitles = new Set<string>()
+        for (const { canonicalNormTitle } of prepared) {
+          if (linkedTitles.has(canonicalNormTitle)) continue
+          linkedTitles.add(canonicalNormTitle)
+          const productId = productIdByTitle.get(canonicalNormTitle)
+          if (productId === undefined) continue
+          const allMatches = allMatchesByTitle.get(canonicalNormTitle) ?? []
+          if (allMatches.length === 0) continue
+          if (store.linkListingsToProduct) {
+            await store.linkListingsToProduct(
+              allMatches.map((m) => m.id),
+              productId,
+            )
+          } else {
+            for (const listingRow of allMatches) {
+              await store.linkListingToProduct(listingRow.id, productId)
+            }
+          }
         }
       }
 
@@ -139,10 +259,29 @@ export async function runCollector(args: {
       perSource[source.id] = raw.length
     } catch (err) {
       failures[source.id] = err instanceof Error ? err.message : String(err)
+    } finally {
+      metrics[source.id] = {
+        discoveredCount,
+        extractedCount,
+        durationMs: Math.max(0, Date.now() - sourceStartMs),
+        httpErrorsByStatus: getSourceHttpErrors ? { ...getSourceHttpErrors(source.id) } : {},
+      }
     }
   }
 
-  const report: RunReport = { ok: false, perSource, failures, zeroed, purged }
+  const enabledSources = sources.filter((s) => s.enabled)
+  let nextIndex = 0
+  const workerCount = Math.min(Math.max(1, concurrency), enabledSources.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < enabledSources.length) {
+        const source = enabledSources[nextIndex++]
+        await processSource(source)
+      }
+    }),
+  )
+
+  const report: RunReport = { ok: false, perSource, failures, zeroed, purged, metrics }
 
   if (enrich) {
     try {
@@ -205,6 +344,41 @@ export async function runCollector(args: {
     }
   }
 
+  // Motore alert post-raccolta (P3.2): best-effort, non fallisce mai la run.
+  if (alerts) {
+    try {
+      report.alerts = await alerts()
+    } catch (err) {
+      report.alerts = {
+        detected: 0,
+        inserted: 0,
+        byType: { back_in_stock: 0, price_drop: 0, new_expansion: 0 },
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  } else if (store.insertUserAlerts) {
+    report.alerts = await runAlerts({ store })
+  }
+
+  // Controllo salute post-raccolta (P2.1): best-effort, non fallisce mai la run.
+  if (healthCheck) {
+    try {
+      report.health = await healthCheck(report)
+    } catch (err) {
+      report.health = {
+        checkedRuns: 0,
+        warnings: [],
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  } else if (store.getRecentRunLogs) {
+    report.health = await runHealthCheck({
+      store,
+      sources,
+      currentReport: report,
+    })
+  }
+
   report.ok = Object.keys(failures).length === 0
   await store.logRun(report.ok, report, startedAt)
   return report
@@ -214,6 +388,23 @@ export async function main(): Promise<number> {
   const { supabaseUrl, supabaseServiceKey } = loadConfig(process.env)
   const store = createSupabaseClient(supabaseUrl, supabaseServiceKey)
   await store.upsertSources(SOURCES)
+  const gameFinder = createGameFinder(store)
+  const httpErrorsBySource = new Map<string, Record<string, number>>()
+
+  const adapters = Object.fromEntries(
+    (['shopify', 'woocommerce', 'wordpress', 'html', 'headless', 'gemini', 'news', 'roundups'] as SourceKind[]).map(
+      (kind) => [
+        kind,
+        async (source: Source) => {
+          const bucket: Record<string, number> = {}
+          httpErrorsBySource.set(source.id, bucket)
+          const trackedHttp = createTrackedHttpClient(defaultFetch, bucket)
+          return buildRegistry(trackedHttp, gameFinder)[kind](source)
+        },
+      ],
+    ),
+  ) as Record<SourceKind, Adapter>
+
   const enrich = () =>
     runBggEnrichment({
       store,
@@ -234,8 +425,9 @@ export async function main(): Promise<number> {
 
   const report = await runCollector({
     sources: SOURCES,
-    adapters: buildRegistry(undefined, createGameFinder(store)),
+    adapters,
     store,
+    getSourceHttpErrors: (sourceId) => httpErrorsBySource.get(sourceId) ?? {},
     enrich,
   })
   console.log(JSON.stringify(report, null, 2))

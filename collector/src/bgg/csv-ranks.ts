@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { normalizeTitle } from '../normalize.js'
+import { normalizeForBggMatch } from './normalize-bgg.js'
 
 export type RankRow = {
   bggId: number
@@ -13,6 +14,7 @@ export type RankRow = {
 
 export type RanksIndex = {
   byName: Map<string, RankRow[]>
+  byBggName?: Map<string, RankRow[]>
   byId: Map<number, RankRow>
 }
 
@@ -98,6 +100,7 @@ export function parseRanksCsv(text: string): RankRow[] {
 
 export function buildRanksIndex(rows: RankRow[]): RanksIndex {
   const byName = new Map<string, RankRow[]>()
+  const byBggName = new Map<string, RankRow[]>()
   const byId = new Map<number, RankRow>()
   for (const row of rows) {
     const key = normalizeTitle(row.name)
@@ -107,9 +110,16 @@ export function buildRanksIndex(rows: RankRow[]): RanksIndex {
     } else {
       byName.set(key, [row])
     }
+    const bggKey = normalizeForBggMatch(row.name)
+    const bggBucket = byBggName.get(bggKey)
+    if (bggBucket) {
+      bggBucket.push(row)
+    } else {
+      byBggName.set(bggKey, [row])
+    }
     byId.set(row.bggId, row)
   }
-  return { byName, byId }
+  return { byName, byBggName, byId }
 }
 
 export function loadRanksIndex(candidates: string[]): RanksIndex | null {
@@ -122,8 +132,14 @@ export function loadRanksIndex(candidates: string[]): RanksIndex | null {
   return null
 }
 
-export function matchCsv(index: RanksIndex, normalizedTitle: string): RankRow | null {
+export function matchCsv(index: RanksIndex, normalizedTitle: string, rawTitle?: string): RankRow | null {
   const bucket = index.byName.get(normalizedTitle)
-  if (!bucket || bucket.length !== 1) return null
-  return bucket[0]
+  if (bucket) {
+    return bucket.length === 1 ? bucket[0] : null
+  }
+  if (!index.byBggName) return null
+  const bggKey = normalizeForBggMatch(rawTitle ?? normalizedTitle)
+  const bggBucket = index.byBggName.get(bggKey)
+  if (!bggBucket || bggBucket.length !== 1) return null
+  return bggBucket[0]
 }
