@@ -1,5 +1,6 @@
 package com.meepleradar.ui.components
 
+import android.content.res.Configuration
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -50,8 +51,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.meepleradar.ui.theme.MeepleRadarTheme
 
 val MeepleVector: ImageVector = ImageVector.Builder(
     name = "Meeple",
@@ -741,4 +744,36 @@ val NewsIconVector: ImageVector = ImageVector.Builder(
         close()
     }
     build()
+}
+
+@Preview(name = "Header Controls — Light", showBackground = true)
+@Preview(
+    name = "Header Controls — Dark",
+    showBackground = true,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun HeaderControlsPreview() {
+    MeepleRadarTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    UnseenFilterPill(unseenCount = 12, hideSeen = false, onToggle = {})
+                    UnseenFilterPill(unseenCount = 12, hideSeen = true, onToggle = {})
+                    MarkAllSeenButton(unseenCount = 12, onClick = {})
+                }
+                CompactSearchBar(
+                    query = "",
+                    placeholder = "Cerca nella lista...",
+                    onQueryChange = {},
+                )
+            }
+        }
+    }
 }

@@ -24,7 +24,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -46,6 +50,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.meepleradar.AppContainer
+import com.meepleradar.ui.alerts.AlertsAndSettingsSheet
+import com.meepleradar.ui.alerts.AlertsViewModel
 import com.meepleradar.ui.components.MeepleVector
 import com.meepleradar.ui.detail.DetailScreen
 import com.meepleradar.ui.detail.DetailViewModel
@@ -72,9 +78,40 @@ private const val ARG_KEY = "key"
 private fun detailRoute(key: String): String = "detail/${Uri.encode(key)}"
 
 @Composable
-fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
+fun MeepleRadarNav(
+    container: AppContainer,
+    modifier: Modifier = Modifier,
+    pendingDetailKey: String? = null,
+    onDetailKeyConsumed: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+
+    val alertsVm: AlertsViewModel = viewModel(
+        factory = viewModelFactory {
+            initializer {
+                AlertsViewModel(
+                    repository = container.repository,
+                    preferencesStore = container.notificationPreferencesStore,
+                    syncWorkScheduler = container.syncWorkScheduler,
+                )
+            }
+        },
+    )
+    val unreadAlertCount by alertsVm.unreadCount.collectAsStateWithLifecycle()
+    var showAlertsSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        alertsVm.refresh()
+    }
+
+    LaunchedEffect(pendingDetailKey) {
+        val targetKey = pendingDetailKey?.takeIf(String::isNotBlank) ?: return@LaunchedEffect
+        navController.navigate(detailRoute(targetKey)) {
+            launchSingleTop = true
+        }
+        onDetailKeyConsumed()
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -206,6 +243,11 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
                     imageLookup = container.boardGameImageLookup,
+                    unreadAlertCount = unreadAlertCount,
+                    onOpenAlerts = {
+                        alertsVm.refresh()
+                        showAlertsSheet = true
+                    },
                 )
             }
 
@@ -245,6 +287,11 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
                     imageLookup = container.boardGameImageLookup,
+                    unreadAlertCount = unreadAlertCount,
+                    onOpenAlerts = {
+                        alertsVm.refresh()
+                        showAlertsSheet = true
+                    },
                 )
             }
 
@@ -291,6 +338,14 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                 )
             }
         }
+    }
+
+    if (showAlertsSheet) {
+        AlertsAndSettingsSheet(
+            vm = alertsVm,
+            onOpenItem = { itemKey -> navController.navigate(detailRoute(itemKey)) },
+            onDismiss = { showAlertsSheet = false },
+        )
     }
 }
 

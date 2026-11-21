@@ -3,11 +3,16 @@ package com.meepleradar.data.remote
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.Listing
+import com.meepleradar.data.model.ListingBestPrice
+import com.meepleradar.data.model.PriceHistoryEntry
 import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.model.UserAlert
+import com.meepleradar.data.model.UserAlertType
 import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -15,6 +20,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 data class UserActionRow(val gameId: Long?, val listingId: Long?, val action: Action, val productId: Long? = null)
@@ -61,6 +67,16 @@ interface SupabaseApi {
         bggRank: Int?,
         description: String? = null,
     ) = Unit
+
+    suspend fun listingBestPrices(listingIds: Collection<Long>? = null): List<ListingBestPrice> = emptyList()
+
+    suspend fun listingPriceHistory(listingIds: Collection<Long>, limit: Int = 40): List<PriceHistoryEntry> = emptyList()
+
+    suspend fun userAlerts(limit: Int = 50): List<UserAlert> = emptyList()
+
+    suspend fun markAlertRead(alertId: Long, readAtIso: String) = Unit
+
+    suspend fun markAllAlertsRead(alertIds: Collection<Long>, readAtIso: String) = Unit
 }
 
 class SupabaseRestApi(
@@ -117,6 +133,70 @@ class SupabaseRestApi(
     override suspend fun userActions(): List<UserActionRow> =
         fetchAll<UserActionDto>("$base/rest/v1/user_action?select=*&order=created_at.desc,id.desc")
             .map { it.toDomain() }
+
+    override suspend fun listingBestPrices(listingIds: Collection<Long>?): List<ListingBestPrice> {
+        val url = if (listingIds == null) {
+            "$base/rest/v1/listing_best_price?select=*&price_drop_pct=gt.0&order=listing_id.asc"
+        } else {
+            val cleanIds = listingIds.filter { it > 0L }.distinct()
+            if (cleanIds.isEmpty()) return emptyList()
+            "$base/rest/v1/listing_best_price?select=*&listing_id=in.(${cleanIds.joinToString(",")})"
+        }
+        return try {
+            fetchAll<ListingBestPriceDto>(url).map { it.toDomain() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun listingPriceHistory(
+        listingIds: Collection<Long>,
+        limit: Int,
+    ): List<PriceHistoryEntry> {
+        val cleanIds = listingIds.filter { it > 0L }.distinct()
+        if (cleanIds.isEmpty()) return emptyList()
+        val url = "$base/rest/v1/listing_price_history?select=*&listing_id=in.(${cleanIds.joinToString(",")})&order=recorded_at.desc,id.desc&limit=$limit"
+        return try {
+            val response = transport.get(url, headers())
+            json.decodeFromString<List<PriceHistoryDto>>(response).map { it.toDomain() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun userAlerts(limit: Int): List<UserAlert> {
+        val url = "$base/rest/v1/user_alert?select=*&order=created_at.desc,id.desc&limit=$limit"
+        return try {
+            val response = transport.get(url, headers())
+            json.decodeFromString<List<UserAlertDto>>(response).mapNotNull { it.toDomainOrNull() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun markAlertRead(alertId: Long, readAtIso: String) {
+        transport.patch(
+            url = "$base/rest/v1/user_alert?id=eq.$alertId",
+            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+            body = json.encodeToString(mapOf("read_at" to JsonPrimitive(readAtIso))),
+        )
+    }
+
+    override suspend fun markAllAlertsRead(alertIds: Collection<Long>, readAtIso: String) {
+        val cleanIds = alertIds.filter { it > 0L }.distinct()
+        if (cleanIds.isEmpty()) return
+        transport.patch(
+            url = "$base/rest/v1/user_alert?id=in.(${cleanIds.joinToString(",")})",
+            headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=minimal")),
+            body = json.encodeToString(mapOf("read_at" to JsonPrimitive(readAtIso))),
+        )
+    }
 
     override suspend fun insertAction(row: UserActionRow) {
         transport.post(
@@ -724,4 +804,126 @@ private data class ActionInsertDto(
             },
         )
     }
+}
+
+@Serializable
+private data class ListingBestPriceDto(
+    @SerialName("listing_id") val listingId: Long,
+    @SerialName("current_price") val currentPrice: JsonElement? = null,
+    val currency: String? = null,
+    @SerialName("current_availability") val currentAvailability: String? = null,
+    @SerialName("min_price") val minPrice: JsonElement? = null,
+    @SerialName("previous_price") val previousPrice: JsonElement? = null,
+    @SerialName("price_drop_pct") val priceDropPct: JsonElement? = null,
+    @SerialName("recorded_at") val recordedAt: String? = null,
+) {
+    fun toDomain() = ListingBestPrice(
+        listingId = listingId,
+        currentPrice = currentPrice.asDoubleOrNull(),
+        currency = currency,
+        currentAvailability = currentAvailability,
+        minPrice = minPrice.asDoubleOrNull(),
+        previousPrice = previousPrice.asDoubleOrNull(),
+        priceDropPct = priceDropPct.asDoubleOrNull(),
+        recordedAt = recordedAt,
+    )
+}
+
+@Serializable
+private data class PriceHistoryDto(
+    val id: Long,
+    @SerialName("listing_id") val listingId: Long,
+    val price: JsonElement? = null,
+    val currency: String? = null,
+    val availability: String? = null,
+    @SerialName("recorded_at") val recordedAt: String,
+) {
+    fun toDomain() = PriceHistoryEntry(
+        id = id,
+        listingId = listingId,
+        price = price.asDoubleOrNull(),
+        currency = currency,
+        availability = availability,
+        recordedAt = recordedAt,
+    )
+}
+
+@Serializable
+private data class UserAlertDto(
+    val id: Long,
+    @SerialName("alert_type") val alertType: String,
+    @SerialName("game_id") val gameId: Long? = null,
+    @SerialName("product_id") val productId: Long? = null,
+    @SerialName("listing_id") val listingId: Long? = null,
+    val title: String,
+    val payload: JsonObject? = null,
+    @SerialName("dedupe_key") val dedupeKey: String,
+    @SerialName("read_at") val readAt: String? = null,
+    @SerialName("created_at") val createdAt: String,
+) {
+    fun toDomainOrNull(): UserAlert? {
+        val type = when (alertType.lowercase(Locale.ROOT)) {
+            "back_in_stock" -> UserAlertType.BACK_IN_STOCK
+            "price_drop" -> UserAlertType.PRICE_DROP
+            "new_expansion" -> UserAlertType.NEW_EXPANSION
+            else -> return null
+        }
+        return UserAlert(
+            id = id,
+            alertType = type,
+            gameId = gameId,
+            productId = productId,
+            listingId = listingId,
+            title = title,
+            detailText = formatAlertDetail(type, payload),
+            dedupeKey = dedupeKey,
+            readAt = readAt,
+            createdAt = createdAt,
+        )
+    }
+}
+
+private fun formatAlertDetail(type: UserAlertType, payload: JsonObject?): String? {
+    if (payload == null) return null
+    val message = payload["message"].asStringOrNull()
+    if (!message.isNullOrBlank()) return message
+    val store = payload["source_name"].asStringOrNull()
+        ?: payload["store"].asStringOrNull()
+        ?: payload["source_id"].asStringOrNull()
+    return when (type) {
+        UserAlertType.PRICE_DROP -> {
+            val prev = payload["previous_price"].asDoubleOrNull()
+            val curr = payload["current_price"].asDoubleOrNull() ?: payload["price"].asDoubleOrNull()
+            val pct = payload["price_drop_pct"].asDoubleOrNull()
+            buildString {
+                if (!store.isNullOrBlank()) append("$store: ")
+                if (prev != null && curr != null) {
+                    append(String.format(Locale.ITALY, "€%.2f → €%.2f", prev, curr))
+                } else if (curr != null) {
+                    append(String.format(Locale.ITALY, "€%.2f", curr))
+                }
+                if (pct != null && pct > 0.0) {
+                    append(" (-${pct.toInt()}%)")
+                }
+            }.ifBlank { null }
+        }
+        UserAlertType.BACK_IN_STOCK -> {
+            if (!store.isNullOrBlank()) "Tornato disponibile su $store" else "Tornato disponibile"
+        }
+        UserAlertType.NEW_EXPANSION -> {
+            val baseName = payload["base_game_name"].asStringOrNull()
+            when {
+                !baseName.isNullOrBlank() && !store.isNullOrBlank() -> "Espansione per $baseName su $store"
+                !baseName.isNullOrBlank() -> "Nuova espansione per $baseName"
+                !store.isNullOrBlank() -> "Nuova espansione rilevata su $store"
+                else -> "Nuova espansione rilevata"
+            }
+        }
+    }
+}
+
+private fun JsonElement?.asStringOrNull(): String? = when (this) {
+    null, is JsonNull -> null
+    is JsonPrimitive -> content.takeIf(String::isNotBlank)
+    else -> null
 }

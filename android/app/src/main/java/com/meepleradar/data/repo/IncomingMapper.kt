@@ -40,6 +40,7 @@ fun buildIncomingItems(
     products: Map<Long, Product> = emptyMap(),
     newlyAddedListingIds: Set<Long> = emptySet(),
     seenKeys: Set<String> = emptySet(),
+    priceDropsByListingId: Map<Long, Double> = emptyMap(),
 ): List<IncomingItem> =
     listings
         .filter { (sourceIds == null || it.sourceId in sourceIds) && !it.isAccessory() }
@@ -74,6 +75,8 @@ fun buildIncomingItems(
                     url = listing.url,
                     availability = listing.availability,
                     releaseDate = listing.releaseDate ?: releaseDate,
+                    listingId = listing.id,
+                    priceDropPct = priceDropsByListingId[listing.id],
                 )
             } + listOfNotNull(product?.publisherOffer(releaseDate))
             val customDescription = product?.description?.takeIf { it.isNotBlank() }

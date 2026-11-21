@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -62,6 +63,8 @@ fun FavoritesScreen(
     onOpen: (IncomingItem) -> Unit,
     imageLookup: BoardGameImageLookup,
     modifier: Modifier = Modifier,
+    unreadAlertCount: Int = 0,
+    onOpenAlerts: (() -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val isRefreshing by vm.isRefreshing.collectAsStateWithLifecycle()
@@ -86,6 +89,13 @@ fun FavoritesScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        if (onOpenAlerts != null) {
+                            AlertsCountPill(
+                                count = unreadAlertCount,
+                                onClick = onOpenAlerts,
+                            )
+                        }
+
                         IgnoredCountPill(
                             count = ignoredItems.size,
                             onClick = { showIgnoredSheet = true },
@@ -198,6 +208,64 @@ fun FavoritesScreen(
             onRestore = vm::restoreIgnored,
             onDismiss = { showIgnoredSheet = false },
         )
+    }
+}
+
+@Composable
+private fun AlertsCountPill(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val hasUnread = count > 0
+    Surface(
+        shape = CircleShape,
+        color = if (hasUnread) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
+        border = BorderStroke(
+            1.dp,
+            if (hasUnread) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+            },
+        ),
+        modifier = modifier
+            .height(34.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Notifications,
+                contentDescription = "Avvisi e notifiche",
+                tint = if (hasUnread) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                },
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                maxLines = 1,
+                softWrap = false,
+                color = if (hasUnread) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
     }
 }
 

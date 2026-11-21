@@ -61,7 +61,57 @@ data class Offer(
     val url: String,
     val availability: String?,
     val releaseDate: LocalDate? = null,
+    val listingId: Long? = null,
+    val priceDropPct: Double? = null,
 )
+
+data class ListingBestPrice(
+    val listingId: Long,
+    val currentPrice: Double?,
+    val currency: String?,
+    val currentAvailability: String?,
+    val minPrice: Double?,
+    val previousPrice: Double?,
+    val priceDropPct: Double?,
+    val recordedAt: String?,
+)
+
+data class PriceHistoryEntry(
+    val id: Long,
+    val listingId: Long,
+    val price: Double?,
+    val currency: String?,
+    val availability: String?,
+    val recordedAt: String,
+)
+
+enum class UserAlertType {
+    BACK_IN_STOCK,
+    PRICE_DROP,
+    NEW_EXPANSION,
+}
+
+data class UserAlert(
+    val id: Long,
+    val alertType: UserAlertType,
+    val gameId: Long?,
+    val productId: Long?,
+    val listingId: Long?,
+    val title: String,
+    val detailText: String? = null,
+    val dedupeKey: String,
+    val readAt: String? = null,
+    val createdAt: String,
+) {
+    val isUnread: Boolean get() = readAt.isNullOrBlank()
+
+    fun itemKeyOrNull(): String? = when {
+        productId != null -> "product:$productId"
+        gameId != null -> "game:$gameId"
+        listingId != null -> "listing:$listingId"
+        else -> null
+    }
+}
 
 data class IncomingItem(
     val key: String,

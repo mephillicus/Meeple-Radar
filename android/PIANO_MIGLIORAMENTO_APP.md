@@ -2,8 +2,8 @@
 
 > **Ambito:** modulo Android (`android/`, package `com.meepleradar`).
 > **Documento gemello (backend/collector/CI):** `../PIANO_MIGLIORAMENTO_BACKEND.md`.
-> **Ultimo aggiornamento:** 2026-11-21 — **Sprint 1 (`64cd190`), Sprint 2 (`f831107`) e Sprint 3 completati**, **Sprint 4 prossimo**.
-> **Stato baseline verificato:** AGP `9.4.1`, Kotlin `2.4.20`, Compose BOM `2026.09.00`, Room `2.8.5` + KSP `2.3.14`, `compileSdk = 37`, `targetSdk = 36`, `minSdk = 26`, 152 unit test verdi, lint, debug e release (R8) build verdi.
+> **Ultimo aggiornamento:** 2026-11-21 — **Sprint 1 (`64cd190`), Sprint 2 (`f831107`), Sprint 3 (`3772de4`) e Sprint 4 completati**.
+> **Stato baseline verificato:** AGP `9.4.1`, Kotlin `2.4.20`, Compose BOM `2026.09.00`, Room `2.8.5` + KSP `2.3.14`, WorkManager `2.12.0`, `compileSdk = 37`, `targetSdk = 36`, `minSdk = 26`, 159 unit test verdi, lint, debug e release (R8) build verdi.
 
 ---
 
@@ -100,26 +100,29 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
   - Creato `IgnoredGamesSheet` (`ModalBottomSheet`) con pulsante **"Ripristina"** per ogni gioco ignorato, accessibile dall'header di Preferiti e dal drawer di Lista.
   - Aggiunti `ignoredItems(today)` e `restoreIgnored(key)` in `ListingRepository` + fix di `latestActionsByKey` affinché `Action.SEEN` non mascheri mai `FAVORITE`/`IGNORED`.
 
-### P2.4 — Confronto prezzi e badge "Miglior prezzo"
-- **Intervento:**
-  - Evidenziare sulle `ListingCard` e in `DetailScreen` il negozio con il prezzo minimo (e, quando il backend abiliterà `price_history`, mostrare la variazione di prezzo rispetto allo storico).
+### [x] P2.4 — Confronto prezzi, badge calo prezzo e storico (`0015_price_history.sql`) — *Completato (Sprint 4)*
+- **File coinvolti:** `Models.kt`, `SupabaseApi.kt`, `IncomingMapper.kt`, `ListingRepository.kt`, `ListingCard.kt`, `DetailViewModel.kt`, `DetailScreen.kt`, `DetailOffersSection.kt`, `SupabaseRestApiTest.kt`, `DetailViewModelTest.kt`.
+- **Intervento applicato:**
+  - Integrati gli endpoint `listing_best_price` e `listing_price_history` con fallback silente su HTTP 404/400 se la migrazione `0015` non è ancora applicata.
+  - Aggiunto micro-badge verde `-XX%` (per ribassi ≥ 5%) su `ListingCard` accanto al miglior prezzo.
+  - Arricchita `OfferRow` in `DetailOffersSection.kt` con prezzo precedente barrato, badge `-XX%` e chip `MINIMO STORICO`, più la card compatta **"Storico prezzi"** in `DetailScreen.kt` (visibile con ≥ 2 snapshot).
 
 ---
 
 ## Priorità P3 — Notifiche, Background Sync e Testing Avanzato
 
-### P3.1 — Background sync e notifiche locali con `WorkManager`
-- **Intervento:**
-  - Aggiungere `androidx.work:work-runtime-ktx` con un `PeriodicWorkRequest` (es. ogni 12 ore, solo su rete disponibile e batteria non scarica).
-  - Notifiche locali opt-in (con canale dedicato e schermata Impostazioni + permesso runtime `POST_NOTIFICATIONS` su Android 13+):
-    - Preferito passato in stato disponibile o con calo di prezzo.
-    - Nuova espansione rilevata in Novità/Preordini per un gioco posseduto nella collezione BGG.
-    - Riepilogo giornaliero delle novità aggiunte.
+### [x] P3.1 — Background sync (`WorkManager`), Centro Avvisi (`0016_user_alerts.sql`) e Impostazioni Notifiche — *Completato (Sprint 4)*
+- **File coinvolti:** `libs.versions.toml`, `app/build.gradle.kts`, `AndroidManifest.xml`, `NotificationPreferencesStore.kt`, `AlertNotificationEvaluator.kt`, `CatalogSyncWorker.kt`, `AppContainer.kt`, `MeepleRadarApp.kt`, `MainActivity.kt`, `MeepleRadarNav.kt`, `AlertsViewModel.kt`, `AlertsAndSettingsSheet.kt`, `FavoritesScreen.kt`, `ListingFilterDrawer.kt`, `IncomingScreen.kt`, `AlertNotificationEvaluatorTest.kt`.
+- **Intervento applicato:**
+  - Aggiunto `androidx.work:work-runtime-ktx:2.12.0` e permesso `POST_NOTIFICATIONS` con richiesta runtime su Android 13+ all'attivazione del toggle master.
+  - Implementati `CatalogSyncWorker` (sync periodico ogni 12h su rete attiva e batteria non scarica), `SyncWorkScheduler`, `NotificationHelper` (canale `meeple_radar_alerts` + deep link `EXTRA_OPEN_DETAIL_KEY` verso `detail/{key}`) e `AlertNotificationEvaluator` (logica pura testata su JVM con deduplica degli alert già notificati).
+  - Creato `AlertsAndSettingsSheet` (`ModalBottomSheet` a 2 tab **Avvisi (N)** con "Segna letti" / `[Apri ›]` e **Impostazioni** con master switch + 4 categorie notifiche), accessibile sia dalla pillola `[🔔 N]` in `FavoritesScreen` sia dalla voce **"Avvisi e Notifiche"** nel drawer di `IncomingScreen`.
 
-### P3.2 — Test UI Compose e Screenshot / Preview Coverage
-- **Intervento:**
-  - Aggiungere `@Preview` con Light/Dark mode sui componenti chiave (`ListingCard`, `UnseenFilterPill`, `ExpansionDotFilterPill`, `HideFilterChipsSection`).
-  - Introdurre test strumentati / Robolectric Compose sui flussi critici: filtro già visti + dialog conferma occhio, filtro pallino espansioni su "Miei", flusso di associazione BGG.
+### [x] P3.2 — `@Preview` Light/Dark e copertura Unit Test Sprint 4 — *Completato (Sprint 4)*
+- **File coinvolti:** `ListingCard.kt`, `DetailOffersSection.kt`, `AlertsAndSettingsSheet.kt`, `StateViews.kt`, `SupabaseRestApiTest.kt`, `AlertNotificationEvaluatorTest.kt`, `DetailViewModelTest.kt`.
+- **Intervento applicato:**
+  - Aggiunte `@Preview` Light & Dark sui componenti chiave (`ListingCard`, `OfferRow` + `PriceHistoryCard`, `AlertsAndSettingsSheetContent` tab Avvisi e Impostazioni, `UnseenFilterPill` / `MarkAllSeenButton` / `CompactSearchBar`).
+  - Aggiunti unit test dedicati per `listingBestPrices`, `listingPriceHistory`, `userAlerts`, `markAlertRead`/`markAllAlertsRead`, `AlertNotificationEvaluator` e caricamento storico prezzi in `DetailViewModel` (totale: 159/159 unit test verdi).
 
 ---
 
@@ -129,5 +132,5 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
 |---|---|---|---|
 | **Sprint 1** | ✅ Completato (`64cd190`) | Stabilità, sicurezza & CI | P0.1 (Backup/Keystore), P0.2 (OkHttp), P0.3 (R8), P0.4 (Android CI), P2.1 (SplashScreen + Edge-to-Edge) |
 | **Sprint 2** | ✅ Completato (`f831107`) | Refactoring & UX "Miei"/Liste | P1.3 (Filtro/Drawer condivisi), P1.5 (Sync reattivo "Miei"), P2.2 (Pull-to-refresh + Sort), P2.3 (Preferiti + Ignorati) |
-| **Sprint 3** | ✅ Completato | Storage scalabile & Detail modulare | P1.1 (Room), P1.2 (Sync incrementale + RPC 0013/0014), P1.4 (Split DetailScreen/VM + BggLinkingUseCase) |
-| **Sprint 4** | ⬜ Prossimo | Automazione & Alert | P3.1 (WorkManager + Notifiche `user_alert`), P2.4 (Storico prezzi `0015`), P3.2 (UI Test) |
+| **Sprint 3** | ✅ Completato (`3772de4`) | Storage scalabile & Detail modulare | P1.1 (Room), P1.2 (Sync incrementale + RPC 0013/0014), P1.4 (Split DetailScreen/VM + BggLinkingUseCase) |
+| **Sprint 4** | ✅ Completato | Automazione, Alert & Storico Prezzi | P2.4 (Storico prezzi `0015` + badge calo/minimo), P3.1 (WorkManager + Notifiche `0016` + Centro Avvisi), P3.2 (`@Preview` Light/Dark + Unit Test) |

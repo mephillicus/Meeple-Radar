@@ -1,11 +1,13 @@
 package com.meepleradar
 
 import android.content.Context
+import com.meepleradar.data.local.NotificationPreferencesStore
 import com.meepleradar.data.local.RoomLocalCacheStore
 import com.meepleradar.data.local.SharedPreferencesBggCollectionStore
 import com.meepleradar.data.local.SharedPreferencesBggSelectionStore
 import com.meepleradar.data.local.SharedPreferencesFavoriteStore
 import com.meepleradar.data.local.SharedPreferencesLocalCacheStore
+import com.meepleradar.data.local.SharedPreferencesNotificationPreferencesStore
 import com.meepleradar.data.local.SharedPreferencesSeenStore
 import com.meepleradar.data.local.db.MeepleRadarDatabase
 import com.meepleradar.data.remote.BggCollectionApi
@@ -19,6 +21,7 @@ import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.SupabaseRestApi
 import com.meepleradar.data.repo.DefaultListingRepository
 import com.meepleradar.data.repo.ListingRepository
+import com.meepleradar.notifications.SyncWorkScheduler
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
@@ -47,6 +50,9 @@ class AppContainer(context: Context) {
     val bggSelectionStore = SharedPreferencesBggSelectionStore(appContext)
     val bggCollectionStore = SharedPreferencesBggCollectionStore(appContext, json)
     val bggCollectionApi: BggCollectionApi = BggXmlCollectionApi(transport)
+    val notificationPreferencesStore: NotificationPreferencesStore =
+        SharedPreferencesNotificationPreferencesStore(appContext)
+    val syncWorkScheduler: SyncWorkScheduler = SyncWorkScheduler(appContext)
 
     private val database: MeepleRadarDatabase = MeepleRadarDatabase.create(appContext)
 

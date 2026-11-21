@@ -8,8 +8,11 @@ import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Listing
+import com.meepleradar.data.model.ListingBestPrice
+import com.meepleradar.data.model.PriceHistoryEntry
 import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
+import com.meepleradar.data.model.UserAlert
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
 import java.time.Instant
@@ -112,6 +115,18 @@ interface ListingRepository {
         bggRank: Int?,
         description: String? = null,
     ) = Unit
+
+    suspend fun bestPricesForListings(listingIds: Collection<Long>): Map<Long, ListingBestPrice> = emptyMap()
+
+    suspend fun priceHistoryForListings(listingIds: Collection<Long>): List<PriceHistoryEntry> = emptyList()
+
+    suspend fun userAlerts(): List<UserAlert> = emptyList()
+
+    suspend fun markAlertRead(alertId: Long) = Unit
+
+    suspend fun markAllAlertsRead(alertIds: Collection<Long>) = Unit
+
+    fun unreadAlertCountFlow(): StateFlow<Int> = MutableStateFlow(0)
 }
 
 class DefaultListingRepository(
@@ -126,6 +141,7 @@ class DefaultListingRepository(
     private val _newlyAddedCount = MutableStateFlow(localCacheStore?.newlyAddedCount() ?: 0)
     private val _preorderCount = MutableStateFlow(0)
     private val _lastDbModifiedTimestamp = MutableStateFlow(localCacheStore?.lastModifiedTimestamp() ?: 0L)
+    private val _unreadAlertCount = MutableStateFlow(0)
 
     private val actionsLock = Any()
 
@@ -134,6 +150,14 @@ class DefaultListingRepository(
 
     @Volatile
     private var cachedUserActionsAtMs: Long = 0L
+
+    @Volatile
+    private var cachedPriceDrops: Map<Long, Double> = emptyMap()
+
+    @Volatile
+    private var cachedPriceDropsAtMs: Long = 0L
+
+    override fun unreadAlertCountFlow(): StateFlow<Int> = _unreadAlertCount.asStateFlow()
 
     override fun lastDbModifiedTimestamp(): Long {
         val current = _lastDbModifiedTimestamp.value
@@ -211,6 +235,7 @@ class DefaultListingRepository(
                 products = products,
                 newlyAddedListingIds = db.newlyAddedListingIds,
                 seenKeys = seenKeys,
+                priceDropsByListingId = cachedPriceDrops,
             )
 
             allItems.filter { item ->
@@ -252,6 +277,7 @@ class DefaultListingRepository(
                 includeUndated = true,
                 includePriceless = true,
                 products = products,
+                priceDropsByListingId = cachedPriceDrops,
             )
         }
 
@@ -433,6 +459,7 @@ class DefaultListingRepository(
                 products = products,
                 newlyAddedListingIds = db.newlyAddedListingIds,
                 seenKeys = seenKeys,
+                priceDropsByListingId = cachedPriceDrops,
             )
             allItems.filter { item ->
                 item.key in ignoredKeys || item.bggSelectionKeys.any { it in ignoredKeys }
@@ -577,6 +604,63 @@ class DefaultListingRepository(
         return gameId
     }
 
+    override suspend fun bestPricesForListings(listingIds: Collection<Long>): Map<Long, ListingBestPrice> {
+        val ids = listingIds.filter { it > 0L }.distinct()
+        if (ids.isEmpty()) return emptyMap()
+        val fetched = runCatching { api.listingBestPrices(ids) }.getOrDefault(emptyList())
+        if (fetched.isNotEmpty()) {
+            val drops = cachedPriceDrops.toMutableMap()
+            fetched.forEach { entry ->
+                val pct = entry.priceDropPct
+                if (pct != null && pct > 0.0) {
+                    drops[entry.listingId] = pct
+                }
+            }
+            cachedPriceDrops = drops
+        }
+        return fetched.associateBy { it.listingId }
+    }
+
+    override suspend fun priceHistoryForListings(listingIds: Collection<Long>): List<PriceHistoryEntry> {
+        val ids = listingIds.filter { it > 0L }.distinct()
+        if (ids.isEmpty()) return emptyList()
+        return runCatching { api.listingPriceHistory(ids) }.getOrDefault(emptyList())
+    }
+
+    override suspend fun userAlerts(): List<UserAlert> {
+        val alerts = runCatching { api.userAlerts() }.getOrDefault(emptyList())
+        _unreadAlertCount.value = alerts.count { it.isUnread }
+        return alerts
+    }
+
+    override suspend fun markAlertRead(alertId: Long) {
+        val nowIso = Instant.ofEpochMilli(clockMs()).toString()
+        runCatching { api.markAlertRead(alertId, nowIso) }
+        _unreadAlertCount.value = (_unreadAlertCount.value - 1).coerceAtLeast(0)
+    }
+
+    override suspend fun markAllAlertsRead(alertIds: Collection<Long>) {
+        if (alertIds.isEmpty()) return
+        val nowIso = Instant.ofEpochMilli(clockMs()).toString()
+        runCatching { api.markAllAlertsRead(alertIds, nowIso) }
+        _unreadAlertCount.value = 0
+    }
+
+    private suspend fun refreshPriceDropsBestEffort(force: Boolean) {
+        val now = clockMs()
+        if (!force && cachedPriceDrops.isNotEmpty() && now - cachedPriceDropsAtMs < PRICE_DROPS_TTL_MS) {
+            return
+        }
+        val fetched = runCatching { api.listingBestPrices(null) }.getOrNull() ?: return
+        cachedPriceDrops = fetched
+            .mapNotNull { entry ->
+                val pct = entry.priceDropPct
+                if (pct != null && pct > 0.0) entry.listingId to pct else null
+            }
+            .toMap()
+        cachedPriceDropsAtMs = now
+    }
+
     private suspend fun getUserActions(forceRefresh: Boolean): List<UserActionRow> {
         val now = System.currentTimeMillis()
         if (!forceRefresh) {
@@ -624,6 +708,7 @@ class DefaultListingRepository(
             when (val outcome = fetchIncrementalDelta(incrementalSince)) {
                 is DeltaOutcome.Success -> {
                     onProgress?.invoke(85, "Applicazione aggiornamenti…")
+                    refreshPriceDropsBestEffort(force = true)
                     val nextWatermark = computeServerWatermark(
                         listings = outcome.snapshot.listings,
                         games = outcome.snapshot.games,
@@ -666,6 +751,7 @@ class DefaultListingRepository(
             }
 
             onProgress?.invoke(85, "Analisi modifiche e differenze…")
+            refreshPriceDropsBestEffort(force = forceRefresh)
             val watermark = computeServerWatermark(
                 listings = remoteListings,
                 games = remoteGames,
@@ -801,6 +887,7 @@ class DefaultListingRepository(
                 products = products,
                 newlyAddedListingIds = db.newlyAddedListingIds,
                 seenKeys = seenKeys,
+                priceDropsByListingId = cachedPriceDrops,
             )
         }
 
@@ -889,6 +976,7 @@ class DefaultListingRepository(
 
     private companion object {
         const val USER_ACTIONS_TTL_MS = 60_000L
+        const val PRICE_DROPS_TTL_MS = 10L * 60_000L
         const val FULL_SYNC_INTERVAL_MS = 7L * 24L * 60L * 60L * 1000L
     }
 }

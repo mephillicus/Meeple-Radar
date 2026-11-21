@@ -721,4 +721,103 @@ class SupabaseRestApiTest {
             assertTrue(e.message!!.contains("Not Found"))
         }
     }
+
+    @Test
+    fun `listingBestPrices legge la vista 0015 con filtro opzionale e fallback silenzioso su 404`() = runTest {
+        val body = """[
+            {"listing_id":101,"current_price":39.9,"currency":"EUR","current_availability":"Disponibile","min_price":39.9,"previous_price":46.9,"price_drop_pct":14.93,"recorded_at":"2026-04-19T08:00:00Z"}
+        ]"""
+        val expectedUrl = "$base/rest/v1/listing_best_price?select=*&listing_id=in.(101,102)"
+        val transport = FakeTransport(getResponses = mapOf(expectedUrl to body))
+
+        val result = SupabaseRestApi(base, anon, transport, json).listingBestPrices(listOf(101L, 102L))
+
+        assertEquals(1, result.size)
+        assertEquals(101L, result[0].listingId)
+        assertEquals(39.9, result[0].currentPrice!!, 0.001)
+        assertEquals(39.9, result[0].minPrice!!, 0.001)
+        assertEquals(46.9, result[0].previousPrice!!, 0.001)
+        assertEquals(14.93, result[0].priceDropPct!!, 0.001)
+
+        val missingViewTransport = FakeTransport(
+            getFailures = mapOf(expectedUrl to IOException("HTTP 404: relation listing_best_price does not exist")),
+        )
+        assertTrue(SupabaseRestApi(base, anon, missingViewTransport, json).listingBestPrices(listOf(101L, 102L)).isEmpty())
+    }
+
+    @Test
+    fun `listingPriceHistory restituisce gli snapshot ordinati e gestisce 404 silenziosamente`() = runTest {
+        val expectedUrl = "$base/rest/v1/listing_price_history?select=*&listing_id=in.(101)&order=recorded_at.desc,id.desc&limit=40"
+        val body = """[
+            {"id":2,"listing_id":101,"price":39.9,"currency":"EUR","availability":"Disponibile","recorded_at":"2026-04-19T08:00:00Z"},
+            {"id":1,"listing_id":101,"price":46.9,"currency":"EUR","availability":"Disponibile","recorded_at":"2026-04-10T08:00:00Z"}
+        ]"""
+        val transport = FakeTransport(getResponses = mapOf(expectedUrl to body))
+
+        val history = SupabaseRestApi(base, anon, transport, json).listingPriceHistory(listOf(101L))
+
+        assertEquals(2, history.size)
+        assertEquals(39.9, history[0].price!!, 0.001)
+        assertEquals(46.9, history[1].price!!, 0.001)
+
+        val missingTableTransport = FakeTransport(
+            getFailures = mapOf(expectedUrl to IOException("HTTP 404: Not Found")),
+        )
+        assertTrue(SupabaseRestApi(base, anon, missingTableTransport, json).listingPriceHistory(listOf(101L)).isEmpty())
+    }
+
+    @Test
+    fun `userAlerts mappa tipi e payload e supporta markAlertRead e markAllAlertsRead`() = runTest {
+        val alertsUrl = "$base/rest/v1/user_alert?select=*&order=created_at.desc,id.desc&limit=50"
+        val body = """[
+            {
+                "id": 10,
+                "alert_type": "price_drop",
+                "game_id": 42,
+                "product_id": null,
+                "listing_id": 101,
+                "title": "Ark Nova",
+                "payload": {"source_name": "DungeonDice", "previous_price": 46.9, "current_price": 39.9, "price_drop_pct": 15.0, "currency": "EUR"},
+                "dedupe_key": "drop:101",
+                "read_at": null,
+                "created_at": "2026-04-19T08:00:00Z"
+            },
+            {
+                "id": 11,
+                "alert_type": "back_in_stock",
+                "game_id": 7,
+                "product_id": null,
+                "listing_id": 202,
+                "title": "Brass",
+                "payload": {"source_name": "Fantasia Store", "availability": "Disponibile", "price": 59.9, "currency": "EUR"},
+                "dedupe_key": "stock:202",
+                "read_at": "2026-04-19T09:00:00Z",
+                "created_at": "2026-04-18T08:00:00Z"
+            }
+        ]"""
+        val transport = FakeTransport(getResponses = mapOf(alertsUrl to body))
+        val api = SupabaseRestApi(base, anon, transport, json)
+
+        val alerts = api.userAlerts()
+
+        assertEquals(2, alerts.size)
+        assertEquals(com.meepleradar.data.model.UserAlertType.PRICE_DROP, alerts[0].alertType)
+        assertTrue(alerts[0].isUnread)
+        assertEquals("game:42", alerts[0].itemKeyOrNull())
+        assertTrue(alerts[0].detailText!!.contains("39,90"))
+        assertTrue(alerts[0].detailText!!.contains("-15%"))
+        assertEquals(com.meepleradar.data.model.UserAlertType.BACK_IN_STOCK, alerts[1].alertType)
+        assertTrue(!alerts[1].isUnread)
+
+        api.markAlertRead(10L, "2026-04-19T10:00:00Z")
+        val patchSingle = transport.calls.last()
+        assertEquals("PATCH", patchSingle.method)
+        assertEquals("$base/rest/v1/user_alert?id=eq.10", patchSingle.url)
+        assertEquals(JsonPrimitive("2026-04-19T10:00:00Z"), Json.parseToJsonElement(patchSingle.body!!).jsonObject["read_at"])
+
+        api.markAllAlertsRead(listOf(10L, 11L), "2026-04-19T10:05:00Z")
+        val patchAll = transport.calls.last()
+        assertEquals("PATCH", patchAll.method)
+        assertEquals("$base/rest/v1/user_alert?id=in.(10,11)", patchAll.url)
+    }
 }

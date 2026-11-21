@@ -70,6 +70,8 @@ fun IncomingScreen(
     onOpen: (IncomingItem) -> Unit,
     imageLookup: BoardGameImageLookup,
     modifier: Modifier = Modifier,
+    unreadAlertCount: Int = 0,
+    onOpenAlerts: (() -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val isRefreshing by vm.isRefreshing.collectAsStateWithLifecycle()
@@ -285,6 +287,13 @@ fun IncomingScreen(
                 isFilterDrawerOpen = false
                 vm.loadIgnoredItems()
                 showIgnoredSheet = true
+            },
+            unreadAlertCount = unreadAlertCount,
+            onOpenAlerts = onOpenAlerts?.let { open ->
+                {
+                    isFilterDrawerOpen = false
+                    open()
+                }
             },
             onApply = { newSelectedSources, newHideUndated, newHidePriceless, newHideSeen, newAvailability, newSort ->
                 vm.applyFilters(

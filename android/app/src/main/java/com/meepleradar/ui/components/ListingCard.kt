@@ -1,5 +1,6 @@
 package com.meepleradar.ui.components
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -38,11 +39,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.IncomingItem
+import com.meepleradar.data.model.ItemKind
+import com.meepleradar.data.model.Offer
+import com.meepleradar.data.model.Price
 import com.meepleradar.data.remote.BoardGameImageLookup
-import com.meepleradar.ui.incoming.bestPriceLabel
 import com.meepleradar.ui.incoming.availabilityColor
+import com.meepleradar.ui.incoming.bestPriceLabel
 import com.meepleradar.ui.incoming.bestPricedOffer
 import com.meepleradar.ui.incoming.dateLabel
 import com.meepleradar.ui.incoming.offerPriceColor
@@ -51,7 +58,10 @@ import com.meepleradar.ui.theme.BggGoldBackground
 import com.meepleradar.ui.theme.BggGoldDarkBackground
 import com.meepleradar.ui.theme.BggGoldDarkText
 import com.meepleradar.ui.theme.BggGoldText
+import com.meepleradar.ui.theme.MeepleRadarTheme
+import java.time.LocalDate
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @Composable
 fun ListingCard(
@@ -138,8 +148,12 @@ fun ListingCard(
                     }
                 }
 
-                // Price, Rating Badge, and Small Action Buttons (Favorite & Ignore)
+                // Price, Price-Drop Badge, Rating Badge, and Small Action Buttons (Favorite & Ignore)
                 val bestOfferForDisplay = bestPricedOffer(item.offers)
+                val maxPriceDropPct = item.offers
+                    .mapNotNull { it.priceDropPct }
+                    .filter { it >= 5.0 }
+                    .maxOrNull()
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -151,6 +165,10 @@ fun ListingCard(
                             ?: MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.ExtraBold,
                     )
+
+                    maxPriceDropPct?.let { pct ->
+                        PriceDropBadge(pct)
+                    }
 
                     item.game?.bggRating?.let { RatingBadge(it) }
 
@@ -289,7 +307,92 @@ fun RatingBadge(rating: Double, modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
+fun PriceDropBadge(dropPct: Double, modifier: Modifier = Modifier) {
+    val isDark = isSystemInDarkTheme()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(6.dp),
+        color = if (isDark) Color(0xFF14532D) else Color(0xFFDCFCE7),
+    ) {
+        Text(
+            text = "-${dropPct.roundToInt()}%",
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 10.sp,
+            color = if (isDark) Color(0xFF86EFAC) else Color(0xFF15803D),
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+        )
+    }
+}
+
 private fun IncomingItem.isExpansionGame(): Boolean =
     game?.kind?.contains("expansion", ignoreCase = true) == true ||
     title.contains("espansione", ignoreCase = true) ||
     title.contains("expansion", ignoreCase = true)
+
+private object PreviewImageLookup : BoardGameImageLookup {
+    override suspend fun findImage(title: String, bggId: Int?): String? = null
+}
+
+@Preview(name = "ListingCard — Light", showBackground = true)
+@Preview(
+    name = "ListingCard — Dark",
+    showBackground = true,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun ListingCardPreview() {
+    val sampleItem = IncomingItem(
+        key = "game:42",
+        title = "Ark Nova: Marine Worlds",
+        imageUrl = null,
+        releaseDate = LocalDate.of(2026, 5, 15),
+        kind = ItemKind.UPCOMING,
+        game = Game(
+            id = 42L,
+            name = "Ark Nova: Marine Worlds",
+            kind = "expansion",
+            bggId = 368966,
+            bggRating = 8.7,
+            bggRank = 12,
+            imageUrl = null,
+        ),
+        offers = listOf(
+            Offer(
+                sourceId = "dungeondice",
+                sourceName = "DungeonDice",
+                price = Price(34.90, "EUR"),
+                url = "https://example.com/1",
+                availability = "Disponibile",
+                listingId = 1001L,
+                priceDropPct = 15.0,
+            ),
+            Offer(
+                sourceId = "fantasia",
+                sourceName = "Fantasia Store",
+                price = Price(39.90, "EUR"),
+                url = "https://example.com/2",
+                availability = "Preordine",
+                listingId = 1002L,
+            ),
+        ),
+        isSeen = false,
+    )
+    MeepleRadarTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Box(modifier = Modifier.padding(12.dp)) {
+                ListingCard(
+                    item = sampleItem,
+                    isFavorite = true,
+                    onOpen = {},
+                    onToggleFavorite = {},
+                    onIgnore = {},
+                    imageLookup = PreviewImageLookup,
+                )
+            }
+        }
+    }
+}

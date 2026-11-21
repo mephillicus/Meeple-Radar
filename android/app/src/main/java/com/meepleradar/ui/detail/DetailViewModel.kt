@@ -6,7 +6,9 @@ import com.meepleradar.data.local.BggSelectionStore
 import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
+import com.meepleradar.data.model.ListingBestPrice
 import com.meepleradar.data.model.Offer
+import com.meepleradar.data.model.PriceHistoryEntry
 import com.meepleradar.data.remote.BggSeries
 import com.meepleradar.data.remote.BoardGameDetails
 import com.meepleradar.data.remote.BoardGameImageLookup
@@ -14,6 +16,8 @@ import com.meepleradar.data.repo.ListingRepository
 import com.meepleradar.ui.incoming.orderedOffersForDisplay
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +63,8 @@ sealed interface DetailUiState {
         val manualProductError: String? = null,
         val isEditingManualProduct: Boolean = false,
         val savePreview: GameSavePreview? = null,
+        val bestPricesByListingId: Map<Long, ListingBestPrice> = emptyMap(),
+        val priceHistory: List<PriceHistoryEntry> = emptyList(),
     ) : DetailUiState
 }
 
@@ -98,14 +104,19 @@ class DetailViewModel(
                 }
 
                 val isFavorite = key in repo.favoriteKeys(today)
+                val orderedOffers = orderedOffersForDisplay(item.offers)
                 _state.value = DetailUiState.Content(
                     item = item,
-                    offers = orderedOffersForDisplay(item.offers),
+                    offers = orderedOffers,
                     isFavorite = isFavorite,
                     isFromDatabase = isFromDatabase,
                     isPendingDbSave = !isFromDatabase,
                     isLoadingDetails = imageLookup != null,
                 )
+
+                viewModelScope.launch {
+                    loadPriceHistory(orderedOffers)
+                }
 
                 markItemSeen(item)
 
@@ -445,6 +456,30 @@ class DetailViewModel(
             item.game?.bggId?.let { bggId ->
                 repo.markLocalSeen("bgg:$bggId", true)
             }
+        }
+    }
+
+    private suspend fun loadPriceHistory(offers: List<Offer>) {
+        val listingIds = offers.mapNotNull { it.listingId }.filter { it > 0L }.distinct()
+        if (listingIds.isEmpty()) return
+        try {
+            val (bestPrices, history) = coroutineScope {
+                val bestDeferred = async { repo.bestPricesForListings(listingIds) }
+                val historyDeferred = async { repo.priceHistoryForListings(listingIds) }
+                bestDeferred.await() to historyDeferred.await()
+            }
+            if (bestPrices.isNotEmpty() || history.isNotEmpty()) {
+                updateContent {
+                    it.copy(
+                        bestPricesByListingId = bestPrices,
+                        priceHistory = history,
+                    )
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Storico prezzi è opzionale e non deve bloccare la schermata di dettaglio.
         }
     }
 

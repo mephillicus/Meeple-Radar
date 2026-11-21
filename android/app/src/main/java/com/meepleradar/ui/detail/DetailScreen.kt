@@ -198,8 +198,19 @@ private fun DetailContent(
                 offer = offer,
                 allOffers = content.offers,
                 isBestOffer = offer in bestOffers,
+                bestPrice = offer.listingId?.let { content.bestPricesByListingId[it] },
                 onOpen = { runCatching { uriHandler.openUri(offer.url) } },
             )
+        }
+
+        if (content.priceHistory.size >= 2) {
+            item {
+                PriceHistoryCard(
+                    entries = content.priceHistory,
+                    offers = content.offers,
+                    bestPrices = content.bestPricesByListingId,
+                )
+            }
         }
 
         val game = content.item.game

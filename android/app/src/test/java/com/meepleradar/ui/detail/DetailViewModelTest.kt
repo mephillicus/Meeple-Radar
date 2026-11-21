@@ -4,8 +4,10 @@ import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
+import com.meepleradar.data.model.ListingBestPrice
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
+import com.meepleradar.data.model.PriceHistoryEntry
 import com.meepleradar.data.model.Source
 import com.meepleradar.data.local.BggSelectionStore
 import com.meepleradar.data.remote.BggLink
@@ -49,6 +51,8 @@ class DetailViewModelTest {
         private val items: List<IncomingItem>,
         private var favoriteItems: List<IncomingItem> = emptyList(),
         private val failure: Throwable? = null,
+        private val bestPrices: Map<Long, ListingBestPrice> = emptyMap(),
+        private val priceHistory: List<PriceHistoryEntry> = emptyList(),
     ) : ListingRepository {
         var requestedSourceIds: Set<String>? = emptySet()
         val actions = mutableListOf<Pair<String, Action>>()
@@ -130,6 +134,12 @@ class DetailViewModelTest {
             requestedSourceIds = null
             return items.firstOrNull { it.key == key } ?: incoming(today).firstOrNull { it.key == key }
         }
+
+        override suspend fun bestPricesForListings(listingIds: Collection<Long>): Map<Long, ListingBestPrice> =
+            bestPrices.filterKeys { it in listingIds }
+
+        override suspend fun priceHistoryForListings(listingIds: Collection<Long>): List<PriceHistoryEntry> =
+            priceHistory.filter { it.listingId in listingIds }
     }
 
     private class FakeImageLookup(
@@ -752,5 +762,43 @@ class DetailViewModelTest {
 
         assertEquals(listOf("game:5" to Action.SEEN, "game:5" to Action.IGNORED), repo.actions)
         assertTrue(ignored)
+    }
+
+    @Test
+    fun `carica storico prezzi e bestPrices per le offerte con listingId`() = runTest(dispatcher) {
+        val offerWithId = Offer(
+            sourceId = "dungeondice",
+            sourceName = "DungeonDice",
+            price = Price(39.90, "EUR"),
+            url = "https://example.com/101",
+            availability = "Disponibile",
+            listingId = 101L,
+        )
+        val bestPrice = ListingBestPrice(
+            listingId = 101L,
+            currentPrice = 39.90,
+            currency = "EUR",
+            currentAvailability = "Disponibile",
+            minPrice = 39.90,
+            previousPrice = 46.90,
+            priceDropPct = 14.9,
+            recordedAt = "2026-04-19T08:00:00Z",
+        )
+        val history = listOf(
+            PriceHistoryEntry(2L, 101L, 39.90, "EUR", "Disponibile", "2026-04-19T08:00:00Z"),
+            PriceHistoryEntry(1L, 101L, 46.90, "EUR", "Disponibile", "2026-04-10T08:00:00Z"),
+        )
+        val repo = FakeRepo(
+            items = listOf(item("game:5", listOf(offerWithId))),
+            bestPrices = mapOf(101L to bestPrice),
+            priceHistory = history,
+        )
+
+        val viewModel = DetailViewModel(repo, key = "game:5", today = today)
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as DetailUiState.Content
+        assertEquals(mapOf(101L to bestPrice), state.bestPricesByListingId)
+        assertEquals(history, state.priceHistory)
     }
 }

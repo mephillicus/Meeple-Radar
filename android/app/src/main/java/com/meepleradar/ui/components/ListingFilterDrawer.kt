@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -71,6 +72,8 @@ fun ListingFilterDrawerOverlay(
     onSortOptionChange: ((ListingSortOption) -> Unit)? = null,
     ignoredCount: Int = 0,
     onManageIgnored: (() -> Unit)? = null,
+    unreadAlertCount: Int = 0,
+    onOpenAlerts: (() -> Unit)? = null,
 ) {
     Popup(
         onDismissRequest = onClose,
@@ -102,6 +105,8 @@ fun ListingFilterDrawerOverlay(
                     onSortOptionChange = onSortOptionChange,
                     ignoredCount = ignoredCount,
                     onManageIgnored = onManageIgnored,
+                    unreadAlertCount = unreadAlertCount,
+                    onOpenAlerts = onOpenAlerts,
                 )
             }
         }
@@ -130,6 +135,8 @@ fun ListingFilterDrawerContent(
     onSortOptionChange: ((ListingSortOption) -> Unit)? = null,
     ignoredCount: Int = 0,
     onManageIgnored: (() -> Unit)? = null,
+    unreadAlertCount: Int = 0,
+    onOpenAlerts: (() -> Unit)? = null,
 ) {
     var localHideUndated by remember(hideUndated) { mutableStateOf(hideUndated) }
     var localHidePriceless by remember(hidePriceless) { mutableStateOf(hidePriceless) }
@@ -375,8 +382,54 @@ fun ListingFilterDrawerContent(
             }
         }
 
-        if (onManageIgnored != null) {
+        if (onOpenAlerts != null || onManageIgnored != null) {
             HorizontalDivider()
+        }
+
+        if (onOpenAlerts != null) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (unreadAlertCount > 0) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenAlerts),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Notifications,
+                        contentDescription = null,
+                        tint = if (unreadAlertCount > 0) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = if (unreadAlertCount > 0) {
+                            "Avvisi e Notifiche ($unreadAlertCount)"
+                        } else {
+                            "Avvisi e Notifiche"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
+        if (onManageIgnored != null) {
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
