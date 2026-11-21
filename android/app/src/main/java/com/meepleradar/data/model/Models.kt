@@ -17,6 +17,7 @@ data class Game(
     val bggRank: Int?,
     val imageUrl: String?,
     val description: String? = null,
+    val updatedAt: String? = null,
 )
 
 data class Listing(
@@ -34,6 +35,7 @@ data class Listing(
     val productId: Long? = null,
     val description: String? = null,
     val firstSeenAt: String? = null,
+    val updatedAt: String? = null,
 )
 
 data class Product(
@@ -47,6 +49,7 @@ data class Product(
     val currency: String? = null,
     val publisher: String? = null,
     val gameId: Long? = null,
+    val updatedAt: String? = null,
 )
 
 data class Price(val amount: Double, val currency: String)

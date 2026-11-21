@@ -2,8 +2,8 @@
 
 > **Ambito:** modulo Android (`android/`, package `com.meepleradar`).
 > **Documento gemello (backend/collector/CI):** `../PIANO_MIGLIORAMENTO_BACKEND.md`.
-> **Ultimo aggiornamento:** 2026-11-21 — **Sprint 1 (`64cd190`) e Sprint 2 completati**, **Sprint 3 prossimo**.
-> **Stato baseline verificato:** AGP `9.4.1`, Kotlin `2.4.20`, Compose BOM `2026.09.00`, `compileSdk = 37`, `targetSdk = 36`, `minSdk = 26`, 139 unit test verdi, lint e debug build verdi.
+> **Ultimo aggiornamento:** 2026-11-21 — **Sprint 1 (`64cd190`), Sprint 2 (`f831107`) e Sprint 3 completati**, **Sprint 4 prossimo**.
+> **Stato baseline verificato:** AGP `9.4.1`, Kotlin `2.4.20`, Compose BOM `2026.09.00`, Room `2.8.5` + KSP `2.3.14`, `compileSdk = 37`, `targetSdk = 36`, `minSdk = 26`, 152 unit test verdi, lint, debug e release (R8) build verdi.
 
 ---
 
@@ -46,19 +46,19 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
 
 ## Priorità P1 — Performance, Storage Locale e Architettura
 
-### P1.1 — Migrazione della cache locale da `SharedPreferences` a Room (SQLite)
-- **File coinvolti:** `LocalCacheStore.kt`, `SeenStore.kt`, `FavoriteStore.kt`, `ListingRepository.kt`, `gradle/libs.versions.toml`, `app/build.gradle.kts`.
-- **Problema:** Deserializzare interi array JSON da `SharedPreferences` scala male al crescere di `listings` e `products`, occupa molta memoria e costringe a ricaricare tutto in blocco.
-- **Intervento:**
-  - Introdurre Room con entità `ListingEntity`, `GameEntity`, `ProductEntity`, `SourceEntity`, `UserActionLocalEntity` e indici su `releaseDate`, `sourceId`, `gameId`, `bggId`.
-  - Esporre query reattive (`Flow`) per Novità, Preordini, Lista, Preferiti e contatori, eliminando scansioni complete in memoria.
-  - Migrazione trasparente al primo avvio (importazione una tantum da `SharedPreferences` esistenti per `SeenStore` e `FavoriteStore`).
+### [x] P1.1 — Migrazione della cache locale da `SharedPreferences` a Room (SQLite) — *Completato (Sprint 3)*
+- **File coinvolti:** `data/local/db/CatalogEntities.kt`, `CatalogDao.kt`, `MeepleRadarDatabase.kt`, `RoomLocalCacheStore.kt`, `LocalCacheStore.kt`, `AppContainer.kt`, `backup_rules.xml`, `data_extraction_rules.xml`, `gradle/libs.versions.toml`, `app/build.gradle.kts`.
+- **Intervento applicato:**
+  - Aggiunti Room `2.8.5` e KSP `2.3.14` (compatibili con AGP `9.4.1` built-in Kotlin).
+  - Create entità indicizzate `ListingEntity`, `GameEntity`, `ProductEntity` (con tutti i campi inclusi `url`, `price`, `currency`, `publisher`, `updatedAt`), `SourceEntity`, `SyncMetaEntity` e `CatalogDao` con transazioni `@Transaction` atomiche (`replaceAllCatalog`, `applyDelta`, `upsertGameAndOptionalListing`).
+  - Implementato `RoomLocalCacheStore` con migrazione trasparente one-shot dalla cache legacy `SharedPreferences` (`meeple_radar_db_cache`, poi ripulita), mirror scalare non bloccante per lo startup ed esclusione di `meeple_radar_cache.db` dalle regole di backup.
 
-### P1.2 — Sync incrementale con Supabase (`SupabaseApi.kt`, `ListingRepository.kt`)
-- **Problema:** Ogni `forceRefresh` scarica l'intera tabella `listing`, `game`, `product`, `source` e tutta la storia `user_action`.
-- **Intervento:**
-  - Scaricare solo le righe modificate dopo `lastSyncAt` (`updated_at=gt.<iso>` / `last_seen_at=gt.<iso>` / `created_at=gt.<iso>`), mantenendo un full sync periodico (es. 1 volta a settimana o su richiesta) per riallineare eventuali cancellazioni da `purgeStale`.
-  - Dipendenza backend: vedere `P1.2` / `P2.1` in `../PIANO_MIGLIORAMENTO_BACKEND.md`.
+### [x] P1.2 — Sync incrementale con Supabase (`0014`) e RPC atomiche (`0013`) — *Completato (Sprint 3)*
+- **File coinvolti:** `data/remote/SupabaseApi.kt`, `data/repo/ListingRepository.kt`, `data/model/Models.kt`, `SupabaseRestApiTest.kt`, `DefaultListingRepositoryTest.kt`.
+- **Intervento applicato:**
+  - Migrate le scritture `updateGameBggStats`, `linkListingToBgg` e `saveGameToDatabase` sulle RPC atomiche `0013` (`POST /rest/v1/rpc/...`) con fallback automatico ai flussi legacy solo in caso di HTTP 404 / `PGRST202`.
+  - Aggiunti endpoint delta `listingsUpdatedSince`, `gamesUpdatedSince`, `productsUpdatedSince` (`updated_at=gt.<iso>` URL-encoded) e campo `updatedAt` sui modelli.
+  - Implementata policy ibrida in `DefaultListingRepository`: delta sync incrementale con watermark server-side (`max(updated_at)`) + full sync automatico se la cache è vuota o più vecchia di 7 giorni + fallback silente a full sync su HTTP 400.
 
 ### [x] P1.3 — Eliminazione duplicazioni tra Lista, Novità e Preordini — *Completato (Sprint 2)*
 - **File coinvolti:** `ListingFilterEngine.kt`, `ListingFilterDrawer.kt`, `StateViews.kt`, `NewsScreen.kt`, `PreordersScreen.kt`, `IncomingScreen.kt`, `NewsViewModel.kt`, `PreordersViewModel.kt`, `IncomingViewModel.kt`.
@@ -67,11 +67,11 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
   - Estratti `ListingFilterDrawerOverlay` / `ListingFilterDrawerContent` in `ui/components/ListingFilterDrawer.kt` e `CompactSearchBar` + `BlockVector` in `ui/components/StateViews.kt`.
   - Rimossa la duplicazione tra `NewsScreen`, `PreordersScreen`, `IncomingScreen` e rispettivi ViewModel.
 
-### P1.4 — Modularizzazione di `DetailScreen.kt` e `DetailViewModel.kt`
-- **File coinvolti:** `ui/detail/DetailScreen.kt` (1397 righe), `ui/detail/DetailViewModel.kt` (600 righe).
-- **Intervento:**
-  - Spezzare `DetailScreen.kt` in file dedicati per sezione: `DetailHeaderSection.kt`, `DetailOffersSection.kt`, `DetailBggMetadataSection.kt`, `DetailBggDialogs.kt`.
-  - Estrarre le operazioni di ricerca/associazione/salvataggio BGG in un `BggLinkingUseCase` separato e testabile.
+### [x] P1.4 — Modularizzazione di `DetailScreen.kt` e `DetailViewModel.kt` — *Completato (Sprint 3)*
+- **File coinvolti:** `ui/detail/DetailScreen.kt`, `DetailHeaderSection.kt`, `DetailOffersSection.kt`, `DetailBggMetadataSection.kt`, `DetailBggAssociationSection.kt`, `DetailViewModel.kt`, `BggLinkingUseCase.kt`, `BggLinkingUseCaseTest.kt`.
+- **Intervento applicato:**
+  - Spezzato `DetailScreen.kt` (da ~1.400 righe) in 5 file coesi per sezione (`DetailScreen`, `DetailHeaderSection`, `DetailOffersSection`, `DetailBggMetadataSection`, `DetailBggAssociationSection`) senza modifiche grafiche.
+  - Estratto `BggLinkingUseCase` per risoluzione BGG, persistenza selezioni manuali, linking, refresh statistiche BGG e salvataggio prodotto manuale, con suite dedicata `BggLinkingUseCaseTest.kt`.
 
 ### [x] P1.5 — Riallineamento reattivo della schermata "Miei" (`MyCollectionScreen.kt`, `BggCollectionViewModel.kt`) — *Completato (Sprint 2)*
 - **Problema:** `BggCollectionViewModel.loadListingData()` girava solo in `init` e dopo `fetch()` da BGG; `searchQuery`, `showBaseGames` e `showExpansionPills` vivevano in `remember`.
@@ -128,6 +128,6 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
 | Fase | Stato | Obiettivo | Elementi |
 |---|---|---|---|
 | **Sprint 1** | ✅ Completato (`64cd190`) | Stabilità, sicurezza & CI | P0.1 (Backup/Keystore), P0.2 (OkHttp), P0.3 (R8), P0.4 (Android CI), P2.1 (SplashScreen + Edge-to-Edge) |
-| **Sprint 2** | ✅ Completato | Refactoring & UX "Miei"/Liste | P1.3 (Filtro/Drawer condivisi), P1.5 (Sync reattivo "Miei"), P2.2 (Pull-to-refresh + Sort), P2.3 (Preferiti + Ignorati) |
-| **Sprint 3** | ⬜ Prossimo | Storage scalabile & Detail modulare | P1.1 (Room), P1.2 (Sync incrementale + RPC 0013/0014), P1.4 (Split DetailScreen/VM) |
-| **Sprint 4** | ⬜ Da fare | Automazione & Alert | P3.1 (WorkManager + Notifiche `user_alert`), P2.4 (Storico prezzi `0015`), P3.2 (UI Test) |
+| **Sprint 2** | ✅ Completato (`f831107`) | Refactoring & UX "Miei"/Liste | P1.3 (Filtro/Drawer condivisi), P1.5 (Sync reattivo "Miei"), P2.2 (Pull-to-refresh + Sort), P2.3 (Preferiti + Ignorati) |
+| **Sprint 3** | ✅ Completato | Storage scalabile & Detail modulare | P1.1 (Room), P1.2 (Sync incrementale + RPC 0013/0014), P1.4 (Split DetailScreen/VM + BggLinkingUseCase) |
+| **Sprint 4** | ⬜ Prossimo | Automazione & Alert | P3.1 (WorkManager + Notifiche `user_alert`), P2.4 (Storico prezzi `0015`), P3.2 (UI Test) |

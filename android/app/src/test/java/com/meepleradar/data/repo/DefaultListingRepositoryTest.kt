@@ -576,4 +576,152 @@ class DefaultListingRepositoryTest {
         assertEquals(listOf("game:5"), repository.incoming(today).map { it.key })
         assertEquals(Action.UNFAVORITED, api.inserted.last().action)
     }
+
+    @Test
+    fun `forceRefresh usa sync incrementale quando cache e watermark sono recenti`() = runTest {
+        val baseTimeMs = 1_760_000_000_000L
+        val existingListing = listing(id = 1, gameId = 5, title = "Catan", releaseDate = today.plusDays(2))
+            .copy(updatedAt = "2026-10-16T10:00:00Z")
+        val updatedListing = existingListing.copy(title = "Catan Nuova Edizione", updatedAt = "2026-10-17T09:00:00Z")
+        val addedListing = listing(id = 2, gameId = 6, title = "Dune", releaseDate = today.plusDays(4))
+            .copy(updatedAt = "2026-10-17T09:30:00Z")
+
+        var fullListingsCalls = 0
+        var deltaSinceRequested: String? = null
+        val api = object : SupabaseApi {
+            override suspend fun listings(): List<Listing> {
+                fullListingsCalls++
+                return listOf(existingListing)
+            }
+            override suspend fun listingsUpdatedSince(sinceIso: String): List<Listing> {
+                deltaSinceRequested = sinceIso
+                return listOf(updatedListing, addedListing)
+            }
+            override suspend fun games(): List<Game> = emptyList()
+            override suspend fun gamesUpdatedSince(sinceIso: String): List<Game> = listOf(
+                game(6, "Dune").copy(updatedAt = "2026-10-17T09:31:00Z"),
+            )
+            override suspend fun sources(): List<Source> = listOf(Source("s1", "Store Uno"))
+            override suspend fun productsUpdatedSince(sinceIso: String): List<Product> = emptyList()
+            override suspend fun userActions(): List<UserActionRow> = emptyList()
+            override suspend fun insertAction(row: UserActionRow) = Unit
+            override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? = null
+        }
+
+        val cache = object : LocalCacheStore {
+            var db = CachedDatabase(
+                listings = listOf(existingListing),
+                games = listOf(game(5, "Catan")),
+                sources = listOf(Source("s1", "Store Uno")),
+                lastIncrementalSyncAt = "2026-10-16T10:00:00Z",
+                lastFullSyncAt = baseTimeMs,
+            )
+            override fun load(): CachedDatabase = db
+            override fun saveIfChanged(
+                newListings: List<Listing>,
+                newGames: List<Game>,
+                newSources: List<Source>,
+                newProducts: List<Product>,
+            ): Pair<CachedDatabase, Boolean> {
+                db = db.copy(listings = newListings, games = newGames, sources = newSources, products = newProducts)
+                return db to true
+            }
+            override fun mergeDelta(
+                deltaListings: List<Listing>,
+                deltaGames: List<Game>,
+                newSources: List<Source>,
+                deltaProducts: List<Product>,
+                serverWatermarkIso: String?,
+            ): Pair<CachedDatabase, Boolean> {
+                val merged = super.mergeDelta(deltaListings, deltaGames, newSources, deltaProducts, serverWatermarkIso)
+                db = merged.first
+                return merged
+            }
+        }
+
+        val repository = DefaultListingRepository(
+            api = api,
+            favoriteStore = FakeFavoriteStore(),
+            localCacheStore = cache,
+            clockMs = { baseTimeMs + 60_000L },
+        )
+
+        val items = repository.incoming(today, forceRefresh = true)
+
+        assertEquals(0, fullListingsCalls)
+        assertEquals("2026-10-16T10:00:00Z", deltaSinceRequested)
+        assertEquals(setOf("game:5", "game:6"), items.map { it.key }.toSet())
+        assertEquals("Catan Nuova Edizione", items.single { it.key == "game:5" }.title)
+        assertEquals("2026-10-17T09:31:00Z", cache.db.lastIncrementalSyncAt)
+    }
+
+    @Test
+    fun `forceRefresh esegue full sync se ultimo full sync e piu vecchio di 7 giorni o se il server ritorna HTTP 400`() = runTest {
+        val baseTimeMs = 1_760_000_000_000L
+        val eightDaysMs = 8L * 24L * 60L * 60L * 1000L
+        val l1 = listing(id = 1, gameId = 5, title = "Catan", releaseDate = today.plusDays(2))
+
+        var fullCalls = 0
+        var deltaCalls = 0
+        var failDeltaWith400 = false
+        val api = object : SupabaseApi {
+            override suspend fun listings(): List<Listing> {
+                fullCalls++
+                return listOf(l1)
+            }
+            override suspend fun listingsUpdatedSince(sinceIso: String): List<Listing> {
+                deltaCalls++
+                if (failDeltaWith400) throw java.io.IOException("HTTP 400: column listing.updated_at does not exist")
+                return emptyList()
+            }
+            override suspend fun games(): List<Game> = listOf(game(5, "Catan"))
+            override suspend fun gamesUpdatedSince(sinceIso: String): List<Game> = emptyList()
+            override suspend fun sources(): List<Source> = listOf(Source("s1", "Store Uno"))
+            override suspend fun productsUpdatedSince(sinceIso: String): List<Product> = emptyList()
+            override suspend fun userActions(): List<UserActionRow> = emptyList()
+            override suspend fun insertAction(row: UserActionRow) = Unit
+            override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? = null
+        }
+
+        // Caso 1: > 7 giorni -> full sync diretto senza tentare delta
+        val staleCache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(l1),
+                games = listOf(game(5, "Catan")),
+                sources = listOf(Source("s1", "Store Uno")),
+                lastIncrementalSyncAt = "2026-10-01T00:00:00Z",
+                lastFullSyncAt = baseTimeMs,
+            ),
+        )
+        DefaultListingRepository(
+            api = api,
+            favoriteStore = FakeFavoriteStore(),
+            localCacheStore = staleCache,
+            clockMs = { baseTimeMs + eightDaysMs },
+        ).incoming(today, forceRefresh = true)
+
+        assertEquals(1, fullCalls)
+        assertEquals(0, deltaCalls)
+
+        // Caso 2: < 7 giorni ma server risponde HTTP 400 -> fallback silente a full sync
+        failDeltaWith400 = true
+        val freshCache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(l1),
+                games = listOf(game(5, "Catan")),
+                sources = listOf(Source("s1", "Store Uno")),
+                lastIncrementalSyncAt = "2026-10-16T00:00:00Z",
+                lastFullSyncAt = baseTimeMs,
+            ),
+        )
+        DefaultListingRepository(
+            api = api,
+            favoriteStore = FakeFavoriteStore(),
+            localCacheStore = freshCache,
+            clockMs = { baseTimeMs + 60_000L },
+        ).incoming(today, forceRefresh = true)
+
+        assertEquals(2, fullCalls)
+        assertEquals(1, deltaCalls)
+    }
 }

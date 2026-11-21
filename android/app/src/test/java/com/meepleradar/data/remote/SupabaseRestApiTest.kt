@@ -7,6 +7,7 @@ import com.meepleradar.data.model.ItemKind
 import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -31,6 +32,7 @@ class SupabaseRestApiTest {
         private val patchResponse: String = "",
         private val postResponses: Map<String, String> = emptyMap(),
         private val getFailures: Map<String, IOException> = emptyMap(),
+        private val postFailures: Map<String, IOException> = emptyMap(),
     ) : HttpTransport {
         data class Call(val method: String, val url: String, val headers: Map<String, String>, val body: String?)
 
@@ -44,6 +46,7 @@ class SupabaseRestApiTest {
 
         override suspend fun post(url: String, headers: Map<String, String>, body: String): String {
             calls += Call("POST", url, headers, body)
+            postFailures[url]?.let { throw it }
             return postResponses[url] ?: ""
         }
 
@@ -52,6 +55,9 @@ class SupabaseRestApiTest {
             return patchResponse
         }
     }
+
+    private fun rpc404(rpcName: String) =
+        "$base/rest/v1/rpc/$rpcName" to IOException("HTTP 404: PGRST202 Could not find the function public.$rpcName")
 
     private fun listingJson(vararg rows: String) = rows.joinToString(prefix = "[", postfix = "]", separator = ",")
 
@@ -68,6 +74,33 @@ class SupabaseRestApiTest {
         assertEquals("application/json", call.headers["Accept"])
         assertEquals("items", call.headers["Range-Unit"])
         assertEquals("0-999", call.headers["Range"])
+    }
+
+    @Test
+    fun `query incrementali codificano updated_at e parsano il campo updatedAt`() = runTest {
+        val since = "2026-11-20T10:15:30+00:00"
+        val encoded = "2026-11-20T10%3A15%3A30%2B00%3A00"
+        val listingUrl = "$base/rest/v1/listing?select=*&updated_at=gt.$encoded&order=id.asc"
+        val gameUrl = "$base/rest/v1/game?select=*&updated_at=gt.$encoded&order=id.asc"
+        val productUrl = "$base/rest/v1/product?select=*&updated_at=gt.$encoded&order=id.asc"
+
+        val transport = FakeTransport(
+            getResponses = mapOf(
+                listingUrl to """[{"id":1,"source_id":"s1","title":"T","url":"https://u","updated_at":"2026-11-21T08:00:00+00:00"}]""",
+                gameUrl to """[{"id":5,"name":"Dune","kind":"base","updated_at":"2026-11-21T08:01:00+00:00"}]""",
+                productUrl to """[{"id":10,"title":"Dune","updated_at":"2026-11-21T08:02:00+00:00"}]""",
+            ),
+        )
+        val api = SupabaseRestApi(base, anon, transport, json)
+
+        val listings = api.listingsUpdatedSince(since)
+        val games = api.gamesUpdatedSince(since)
+        val products = api.productsUpdatedSince(since)
+
+        assertEquals("2026-11-21T08:00:00+00:00", listings.single().updatedAt)
+        assertEquals("2026-11-21T08:01:00+00:00", games.single().updatedAt)
+        assertEquals("2026-11-21T08:02:00+00:00", products.single().updatedAt)
+        assertEquals(listOf(listingUrl, gameUrl, productUrl), transport.calls.map { it.url })
     }
 
     @Test
@@ -175,7 +208,55 @@ class SupabaseRestApiTest {
     }
 
     @Test
-    fun `linkListingToBgg salva i dati BGG e distingue espansioni e giochi base`() = runTest {
+    fun `linkListingToBgg usa RPC atomica 0013 quando disponibile`() = runTest {
+        val details = BoardGameDetails(
+            bggId = 99,
+            imageUrl = "https://bgg.example/cover.jpg",
+            description = "Descrizione BGG",
+            yearPublished = 2024,
+            minPlayers = 1,
+            maxPlayers = 4,
+            playingTime = 90,
+            minAge = 10,
+            designers = listOf("Autore"),
+            categories = listOf("Strategia"),
+            mechanics = listOf("Carte"),
+            expands = listOf(BggLink(10, "Gioco base", null)),
+            bggRating = 7.5,
+            bggRank = 42,
+        )
+        val transport = FakeTransport(
+            postResponses = mapOf(
+                "$base/rest/v1/rpc/link_listing_to_bgg" to """[{"game_id":5,"product_id":123}]""",
+            ),
+        )
+
+        val (gameId, productId) = SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
+            listingId = 7,
+            currentGameId = 5,
+            details = details,
+            fallbackTitle = "Titolo alternativo",
+        )
+
+        assertEquals(5L, gameId)
+        assertEquals(123L, productId)
+        val call = transport.calls.single()
+        assertEquals("POST", call.method)
+        assertEquals("$base/rest/v1/rpc/link_listing_to_bgg", call.url)
+        val body = Json.parseToJsonElement(call.body!!).jsonObject
+        assertEquals(JsonPrimitive(7), body["p_listing_id"])
+        assertEquals(JsonPrimitive(99), body["p_bgg_id"])
+        assertEquals(JsonPrimitive("Titolo alternativo"), body["p_title"])
+        assertEquals(JsonPrimitive(5), body["p_current_game_id"])
+        assertEquals(JsonPrimitive("expansion"), body["p_kind"])
+        assertEquals(JsonPrimitive(7.5), body["p_bgg_rating"])
+        assertEquals(JsonPrimitive(42), body["p_bgg_rank"])
+        assertEquals(JsonPrimitive("https://bgg.example/cover.jpg"), body["p_image_url"])
+        assertEquals(JsonPrimitive("Descrizione BGG"), body["p_description"])
+    }
+
+    @Test
+    fun `linkListingToBgg fallback legacy salva i dati BGG e distingue espansioni e giochi base`() = runTest {
         val details = BoardGameDetails(
             bggId = 99,
             imageUrl = "https://bgg.example/cover.jpg",
@@ -194,6 +275,7 @@ class SupabaseRestApiTest {
         )
         val transport = FakeTransport(
             postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "123"),
+            postFailures = mapOf(rpc404("link_listing_to_bgg")),
         )
 
         val (_, productId) = SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
@@ -203,7 +285,7 @@ class SupabaseRestApiTest {
             fallbackTitle = "Titolo alternativo",
         )
         assertEquals(123L, productId)
-        val gamePatch = transport.calls.first { it.url.contains("game") }
+        val gamePatch = transport.calls.first { it.url.contains("/game") }
         val gameBody = Json.parseToJsonElement(gamePatch.body!!).jsonObject
 
         assertEquals("PATCH", gamePatch.method)
@@ -214,12 +296,6 @@ class SupabaseRestApiTest {
         assertEquals(JsonPrimitive(7.5), gameBody["bgg_rating"])
         assertEquals(JsonPrimitive(42), gameBody["bgg_rank"])
         assertEquals(JsonPrimitive("https://bgg.example/cover.jpg"), gameBody["image_url"])
-        assertTrue(gameBody.containsKey("name"))
-        assertTrue(gameBody.containsKey("kind"))
-        assertTrue(gameBody.containsKey("bgg_id"))
-        assertTrue(gameBody.containsKey("bgg_rating"))
-        assertTrue(gameBody.containsKey("bgg_rank"))
-        assertTrue(gameBody.containsKey("image_url"))
         assertTrue(transport.calls.any { it.url.contains("product") })
         val listingPatch = transport.calls.single { it.url.contains("listing?id=eq.7") }
         val listingBody = Json.parseToJsonElement(listingPatch.body!!).jsonObject
@@ -234,6 +310,7 @@ class SupabaseRestApiTest {
         val baseGame = details.copy(bggId = 100, expands = emptyList())
         val baseGameTransport = FakeTransport(
             postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "124"),
+            postFailures = mapOf(rpc404("link_listing_to_bgg")),
         )
         SupabaseRestApi(base, anon, baseGameTransport, json).linkListingToBgg(
             listingId = 0,
@@ -241,13 +318,15 @@ class SupabaseRestApiTest {
             details = baseGame,
             fallbackTitle = "Gioco base",
         )
-        val baseGameBody = Json.parseToJsonElement(baseGameTransport.calls.first { it.url.contains("game") }.body!!).jsonObject
+        val baseGameBody = Json.parseToJsonElement(baseGameTransport.calls.first { it.url.contains("/game") }.body!!).jsonObject
         assertEquals(JsonPrimitive("base"), baseGameBody["kind"])
     }
 
     @Test
-    fun `linkListingToBgg non associa listing quando RPC product manca o non restituisce ID`() = runTest {
-        val transport = FakeTransport()
+    fun `linkListingToBgg fallback non associa listing quando RPC product manca o non restituisce ID`() = runTest {
+        val transport = FakeTransport(
+            postFailures = mapOf(rpc404("link_listing_to_bgg")),
+        )
 
         try {
             SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
@@ -286,7 +365,7 @@ class SupabaseRestApiTest {
     }
 
     @Test
-    fun `linkListingToBgg crea listing MeepleApp completo senza scrivere la source`() = runTest {
+    fun `linkListingToBgg fallback crea listing MeepleApp completo senza scrivere la source`() = runTest {
         val details = BoardGameDetails(
             bggId = 99,
             imageUrl = "https://bgg.example/cover.jpg",
@@ -305,6 +384,7 @@ class SupabaseRestApiTest {
         )
         val transport = FakeTransport(
             postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "123"),
+            postFailures = mapOf(rpc404("link_listing_to_bgg")),
         )
 
         SupabaseRestApi(base, anon, transport, json).linkListingToBgg(
@@ -330,13 +410,14 @@ class SupabaseRestApiTest {
     }
 
     @Test
-    fun `linkListingToBgg normalizza listing MeepleApp legacy trovato per URL`() = runTest {
+    fun `linkListingToBgg fallback normalizza listing MeepleApp legacy trovato per URL`() = runTest {
         val legacyUrl = "$base/rest/v1/listing?source_id=eq.meeple_app&url=eq.https%3A%2F%2Fboardgamegeek.com%2Fboardgame%2F99&select=*"
         val transport = FakeTransport(
             getResponses = mapOf(
                 legacyUrl to """[{"id":8,"source_id":"meeple_app","title":"Dune vecchio","url":"https://boardgamegeek.com/boardgame/99"}]""",
             ),
             postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "123"),
+            postFailures = mapOf(rpc404("link_listing_to_bgg")),
         )
         val details = BoardGameDetails(
             bggId = 99,
@@ -370,11 +451,12 @@ class SupabaseRestApiTest {
     }
 
     @Test
-    fun `linkListingToBgg propaga gli errori HTTP nel lookup listing`() = runTest {
+    fun `linkListingToBgg fallback propaga gli errori HTTP nel lookup listing`() = runTest {
         val listingUrl = "$base/rest/v1/listing?source_id=eq.meeple_app&url=eq.https%3A%2F%2Fboardgamegeek.com%2Fboardgame%2F99&select=*"
         val transport = FakeTransport(
             postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "123"),
             getFailures = mapOf(listingUrl to IOException("HTTP 400: external_id richiesto")),
+            postFailures = mapOf(rpc404("link_listing_to_bgg")),
         )
         val details = BoardGameDetails(
             bggId = 99,
@@ -409,7 +491,46 @@ class SupabaseRestApiTest {
     }
 
     @Test
-    fun `saveGameToDatabase crea listing BGG e collega le selezioni senza creare la source`() = runTest {
+    fun `saveGameToDatabase usa RPC atomica 0013 quando disponibile`() = runTest {
+        val transport = FakeTransport(
+            postResponses = mapOf("$base/rest/v1/rpc/save_game_to_database" to "5"),
+        )
+        val item = IncomingItem(
+            key = "bgg:99",
+            title = "Dune",
+            imageUrl = "https://bgg.example/cover.jpg",
+            releaseDate = null,
+            kind = ItemKind.NEW_UNDATED,
+            game = Game(
+                id = 0,
+                name = "Dune",
+                kind = "base",
+                bggId = 99,
+                bggRating = 7.5,
+                bggRank = 42,
+                imageUrl = "https://bgg.example/cover.jpg",
+                description = "Descrizione BGG",
+            ),
+            offers = emptyList(),
+        )
+
+        val savedId = SupabaseRestApi(base, anon, transport, json).saveGameToDatabase(item, listOf(77, 77, 88))
+
+        assertEquals(5L, savedId)
+        val call = transport.calls.single()
+        assertEquals("POST", call.method)
+        assertEquals("$base/rest/v1/rpc/save_game_to_database", call.url)
+        val body = Json.parseToJsonElement(call.body!!).jsonObject
+        assertEquals(JsonPrimitive(99), body["p_bgg_id"])
+        assertEquals(JsonPrimitive("Dune"), body["p_title"])
+        assertEquals(JsonPrimitive("base"), body["p_kind"])
+        assertEquals(JsonPrimitive(7.5), body["p_bgg_rating"])
+        assertEquals(JsonPrimitive(42), body["p_bgg_rank"])
+        assertEquals(JsonArray(listOf(JsonPrimitive(77), JsonPrimitive(88))), body["p_listing_ids_to_link"])
+    }
+
+    @Test
+    fun `saveGameToDatabase fallback crea listing BGG e collega le selezioni senza creare la source`() = runTest {
         val transport = FakeTransport(
             getResponses = mapOf(
                 "$base/rest/v1/game?bgg_id=eq.99&select=*" to "[]",
@@ -418,6 +539,7 @@ class SupabaseRestApiTest {
                 "$base/rest/v1/game" to """[{"id":5,"name":"Dune","kind":"base","bgg_id":99}]""",
                 "$base/rest/v1/rpc/upsert_product_for_game" to "123",
             ),
+            postFailures = mapOf(rpc404("save_game_to_database")),
         )
         val item = IncomingItem(
             key = "bgg:99",
@@ -460,9 +582,33 @@ class SupabaseRestApiTest {
     }
 
     @Test
-    fun `aggiorna solo voto e rank BGG di un game`() = runTest {
+    fun `updateGameBggStats usa RPC atomica 0013 quando disponibile`() = runTest {
+        val transport = FakeTransport(
+            postResponses = mapOf("$base/rest/v1/rpc/update_game_bgg_stats" to "5"),
+        )
+
+        SupabaseRestApi(base, anon, transport, json).updateGameBggStats(
+            bggId = 99,
+            bggRating = 7.25,
+            bggRank = 314,
+            description = "Descrizione",
+        )
+
+        val call = transport.calls.single()
+        assertEquals("POST", call.method)
+        assertEquals("$base/rest/v1/rpc/update_game_bgg_stats", call.url)
+        val body = Json.parseToJsonElement(call.body!!).jsonObject
+        assertEquals(JsonPrimitive(99), body["p_bgg_id"])
+        assertEquals(JsonPrimitive(7.25), body["p_bgg_rating"])
+        assertEquals(JsonPrimitive(314), body["p_bgg_rank"])
+        assertEquals(JsonPrimitive("Descrizione"), body["p_description"])
+    }
+
+    @Test
+    fun `aggiorna solo voto e rank BGG di un game in fallback legacy`() = runTest {
         val transport = FakeTransport(
             patchResponse = """[{"id":5,"name":"Coffee Rush: Winter","kind":"base","bgg_id":99,"bgg_rating":7.25,"bgg_rank":314}]""",
+            postFailures = mapOf(rpc404("update_game_bgg_stats")),
         )
 
         SupabaseRestApi(base, anon, transport, json).updateGameBggStats(
@@ -471,7 +617,7 @@ class SupabaseRestApiTest {
             bggRank = 314,
         )
 
-        val call = transport.calls.single()
+        val call = transport.calls.last()
         val body = Json.parseToJsonElement(call.body!!).jsonObject
         assertEquals("PATCH", call.method)
         assertEquals("$base/rest/v1/game?bgg_id=eq.99&select=*", call.url)
@@ -482,7 +628,10 @@ class SupabaseRestApiTest {
 
     @Test
     fun `aggiornamento voto e rank fallisce se l'id BGG non esiste nel database`() = runTest {
-        val transport = FakeTransport(patchResponse = "[]")
+        val transport = FakeTransport(
+            patchResponse = "[]",
+            postFailures = mapOf(rpc404("update_game_bgg_stats")),
+        )
 
         try {
             SupabaseRestApi(base, anon, transport, json).updateGameBggStats(999999, 7.0, 100)
@@ -496,6 +645,7 @@ class SupabaseRestApiTest {
     fun `associazione BGG azzera valori precedenti non disponibili`() = runTest {
         val transport = FakeTransport(
             postResponses = mapOf("$base/rest/v1/rpc/upsert_product_for_game" to "125"),
+            postFailures = mapOf(rpc404("link_listing_to_bgg")),
         )
         val details = BoardGameDetails(
             bggId = 99,
@@ -518,7 +668,7 @@ class SupabaseRestApiTest {
             fallbackTitle = "Gioco",
         )
 
-        val body = Json.parseToJsonElement(transport.calls.first { it.url.contains("game") }.body!!).jsonObject
+        val body = Json.parseToJsonElement(transport.calls.first { it.url.contains("/game") }.body!!).jsonObject
         assertEquals(JsonNull, body["bgg_rating"])
         assertEquals(JsonNull, body["bgg_rank"])
         assertEquals(JsonNull, body["image_url"])

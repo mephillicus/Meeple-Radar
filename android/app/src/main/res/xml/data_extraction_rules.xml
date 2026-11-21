@@ -3,9 +3,13 @@
     <cloud-backup>
         <exclude domain="sharedpref" path="meeple_radar_bgg_collection.xml" />
         <exclude domain="sharedpref" path="meeple_radar_db_cache.xml" />
+        <exclude domain="sharedpref" path="meeple_radar_db_meta.xml" />
+        <exclude domain="database" path="meeple_radar_cache.db" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="meeple_radar_bgg_collection.xml" />
         <exclude domain="sharedpref" path="meeple_radar_db_cache.xml" />
+        <exclude domain="sharedpref" path="meeple_radar_db_meta.xml" />
+        <exclude domain="database" path="meeple_radar_cache.db" />
     </device-transfer>
 </data-extraction-rules>

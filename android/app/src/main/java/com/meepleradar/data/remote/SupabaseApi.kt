@@ -5,12 +5,14 @@ import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.Listing
 import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
+import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,11 +22,17 @@ data class UserActionRow(val gameId: Long?, val listingId: Long?, val action: Ac
 interface SupabaseApi {
     suspend fun listings(): List<Listing>
 
+    suspend fun listingsUpdatedSince(sinceIso: String): List<Listing> = listings()
+
     suspend fun games(): List<Game>
+
+    suspend fun gamesUpdatedSince(sinceIso: String): List<Game> = games()
 
     suspend fun sources(): List<Source>
 
     suspend fun products(): List<Product> = emptyList()
+
+    suspend fun productsUpdatedSince(sinceIso: String): List<Product> = products()
 
     suspend fun userActions(): List<UserActionRow>
 
@@ -66,6 +74,11 @@ class SupabaseRestApi(
 
     private fun selectUrl(table: String) = "$base/rest/v1/$table?select=*&order=id.asc"
 
+    private fun selectUpdatedSinceUrl(table: String, sinceIso: String): String {
+        val encoded = URLEncoder.encode(sinceIso, "UTF-8")
+        return "$base/rest/v1/$table?select=*&updated_at=gt.$encoded&order=id.asc"
+    }
+
     private fun headers(extra: Map<String, String> = emptyMap()): Map<String, String> = buildMap {
         put("apikey", anonKey)
         put("Authorization", "Bearer $anonKey")
@@ -77,8 +90,16 @@ class SupabaseRestApi(
         fetchAll<ListingDto>(selectUrl("listing"))
             .map { it.toDomain() }
 
+    override suspend fun listingsUpdatedSince(sinceIso: String): List<Listing> =
+        fetchAll<ListingDto>(selectUpdatedSinceUrl("listing", sinceIso))
+            .map { it.toDomain() }
+
     override suspend fun games(): List<Game> =
         fetchAll<GameDto>(selectUrl("game"))
+            .map { it.toDomain() }
+
+    override suspend fun gamesUpdatedSince(sinceIso: String): List<Game> =
+        fetchAll<GameDto>(selectUpdatedSinceUrl("game", sinceIso))
             .map { it.toDomain() }
 
     override suspend fun sources(): List<Source> =
@@ -87,6 +108,10 @@ class SupabaseRestApi(
 
     override suspend fun products(): List<Product> =
         fetchAll<ProductDto>(selectUrl("product"))
+            .map { it.toDomain() }
+
+    override suspend fun productsUpdatedSince(sinceIso: String): List<Product> =
+        fetchAll<ProductDto>(selectUpdatedSinceUrl("product", sinceIso))
             .map { it.toDomain() }
 
     override suspend fun userActions(): List<UserActionRow> =
@@ -108,12 +133,51 @@ class SupabaseRestApi(
         description: String?,
     ) {
         require(bggId > 0) { "ID BGG non valido: $bggId" }
-        val updates = buildMap {
+        val normalizedDescription = description?.takeIf(String::isNotBlank)
+        require(bggRating != null || bggRank != null || normalizedDescription != null) {
+            "BoardGameGeek non ha restituito nessun dato da aggiornare."
+        }
+
+        val rpcPayload = buildMap<String, JsonElement> {
+            put("p_bgg_id", JsonPrimitive(bggId))
+            put("p_bgg_rating", bggRating?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_bgg_rank", bggRank?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_description", normalizedDescription?.let(::JsonPrimitive) ?: JsonNull)
+        }
+
+        try {
+            val response = transport.post(
+                url = "$base/rest/v1/rpc/update_game_bgg_stats",
+                headers = headers(mapOf("Content-Type" to "application/json")),
+                body = json.encodeToString(rpcPayload),
+            )
+            val updatedId = runCatching {
+                json.decodeFromString<JsonPrimitive>(response).content.toLongOrNull()
+            }.getOrNull()
+            check(updatedId != null && updatedId > 0L) {
+                "Nessun gioco associato all'ID BGG $bggId trovato o aggiornabile su Supabase."
+            }
+            return
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (!isRpcMissingError(e)) {
+                if (e.message?.contains("No game found", ignoreCase = true) == true) {
+                    throw IllegalStateException(
+                        "Nessun gioco associato all'ID BGG $bggId trovato o aggiornabile su Supabase.",
+                        e,
+                    )
+                }
+                throw e
+            }
+        }
+
+        // Fallback legacy quando la migrazione 0013_app_write_rpcs.sql non è ancora attiva.
+        val updates = buildMap<String, JsonElement> {
             bggRating?.let { put("bgg_rating", JsonPrimitive(it)) }
             bggRank?.let { put("bgg_rank", JsonPrimitive(it)) }
-            description?.takeIf(String::isNotBlank)?.let { put("description", JsonPrimitive(it)) }
+            normalizedDescription?.let { put("description", JsonPrimitive(it)) }
         }
-        require(updates.isNotEmpty()) { "BoardGameGeek non ha restituito nessun dato da aggiornare." }
         val response = transport.patch(
             url = "$base/rest/v1/game?bgg_id=eq.$bggId&select=*",
             headers = headers(mapOf("Content-Type" to "application/json", "Prefer" to "return=representation")),
@@ -136,7 +200,7 @@ class SupabaseRestApi(
         val externalId = "bgg:$bggId"
         val legacyListing = json.decodeFromString<List<ListingDto>>(
             transport.get(
-                "$base/rest/v1/listing?source_id=eq.meeple_app&url=eq.${java.net.URLEncoder.encode(url, "UTF-8")}&select=*",
+                "$base/rest/v1/listing?source_id=eq.meeple_app&url=eq.${URLEncoder.encode(url, "UTF-8")}&select=*",
                 headers(),
             ),
         ).firstOrNull()
@@ -169,6 +233,49 @@ class SupabaseRestApi(
     }
 
     override suspend fun linkListingToBgg(
+        listingId: Long,
+        currentGameId: Long?,
+        details: BoardGameDetails,
+        fallbackTitle: String,
+    ): Pair<Long?, Long?> {
+        val title = details.primaryName ?: details.englishName ?: fallbackTitle
+        val kindValue = if (details.expands.isNotEmpty()) "expansion" else "base"
+        val rpcPayload = buildMap<String, JsonElement> {
+            put("p_listing_id", JsonPrimitive(listingId))
+            put("p_bgg_id", JsonPrimitive(details.bggId))
+            put("p_title", JsonPrimitive(title))
+            put("p_current_game_id", currentGameId?.takeIf { it > 0 }?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_kind", JsonPrimitive(kindValue))
+            put("p_bgg_rating", details.bggRating?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_bgg_rank", details.bggRank?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_image_url", details.imageUrl?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_description", details.description?.takeIf(String::isNotBlank)?.let(::JsonPrimitive) ?: JsonNull)
+        }
+
+        try {
+            val rpcResponse = transport.post(
+                url = "$base/rest/v1/rpc/link_listing_to_bgg",
+                headers = headers(mapOf("Content-Type" to "application/json")),
+                body = json.encodeToString(rpcPayload),
+            )
+            val rows = json.decodeFromString<List<LinkListingRpcRow>>(rpcResponse)
+            val first = rows.firstOrNull()
+                ?: throw IllegalStateException("La RPC link_listing_to_bgg non ha restituito nessun risultato.")
+            return first.gameId to first.productId
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (isRpcMissingError(e)) {
+                return linkListingToBggLegacy(listingId, currentGameId, details, fallbackTitle)
+            }
+            if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
+                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Verifica le policy RLS per 'anon' sulle tabelle 'game', 'product' e 'listing'.")
+            }
+            throw e
+        }
+    }
+
+    private suspend fun linkListingToBggLegacy(
         listingId: Long,
         currentGameId: Long?,
         details: BoardGameDetails,
@@ -298,6 +405,56 @@ class SupabaseRestApi(
         item: com.meepleradar.data.model.IncomingItem,
         selectedListingIdsToLink: List<Long>,
     ): Long? {
+        val title = item.title
+        val kind = if (item.game?.kind == "expansion") "expansion" else "base"
+        val bggId = item.game?.bggId ?: 0
+        if (bggId <= 0) throw IllegalStateException("ID BGG non disponibile per il gioco.")
+
+        val rpcPayload = buildMap<String, JsonElement> {
+            put("p_bgg_id", JsonPrimitive(bggId))
+            put("p_title", JsonPrimitive(title))
+            put("p_kind", JsonPrimitive(kind))
+            put("p_bgg_rating", item.game?.bggRating?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_bgg_rank", item.game?.bggRank?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_image_url", item.imageUrl?.let(::JsonPrimitive) ?: JsonNull)
+            put("p_game_description", item.game?.description?.takeIf(String::isNotBlank)?.let(::JsonPrimitive) ?: JsonNull)
+            put(
+                "p_product_description",
+                (item.customDescription ?: item.game?.description)
+                    ?.takeIf(String::isNotBlank)
+                    ?.let(::JsonPrimitive) ?: JsonNull,
+            )
+            put("p_listing_ids_to_link", JsonArray(selectedListingIdsToLink.distinct().map(::JsonPrimitive)))
+        }
+
+        try {
+            val rpcResponse = transport.post(
+                url = "$base/rest/v1/rpc/save_game_to_database",
+                headers = headers(mapOf("Content-Type" to "application/json")),
+                body = json.encodeToString(rpcPayload),
+            )
+            val gameId = runCatching {
+                json.decodeFromString<JsonPrimitive>(rpcResponse).content.toLongOrNull()
+            }.getOrNull()
+            return gameId?.takeIf { it > 0L }
+                ?: throw IllegalStateException("La RPC save_game_to_database non ha restituito un ID gioco valido.")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (isRpcMissingError(e)) {
+                return saveGameToDatabaseLegacy(item, selectedListingIdsToLink)
+            }
+            if (e.message?.contains("401") == true || e.message?.contains("403") == true) {
+                throw IllegalStateException("Permessi Supabase mancanti (HTTP 401/403). Verifica le policy RLS per 'anon' sulle tabelle 'game', 'product' e 'listing'.")
+            }
+            throw e
+        }
+    }
+
+    private suspend fun saveGameToDatabaseLegacy(
+        item: com.meepleradar.data.model.IncomingItem,
+        selectedListingIdsToLink: List<Long>,
+    ): Long {
         try {
             val title = item.title
             val kind = if (item.game?.kind == "expansion") "expansion" else "base"
@@ -386,6 +543,11 @@ class SupabaseRestApi(
         }
     }
 
+    private fun isRpcMissingError(e: Exception): Boolean {
+        val msg = e.message ?: return false
+        return msg.contains("HTTP 404") || msg.contains("PGRST202")
+    }
+
     private suspend inline fun <reified T> fetchAll(url: String): List<T> {
         val rows = mutableListOf<T>()
         var offset = 0
@@ -431,6 +593,12 @@ private fun String.toAction(): Action = when (lowercase()) {
 }
 
 @Serializable
+private data class LinkListingRpcRow(
+    @SerialName("game_id") val gameId: Long,
+    @SerialName("product_id") val productId: Long,
+)
+
+@Serializable
 private data class SourceDto(val id: String, val name: String) {
     fun toDomain() = Source(id, name)
 }
@@ -445,6 +613,7 @@ private data class GameDto(
     @SerialName("bgg_rank") val bggRank: Int? = null,
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("description") val description: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
 ) {
     fun toDomain() = Game(
         id = id,
@@ -455,6 +624,7 @@ private data class GameDto(
         bggRank = bggRank,
         imageUrl = imageUrl,
         description = description,
+        updatedAt = updatedAt,
     )
 }
 
@@ -470,6 +640,7 @@ private data class ProductDto(
     @SerialName("description") val description: String? = null,
     val publisher: String? = null,
     @SerialName("game_id") val gameId: Long? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
 ) {
     fun toDomain() = Product(
         id = id,
@@ -482,6 +653,7 @@ private data class ProductDto(
         currency = currency,
         publisher = publisher,
         gameId = gameId,
+        updatedAt = updatedAt,
     )
 }
 
@@ -501,6 +673,7 @@ private data class ListingDto(
     @SerialName("product_id") val productId: Long? = null,
     @SerialName("description") val description: String? = null,
     @SerialName("first_seen_at") val firstSeenAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -517,6 +690,7 @@ private data class ListingDto(
         productId = productId,
         description = description,
         firstSeenAt = firstSeenAt,
+        updatedAt = updatedAt,
     )
 }
 

@@ -19,6 +19,8 @@ data class CachedDatabase(
     val lastModifiedTimestamp: Long = 0L,
     val newlyAddedCount: Int = 0,
     val newlyAddedListingIds: Set<Long> = emptySet(),
+    val lastIncrementalSyncAt: String? = null,
+    val lastFullSyncAt: Long = 0L,
 )
 
 interface LocalCacheStore {
@@ -53,6 +55,62 @@ interface LocalCacheStore {
         newSources: List<Source>,
         newProducts: List<Product>,
     ): Pair<CachedDatabase, Boolean>
+
+    fun saveFullSync(
+        newListings: List<Listing>,
+        newGames: List<Game>,
+        newSources: List<Source>,
+        newProducts: List<Product>,
+        serverWatermarkIso: String? = null,
+        fullSyncTimestampMs: Long = System.currentTimeMillis(),
+    ): Pair<CachedDatabase, Boolean> {
+        val (saved, changed) = saveIfChanged(
+            newListings = newListings,
+            newGames = newGames,
+            newSources = newSources,
+            newProducts = newProducts,
+        )
+        return saved.copy(
+            lastIncrementalSyncAt = serverWatermarkIso ?: saved.lastIncrementalSyncAt,
+            lastFullSyncAt = fullSyncTimestampMs,
+        ) to changed
+    }
+
+    fun mergeDelta(
+        deltaListings: List<Listing>,
+        deltaGames: List<Game>,
+        newSources: List<Source>,
+        deltaProducts: List<Product>,
+        serverWatermarkIso: String? = null,
+    ): Pair<CachedDatabase, Boolean> {
+        val current = load() ?: CachedDatabase()
+        val mergedListings = mergeById(current.listings, deltaListings) { it.id }
+        val mergedGames = mergeById(current.games, deltaGames) { it.id }
+        val mergedProducts = mergeById(current.products, deltaProducts) { it.id }
+        val mergedSources = if (newSources.isNotEmpty()) newSources else current.sources
+        val (saved, changed) = saveIfChanged(
+            newListings = mergedListings,
+            newGames = mergedGames,
+            newSources = mergedSources,
+            newProducts = mergedProducts,
+        )
+        return saved.copy(
+            lastIncrementalSyncAt = serverWatermarkIso ?: current.lastIncrementalSyncAt,
+            lastFullSyncAt = current.lastFullSyncAt,
+        ) to changed
+    }
+}
+
+internal inline fun <T> mergeById(
+    existing: List<T>,
+    delta: List<T>,
+    crossinline idOf: (T) -> Long,
+): List<T> {
+    if (delta.isEmpty()) return existing
+    val map = LinkedHashMap<Long, T>(existing.size + delta.size)
+    existing.forEach { map[idOf(it)] = it }
+    delta.forEach { map[idOf(it)] = it }
+    return map.values.sortedBy { idOf(it) }
 }
 
 class SharedPreferencesLocalCacheStore(
@@ -71,6 +129,15 @@ class SharedPreferencesLocalCacheStore(
 
     override fun newlyAddedCount(): Int =
         cachedInMemory?.newlyAddedCount ?: preferences.getInt(KEY_NEWLY_ADDED_COUNT, 0)
+
+    fun hasLegacyData(): Boolean = preferences.contains(KEY_LISTINGS)
+
+    fun clear() {
+        synchronized(lock) {
+            cachedInMemory = null
+            preferences.edit().clear().apply()
+        }
+    }
 
     override fun load(): CachedDatabase? {
         cachedInMemory?.let { return it }
@@ -228,6 +295,7 @@ private data class CachedListing(
     val productId: Long? = null,
     val description: String? = null,
     val firstSeenAt: String? = null,
+    val updatedAt: String? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -244,6 +312,7 @@ private data class CachedListing(
         productId = productId,
         description = description,
         firstSeenAt = firstSeenAt,
+        updatedAt = updatedAt,
     )
     companion object {
         fun from(l: Listing) = CachedListing(
@@ -261,6 +330,7 @@ private data class CachedListing(
             productId = l.productId,
             description = l.description,
             firstSeenAt = l.firstSeenAt,
+            updatedAt = l.updatedAt,
         )
     }
 }
@@ -275,10 +345,11 @@ private data class CachedGame(
     val bggRank: Int?,
     val imageUrl: String?,
     val description: String? = null,
+    val updatedAt: String? = null,
 ) {
-    fun toDomain() = Game(id, name, kind, bggId, bggRating, bggRank, imageUrl, description)
+    fun toDomain() = Game(id, name, kind, bggId, bggRating, bggRank, imageUrl, description, updatedAt)
     companion object {
-        fun from(g: Game) = CachedGame(g.id, g.name, g.kind, g.bggId, g.bggRating, g.bggRank, g.imageUrl, g.description)
+        fun from(g: Game) = CachedGame(g.id, g.name, g.kind, g.bggId, g.bggRating, g.bggRank, g.imageUrl, g.description, g.updatedAt)
     }
 }
 
@@ -297,7 +368,12 @@ private data class CachedProduct(
     val imageUrl: String?,
     val releaseDate: String?,
     val description: String? = null,
+    val url: String? = null,
+    val price: Double? = null,
+    val currency: String? = null,
+    val publisher: String? = null,
     val gameId: Long? = null,
+    val updatedAt: String? = null,
 ) {
     fun toDomain() = Product(
         id = id,
@@ -305,7 +381,12 @@ private data class CachedProduct(
         imageUrl = imageUrl,
         releaseDate = releaseDate.asLocalDateOrNull(),
         description = description,
+        url = url,
+        price = price,
+        currency = currency,
+        publisher = publisher,
         gameId = gameId,
+        updatedAt = updatedAt,
     )
     companion object {
         fun from(p: Product) = CachedProduct(
@@ -314,7 +395,12 @@ private data class CachedProduct(
             imageUrl = p.imageUrl,
             releaseDate = p.releaseDate?.toString(),
             description = p.description,
+            url = p.url,
+            price = p.price,
+            currency = p.currency,
+            publisher = p.publisher,
             gameId = p.gameId,
+            updatedAt = p.updatedAt,
         )
     }
 }

@@ -12,7 +12,10 @@ import com.meepleradar.data.model.Product
 import com.meepleradar.data.model.Source
 import com.meepleradar.data.remote.SupabaseApi
 import com.meepleradar.data.remote.UserActionRow
+import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -117,6 +120,7 @@ class DefaultListingRepository(
     private val localCacheStore: LocalCacheStore? = null,
     private val bggCollectionStore: com.meepleradar.data.local.BggCollectionStore? = null,
     private val seenStore: com.meepleradar.data.local.SeenStore? = null,
+    private val clockMs: () -> Long = System::currentTimeMillis,
 ) : ListingRepository {
 
     private val _newlyAddedCount = MutableStateFlow(localCacheStore?.newlyAddedCount() ?: 0)
@@ -605,6 +609,47 @@ class DefaultListingRepository(
         onProgress?.invoke(25, "Caricamento database locale…")
         var cached = withContext(Dispatchers.IO) { localCacheStore?.load() }
 
+        val nowMs = clockMs()
+        val incrementalSince = cached?.lastIncrementalSyncAt?.takeIf(String::isNotBlank)
+        val canUseIncremental = forceRefresh &&
+            localCacheStore != null &&
+            cached != null &&
+            cached.listings.isNotEmpty() &&
+            incrementalSince != null &&
+            cached.lastFullSyncAt > 0L &&
+            (nowMs - cached.lastFullSyncAt) < FULL_SYNC_INTERVAL_MS
+
+        if (canUseIncremental) {
+            onProgress?.invoke(40, "Sincronizzazione incrementale…")
+            when (val outcome = fetchIncrementalDelta(incrementalSince)) {
+                is DeltaOutcome.Success -> {
+                    onProgress?.invoke(85, "Applicazione aggiornamenti…")
+                    val nextWatermark = computeServerWatermark(
+                        listings = outcome.snapshot.listings,
+                        games = outcome.snapshot.games,
+                        products = outcome.snapshot.products,
+                        fallbackIso = incrementalSince,
+                    )
+                    return withContext(Dispatchers.IO) {
+                        localCacheStore.mergeDelta(
+                            deltaListings = outcome.snapshot.listings,
+                            deltaGames = outcome.snapshot.games,
+                            newSources = outcome.snapshot.sources,
+                            deltaProducts = outcome.snapshot.products,
+                            serverWatermarkIso = nextWatermark,
+                        ).first
+                    }
+                }
+                DeltaOutcome.NetworkError -> {
+                    // Offline o errore transitorio: mantiene la cache locale integra.
+                    return cached
+                }
+                DeltaOutcome.SchemaUnsupported -> {
+                    // Fallback trasparente al full sync se la colonna updated_at non è presente.
+                }
+            }
+        }
+
         if (forceRefresh || cached == null || cached.listings.isEmpty()) {
             onProgress?.invoke(40, "Connessione a Supabase…")
             val (remoteListings, remoteGames, remoteSources, remoteProducts) = coroutineScope {
@@ -621,13 +666,22 @@ class DefaultListingRepository(
             }
 
             onProgress?.invoke(85, "Analisi modifiche e differenze…")
+            val watermark = computeServerWatermark(
+                listings = remoteListings,
+                games = remoteGames,
+                products = remoteProducts,
+                fallbackIso = cached?.lastIncrementalSyncAt,
+            ) ?: Instant.ofEpochMilli(nowMs).toString()
+
             cached = if (localCacheStore != null && remoteListings.isNotEmpty()) {
                 withContext(Dispatchers.IO) {
-                    localCacheStore.saveIfChanged(
+                    localCacheStore.saveFullSync(
                         newListings = remoteListings,
                         newGames = remoteGames,
                         newSources = remoteSources,
                         newProducts = remoteProducts,
+                        serverWatermarkIso = watermark,
+                        fullSyncTimestampMs = nowMs,
                     ).first
                 }
             } else {
@@ -639,11 +693,79 @@ class DefaultListingRepository(
                     lastModifiedTimestamp = cached?.lastModifiedTimestamp ?: 0L,
                     newlyAddedCount = cached?.newlyAddedCount ?: 0,
                     newlyAddedListingIds = cached?.newlyAddedListingIds.orEmpty(),
+                    lastIncrementalSyncAt = cached?.lastIncrementalSyncAt,
+                    lastFullSyncAt = cached?.lastFullSyncAt ?: 0L,
                 )
             }
         }
 
         return cached
+    }
+
+    private suspend fun fetchIncrementalDelta(sinceIso: String): DeltaOutcome = try {
+        val snapshot = coroutineScope {
+            val listingsDeferred = async { api.listingsUpdatedSince(sinceIso) }
+            val gamesDeferred = async { api.gamesUpdatedSince(sinceIso) }
+            val sourcesDeferred = async { runCatching { api.sources() }.getOrDefault(emptyList()) }
+            val productsDeferred = async { api.productsUpdatedSince(sinceIso) }
+            RemoteSnapshot(
+                listings = listingsDeferred.await(),
+                games = gamesDeferred.await(),
+                sources = sourcesDeferred.await(),
+                products = productsDeferred.await(),
+            )
+        }
+        DeltaOutcome.Success(snapshot)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        val msg = e.message.orEmpty()
+        if (msg.contains("HTTP 400") || msg.contains("updated_at", ignoreCase = true) || msg.contains("42703")) {
+            DeltaOutcome.SchemaUnsupported
+        } else {
+            DeltaOutcome.NetworkError
+        }
+    }
+
+    private fun computeServerWatermark(
+        listings: List<Listing>,
+        games: List<Game>,
+        products: List<Product>,
+        fallbackIso: String?,
+    ): String? {
+        var maxInstant = fallbackIso.parseServerInstantOrNull()
+        listings.forEach { l ->
+            val inst = l.updatedAt.parseServerInstantOrNull()
+            if (inst != null && (maxInstant == null || inst.isAfter(maxInstant))) {
+                maxInstant = inst
+            }
+        }
+        games.forEach { g ->
+            val inst = g.updatedAt.parseServerInstantOrNull()
+            if (inst != null && (maxInstant == null || inst.isAfter(maxInstant))) {
+                maxInstant = inst
+            }
+        }
+        products.forEach { p ->
+            val inst = p.updatedAt.parseServerInstantOrNull()
+            if (inst != null && (maxInstant == null || inst.isAfter(maxInstant))) {
+                maxInstant = inst
+            }
+        }
+        return maxInstant?.toString()
+    }
+
+    private fun String?.parseServerInstantOrNull(): Instant? {
+        if (isNullOrBlank()) return null
+        return runCatching { OffsetDateTime.parse(this).toInstant() }
+            .recoverCatching { Instant.parse(this) }
+            .getOrNull()
+    }
+
+    private sealed interface DeltaOutcome {
+        data class Success(val snapshot: RemoteSnapshot) : DeltaOutcome
+        data object SchemaUnsupported : DeltaOutcome
+        data object NetworkError : DeltaOutcome
     }
 
     private suspend fun buildItems(
@@ -767,5 +889,6 @@ class DefaultListingRepository(
 
     private companion object {
         const val USER_ACTIONS_TTL_MS = 60_000L
+        const val FULL_SYNC_INTERVAL_MS = 7L * 24L * 60L * 60L * 1000L
     }
 }

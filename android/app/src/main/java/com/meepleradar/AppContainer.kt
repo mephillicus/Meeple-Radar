@@ -1,11 +1,13 @@
 package com.meepleradar
 
 import android.content.Context
+import com.meepleradar.data.local.RoomLocalCacheStore
 import com.meepleradar.data.local.SharedPreferencesBggCollectionStore
 import com.meepleradar.data.local.SharedPreferencesBggSelectionStore
 import com.meepleradar.data.local.SharedPreferencesFavoriteStore
 import com.meepleradar.data.local.SharedPreferencesLocalCacheStore
 import com.meepleradar.data.local.SharedPreferencesSeenStore
+import com.meepleradar.data.local.db.MeepleRadarDatabase
 import com.meepleradar.data.remote.BggCollectionApi
 import com.meepleradar.data.remote.BggXmlCollectionApi
 import com.meepleradar.data.remote.BoardGameGeekImageLookup
@@ -46,6 +48,8 @@ class AppContainer(context: Context) {
     val bggCollectionStore = SharedPreferencesBggCollectionStore(appContext, json)
     val bggCollectionApi: BggCollectionApi = BggXmlCollectionApi(transport)
 
+    private val database: MeepleRadarDatabase = MeepleRadarDatabase.create(appContext)
+
     private val api: SupabaseApi = SupabaseRestApi(
         baseUrl = BuildConfig.SUPABASE_URL,
         anonKey = BuildConfig.SUPABASE_ANON_KEY,
@@ -56,7 +60,11 @@ class AppContainer(context: Context) {
     val repository: ListingRepository = DefaultListingRepository(
         api = api,
         favoriteStore = SharedPreferencesFavoriteStore(appContext),
-        localCacheStore = SharedPreferencesLocalCacheStore(appContext, json),
+        localCacheStore = RoomLocalCacheStore(
+            context = appContext,
+            database = database,
+            legacyStore = SharedPreferencesLocalCacheStore(appContext, json),
+        ),
         bggCollectionStore = bggCollectionStore,
         seenStore = SharedPreferencesSeenStore(appContext),
     )
