@@ -28,6 +28,13 @@ export const RETRY_DELAY_MS = 30000
 export const THING_BATCH_SIZE = 20
 export const HYDRATE_GAME_LIMIT = 200
 
+const NON_BOARDGAME_PRODUCT_RE =
+  /\b(?:puzzle\s+\d+\s*pezzi|puzzle\s+2d|puzzle\s+3d|booster\s+pack|prerelease\s+box|spotlight\s+deck|starter\s+deck|extra\s+booster|display\s+\d+\s*buste|dice\s+set|dice\s+block|set\s+cancelleria|action\s+figure|pista\s+di\s+biglie|bustine\s+protettive|card\s+sleeves|playmat)\b/i
+
+export function isNonBoardgameProduct(title: string): boolean {
+  return NON_BOARDGAME_PRODUCT_RE.test(title)
+}
+
 type HydratableStore = ListingStore & {
   findGamesMissingMetadata?: (
     limit?: number,
@@ -196,9 +203,20 @@ export async function runBggEnrichment(deps: {
   }
 
   // Lato online (budget)
-  const toProcess = onlineCandidates.filter(
-    (p) => !deps.skipped.shouldSkip(p.normalizedTitle),
-  )
+  const toProcess = onlineCandidates
+    .filter(
+      (p) => !deps.skipped.shouldSkip(p.normalizedTitle) && !isNonBoardgameProduct(p.title),
+    )
+    .sort((a, b) => {
+      const aDate = a.releaseDate ?? null
+      const bDate = b.releaseDate ?? null
+      if (aDate !== null && bDate === null) return -1
+      if (aDate === null && bDate !== null) return 1
+      if (aDate !== null && bDate !== null && aDate !== bDate) {
+        return bDate.localeCompare(aDate)
+      }
+      return b.id - a.id
+    })
   let onlineStopped = false
   for (const product of toProcess) {
     if (onlineStopped || onlineRequests >= ONLINE_BUDGET) break

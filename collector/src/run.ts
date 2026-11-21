@@ -123,6 +123,7 @@ export async function runCollector(args: {
     const sourceStartMs = Date.now()
     let discoveredCount = 0
     let extractedCount = 0
+    console.error(`[collect] starting source ${source.id} (${source.kind})...`)
     try {
       const raw = await adapters[source.kind](source)
       discoveredCount = raw.length
@@ -291,12 +292,14 @@ export async function runCollector(args: {
     } catch (err) {
       failures[source.id] = err instanceof Error ? err.message : String(err)
     } finally {
+      const durationMs = Math.max(0, Date.now() - sourceStartMs)
       metrics[source.id] = {
         discoveredCount,
         extractedCount,
-        durationMs: Math.max(0, Date.now() - sourceStartMs),
+        durationMs,
         httpErrorsByStatus: getSourceHttpErrors ? { ...getSourceHttpErrors(source.id) } : {},
       }
+      console.error(`[collect] source ${source.id} done in ${durationMs}ms (${extractedCount} items)`)
     }
   }
 
@@ -315,8 +318,12 @@ export async function runCollector(args: {
   const report: RunReport = { ok: false, perSource, failures, zeroed, purged, metrics }
 
   if (enrich) {
+    console.error('[collect] starting BGG enrichment...')
     try {
       report.bgg = await enrich()
+      console.error(
+        `[collect] BGG enrichment done (candidates=${report.bgg.candidates}, linked=${report.bgg.linked}, viaCsv=${report.bgg.viaCsv}, viaSearch=${report.bgg.viaSearch}, onlineRequests=${report.bgg.onlineRequests})`,
+      )
     } catch (err) {
       // L'arricchimento e' best-effort: l'errore finisce in report.bgg ma non
       // entra in failures e non tocca ok della run.
@@ -331,6 +338,7 @@ export async function runCollector(args: {
         csvMissing: false,
         error: err instanceof Error ? err.message : String(err),
       }
+      console.error(`[collect] BGG enrichment done with error: ${report.bgg.error}`)
     }
   }
 
@@ -439,21 +447,32 @@ export async function main(): Promise<number> {
   const bggToken = process.env.BGG_API_TOKEN?.trim()
   const bggXmlClient = bggToken ? createBggXmlOnlineClient({ token: bggToken }) : null
 
-  const enrich = () =>
-    runBggEnrichment({
+  const enrich = async () => {
+    console.error('[collect] loading BGG CSV ranks index...')
+    const ranks = loadRanksIndex(['data/boardgames_ranks.csv', 'boardgames_ranks.csv', '../boardgames_ranks.csv'])
+    console.error('[collect] BGG CSV ranks loaded, running CSV matching & online search...')
+    return runBggEnrichment({
       store,
-      ranks: loadRanksIndex(['data/boardgames_ranks.csv', 'boardgames_ranks.csv', '../boardgames_ranks.csv']),
+      ranks,
       ...(bggXmlClient
         ? {
-            searchIds: bggXmlClient.searchIds,
-            fetchGeekItems: bggXmlClient.fetchGeekItems,
+            searchIds: async (query: string) => {
+              console.error(`[collect] BGG online search: "${query}"`)
+              return bggXmlClient.searchIds(query)
+            },
+            fetchGeekItems: async (ids: number[]) => {
+              console.error(`[collect] BGG metadata hydration for ${ids.length} ids...`)
+              return bggXmlClient.fetchGeekItems(ids)
+            },
           }
         : {
             searchIds: async (query: string) => {
+              console.error(`[collect] BGG online search: "${query}"`)
               const html = await createCurlFetcher()(bggSearchUrl(query))
               return html === null ? null : parseSearchIds(html)
             },
             fetchGeekItem: async (id: number) => {
+              console.error(`[collect] BGG metadata hydration for id=${id}...`)
               const res = await defaultFetch(
                 `https://api.geekdo.com/api/geekitems?objectid=${id}&objecttype=thing`,
                 { 'User-Agent': USER_AGENT, Accept: 'application/json' },
@@ -463,6 +482,7 @@ export async function main(): Promise<number> {
           }),
       skipped: createSkipStore('data/bgg-online-skipped.json'),
     })
+  }
 
   const report = await runCollector({
     sources: SOURCES,

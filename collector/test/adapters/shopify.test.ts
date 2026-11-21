@@ -177,3 +177,34 @@ test('legge solo la collection quando indicata', async () => {
   await fetchShopifyProducts('https://shop.example', http, 'preordini')
   expect(urls[0]).toBe('https://shop.example/collections/preordini/products.json?limit=250&page=1')
 })
+
+test('funziona con un oggetto Response nativo di fetch (status/headers su prototype)', async () => {
+  const nativeHttp = async (url: string) => {
+    if (url.includes('page=1')) {
+      return new Response(
+        JSON.stringify({
+          products: [
+            {
+              id: 777,
+              title: 'Native Response Game',
+              handle: 'native-response-game',
+              body_html: '<p>Gioco</p>',
+              variants: [{ price: '29.90', available: true }],
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ) as any
+    }
+    return new Response(JSON.stringify({ products: [] }), { status: 200 }) as any
+  }
+  const out = await fetchShopifyProducts('https://shop.example', nativeHttp, undefined, now)
+  expect(out).toHaveLength(1)
+  expect(out[0]).toMatchObject({
+    externalId: '777',
+    title: 'Native Response Game',
+    url: 'https://shop.example/products/native-response-game',
+    priceRaw: '29.90',
+    availabilityRaw: 'true',
+  })
+})

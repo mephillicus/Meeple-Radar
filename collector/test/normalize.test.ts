@@ -1,15 +1,45 @@
 import { expect, test } from 'vitest'
-import { toPrice, extractReleaseDate, normalizeListing, normalizeTitle } from '../src/normalize.js'
+import {
+  areTitlesNearDuplicate,
+  toPrice,
+  extractReleaseDate,
+  normalizeListing,
+  normalizeTitle,
+} from '../src/normalize.js'
 import { htmlToText } from '../src/text.js'
 
-test('normalizeTitle assimila il suffisso edizione ITA: stesso gioco, non due', () => {
+test('normalizeTitle assimila il suffisso edizione ITA ma mantiene separata l\'edizione inglese', () => {
   expect(normalizeTitle('Black Flag! (ITA)')).toBe('black flag')
   expect(normalizeTitle('BLACK FLAG')).toBe('black flag')
   expect(normalizeTitle('Bunny 100 (ITA)')).toBe('bunny 100')
+  expect(normalizeTitle('Clue: One Piece (EDIZIONE INGLESE)')).toBe('clue one piece edizione inglese')
+  expect(normalizeTitle('One Piece: Nakama - ENG')).toBe('one piece nakama eng')
   // Titoli che contengono ita in altro modo restano se stessi.
   expect(normalizeTitle('Akita')).toBe('akita')
   expect(normalizeTitle('Dita')).toBe('dita')
   expect(normalizeTitle('Ita')).toBe('ita')
+})
+
+test('normalizeTitle deduplica varianti di punteggiatura, minuti, suffissi descrittivi e parole censurate', () => {
+  expect(normalizeTitle('5 Minutes: One Piece')).toBe('5 minute one piece')
+  expect(normalizeTitle('5 Minute: One Piece')).toBe('5 minute one piece')
+  expect(normalizeTitle('5-Minute One Piece')).toBe('5 minute one piece')
+  expect(normalizeTitle('7 LIVES')).toBe('7 lives')
+  expect(normalizeTitle('7 Lives - Il Gioco di Carte')).toBe('7 lives')
+  expect(normalizeTitle('Adult S#!ts')).toBe('adult shits')
+  expect(normalizeTitle('Adult Shits')).toBe('adult shits')
+  expect(normalizeTitle('AVVENTURE E MISTERI/CATTIVI')).toBe('avventure e misteri cattivi')
+  // Un titolo che consiste solo nel suffisso non viene svuotato
+  expect(normalizeTitle('Gioco di Carte')).toBe('gioco di carte')
+})
+
+test('areTitlesNearDuplicate cattura varianti tipografiche/censurate vicine senza fondere numeri diversi', () => {
+  expect(areTitlesNearDuplicate('adult sts', 'adult shits')).toBe(true)
+  expect(areTitlesNearDuplicate('adult shits', 'adult shits')).toBe(true)
+  expect(areTitlesNearDuplicate('dune 1', 'dune 2')).toBe(false)
+  expect(areTitlesNearDuplicate('dune imperium 1', 'dune imperium 2')).toBe(false)
+  expect(areTitlesNearDuplicate('catan', 'catan')).toBe(true)
+  expect(areTitlesNearDuplicate('catan', 'caton')).toBe(false)
 })
 
 test('converts minor units to a decimal price', () => {

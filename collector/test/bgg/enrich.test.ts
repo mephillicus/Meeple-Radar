@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { runBggEnrichment, ONLINE_BUDGET } from '../../src/bgg/enrich.js'
+import { runBggEnrichment, ONLINE_BUDGET, isNonBoardgameProduct } from '../../src/bgg/enrich.js'
 import { parseRanksCsv, buildRanksIndex } from '../../src/bgg/csv-ranks.js'
 import type { GeekItem } from '../../src/bgg/online.js'
 
@@ -382,4 +382,49 @@ test('match CSV su game già esistente aggiorna bggRating e bggRank via updateGa
     bggRating: 7.4,
     bggRank: 10,
   })
+})
+
+test('isNonBoardgameProduct identifica puzzle, bustine TCG, dadi e accessori ma non giochi da tavolo', () => {
+  expect(isNonBoardgameProduct('One Piece Puzzle 1000 pezzi')).toBe(true)
+  expect(isNonBoardgameProduct('Star Wars Booster Pack')).toBe(true)
+  expect(isNonBoardgameProduct('Bustine Protettive Standard')).toBe(true)
+  expect(isNonBoardgameProduct('D&D Dice Set')).toBe(true)
+  expect(isNonBoardgameProduct('Lorcana Playmat')).toBe(true)
+  expect(isNonBoardgameProduct('Carcassonne')).toBe(false)
+  expect(isNonBoardgameProduct('5-Minute One Piece')).toBe(false)
+})
+
+test('coda ricerca online: esclude non-boardgame e dà priorità a releaseDate decrescente poi id decrescente', async () => {
+  const store = storeBase([
+    { id: 10, title: 'Gioco Senza Data Vecchio', normalizedTitle: 'gioco senza data vecchio', releaseDate: null } as any,
+    { id: 11, title: 'Puzzle 1000 pezzi Castello', normalizedTitle: 'puzzle 1000 pezzi castello', releaseDate: '2026-12-01' } as any,
+    { id: 12, title: 'Gioco Uscita Maggio', normalizedTitle: 'gioco uscita maggio', releaseDate: '2026-05-10' } as any,
+    { id: 15, title: 'Gioco Senza Data Nuovo', normalizedTitle: 'gioco senza data nuovo', releaseDate: null } as any,
+    { id: 14, title: 'Gioco Uscita Novembre', normalizedTitle: 'gioco uscita novembre', releaseDate: '2026-11-20' } as any,
+    { id: 16, title: 'Bustine Protettive 63x88', normalizedTitle: 'bustine protettive 63x88', releaseDate: null } as any,
+  ])
+  const searchedQueries: string[] = []
+  const searchIds = vi.fn().mockImplementation(async (q: string) => {
+    searchedQueries.push(q)
+    return []
+  })
+  const sleep = vi.fn().mockResolvedValue(undefined)
+
+  await runBggEnrichment({
+    store,
+    ranks: buildRanksIndex([]),
+    searchIds,
+    fetchGeekItem: vi.fn(),
+    skipped: skipBase(),
+    sleep,
+  })
+
+  // I 2 prodotti non-boardgame (Puzzle 1000 pezzi, Bustine Protettive) sono esclusi;
+  // i 4 giochi sono ordinati per releaseDate desc ('2026-11-20', '2026-05-10'), poi undated id desc (15, 10).
+  expect(searchedQueries).toEqual([
+    'Gioco Uscita Novembre',
+    'Gioco Uscita Maggio',
+    'Gioco Senza Data Nuovo',
+    'Gioco Senza Data Vecchio',
+  ])
 })

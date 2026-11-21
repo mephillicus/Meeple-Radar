@@ -1,16 +1,57 @@
 import type { Listing, RawProduct } from './types.js'
 import { decodeHtml, htmlToText } from './text.js'
 
+const TRAILING_SUFFIX_RE =
+  /\s+(?:edizione italiana|ed italiana|italiano|ita|il gioco di carte|gioco di carte|il gioco da tavolo|gioco da tavolo|card game|board game)$/
+
 export function normalizeTitle(title: string): string {
-  // Il suffisso edizione locale "(ITA)" non è parte del nome: senza toglierlo
-  // lo stesso gioco nasce due volte (es. "Black Flag!" vs "Black Flag! (ITA)").
-  // Dopo la rimozione della punteggiatura il suffisso è sempre il token finale.
-  return title
-    .toLowerCase()
-    .replace(/[^\w\s]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\s+ita$/, '')
+  // Normalizzazione deterministica anti-duplicato (allineata 1:1 con SQL public.normalize_collector_title):
+  // 1. Lowercase
+  let s = title.toLowerCase()
+  // 2. De-offuscamento parole censurate (es. "Adult S#!ts" -> "adult shits")
+  s = s.replace(/\bs#!t(s?)\b/g, 'shit$1').replace(/\bsh!t(s?)\b/g, 'shit$1')
+  // 3. Punteggiatura separatrice (-, –, —, /, :) -> spazio prima di rimuovere i caratteri non-word
+  s = s.replace(/[-–—/:]+/g, ' ')
+  // 4. Rimozione caratteri non-word/non-space residui e collasso spazi
+  s = s.replace(/[^\w\s]/gu, '').replace(/\s+/g, ' ').trim()
+  // 5. Uniforma "<N> minutes" in "<N> minute"
+  s = s.replace(/\b(\d+)\s+minutes\b/g, '$1 minute')
+  // 6. Rimuove suffissi generici di edizione/formato in coda (fino a 3 passate),
+  //    solo se preceduti da almeno una parola (\s+).
+  for (let i = 0; i < 3; i++) {
+    const next = s.replace(TRAILING_SUFFIX_RE, '')
+    if (next === s) break
+    s = next
+  }
+  return s
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const m = a.length
+  const n = b.length
+  const dp: number[] = Array.from({ length: n + 1 }, (_, j) => j)
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0]
+    dp[0] = i
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j]
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost)
+      prev = temp
+    }
+  }
+  return dp[n]
+}
+
+export function areTitlesNearDuplicate(normA: string, normB: string): boolean {
+  if (normA === normB) return true
+  if (normA.length < 8 || normB.length < 8) return false
+  const firstWordA = normA.split(/\s+/)[0] ?? ''
+  const firstWordB = normB.split(/\s+/)[0] ?? ''
+  if (firstWordA.length < 3 || firstWordA !== firstWordB) return false
+  if (Math.abs(normA.length - normB.length) > 2) return false
+  if (normA.replace(/\D+/g, '') !== normB.replace(/\D+/g, '')) return false
+  return levenshteinDistance(normA, normB) <= 2
 }
 
 export function toPrice(priceRaw?: string, minorUnit?: number): number | null {

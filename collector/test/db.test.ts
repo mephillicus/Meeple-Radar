@@ -512,6 +512,23 @@ test('setProductGame: filtro is(game_id, null) e false se non scritto', async ()
   expect(is).toHaveBeenCalledWith('game_id', null)
 })
 
+test('setProductGame: invoca merge_duplicate_products_for_game best-effort quando aggiorna e tollera errori RPC', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [{ id: 9 }], error: null })
+  const is = vi.fn(() => ({ select }))
+  const eq = vi.fn(() => ({ is }))
+  const update = vi.fn(() => ({ eq }))
+  const from = vi.fn(() => ({ update }))
+  const rpc = vi.fn().mockResolvedValue({ data: 9, error: null })
+  const store = createSupabaseStore({ from, rpc } as any)
+
+  expect(await store.setProductGame(9, 4)).toBe(true)
+  expect(rpc).toHaveBeenCalledWith('merge_duplicate_products_for_game', { p_game_id: 4 })
+
+  // Tollera il rigetto della RPC su mock o DB pre-0018
+  rpc.mockRejectedValueOnce(new Error('function merge_duplicate_products_for_game does not exist'))
+  expect(await store.setProductGame(10, 4)).toBe(true)
+})
+
 test('fillListingGame: aggiorna solo listings del prodotto e ritorna il conteggio', async () => {
   const select = vi.fn().mockResolvedValue({ data: [{ id: 1 }, { id: 2 }], error: null })
   const is = vi.fn(() => ({ select }))

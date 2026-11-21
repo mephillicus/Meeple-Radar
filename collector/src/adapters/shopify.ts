@@ -81,12 +81,19 @@ export async function fetchShopifyProducts(
     async (url, headers) => {
       const res = await http(url, headers)
       return {
-        ...res,
+        status: res.status,
+        headers: res.headers,
+        json: () => res.json(),
         text: async () => {
-          const text = await res.text()
-          if (text) return text
-          const json = await res.json()
-          return json === undefined ? '' : JSON.stringify(json)
+          if (typeof res.text === 'function') {
+            const text = await res.text()
+            if (text) return text
+          }
+          if (typeof res.json === 'function') {
+            const json = await res.json()
+            return json === undefined ? '' : JSON.stringify(json)
+          }
+          return ''
         },
       }
     },

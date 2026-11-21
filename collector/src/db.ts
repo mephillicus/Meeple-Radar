@@ -637,7 +637,15 @@ export function createSupabaseStore(
           .select('id')
       )) as { data: Record<string, unknown>[] | null; error: { message: string } | null }
       if (error) throw new Error(`setProductGame(${productId}, ${gameId}): ${error.message}`)
-      return (data ?? []).length > 0
+      const updated = (data ?? []).length > 0
+      if (updated && typeof client.rpc === 'function') {
+        try {
+          await client.rpc('merge_duplicate_products_for_game', { p_game_id: gameId })
+        } catch {
+          // Best-effort: i mock o i database pre-0018 non devono fallire.
+        }
+      }
+      return updated
     },
 
     // Write-once sulle listing del prodotto: solo le listing ancora senza
