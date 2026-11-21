@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MeepleRadar" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.MeepleRadar" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/splash_background</item>
+    </style>
+
+    <style name="Theme.MeepleRadar.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.MeepleRadar</item>
+    </style>
 </resources>

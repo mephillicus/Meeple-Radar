@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -82,9 +83,10 @@ fun MeepleRadarNav(container: AppContainer, modifier: Modifier = Modifier) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceContainer),
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .navigationBarsPadding(),
                 ) {
-                    NavigationBar {
+                    NavigationBar(windowInsets = WindowInsets(0)) {
                         NavigationBarItem(
                             selected = currentRoute == ROUTE_INCOMING,
                             onClick = { navController.switchTab(ROUTE_INCOMING) },

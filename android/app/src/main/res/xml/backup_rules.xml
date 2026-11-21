@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Esclude i dati cifrati con AndroidKeyStore (non ripristinabili su un altro dispositivo) e la cache rigenerabile -->
+    <exclude domain="sharedpref" path="meeple_radar_bgg_collection.xml" />
+    <exclude domain="sharedpref" path="meeple_radar_db_cache.xml" />
+</full-backup-content>
