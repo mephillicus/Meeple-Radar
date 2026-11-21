@@ -63,6 +63,12 @@ interface ListingRepository {
 
     suspend fun setAction(key: String, action: Action)
 
+    suspend fun ignoredItems(today: LocalDate): List<IncomingItem> = emptyList()
+
+    suspend fun restoreIgnored(key: String) {
+        setAction(key, Action.UNFAVORITED)
+    }
+
     fun seenKeys(): Set<String> = emptySet()
 
     fun markLocalSeen(key: String, seen: Boolean = true) {}
@@ -389,12 +395,59 @@ class DefaultListingRepository(
             runCatching { api.insertAction(row) }
         }
 
-        if (action == Action.IGNORED) {
+        if (action == Action.IGNORED || action == Action.UNFAVORITED) {
             localCacheStore?.load()?.let { cached ->
                 val actionsMap = latestActionsByKey(cachedUserActions.orEmpty())
                 val ignoredKeys = actionsMap.filterValues { it == Action.IGNORED }.keys
                 syncDerivedFlows(cached, ignoredKeys, LocalDate.now())
             }
+        }
+    }
+
+    override suspend fun ignoredItems(today: LocalDate): List<IncomingItem> {
+        val userActions = getUserActions(forceRefresh = false)
+        val actionsMap = latestActionsByKey(userActions)
+        val ignoredKeys = actionsMap.filterValues { it == Action.IGNORED }.keys
+        if (ignoredKeys.isEmpty()) return emptyList()
+        val db = ensureDatabase(forceRefresh = false)
+        if (db.listings.isEmpty()) return emptyList()
+        val remoteSeenKeys = userActions.filter { it.action == Action.SEEN }.mapNotNull { it.keyOrNull() }.toSet()
+        val seenKeys = seenStore?.keys().orEmpty() + remoteSeenKeys
+        return withContext(Dispatchers.Default) {
+            val games = db.games.associateBy { it.id }
+            val sources = db.sources.associateBy { it.id }
+            val products = db.products.associateBy { it.id }
+            val allItems = buildIncomingItems(
+                listings = db.listings,
+                games = games,
+                sources = sources,
+                ignoredKeys = emptySet(),
+                today = today,
+                sourceIds = null,
+                includeUndated = true,
+                includePriceless = true,
+                products = products,
+                newlyAddedListingIds = db.newlyAddedListingIds,
+                seenKeys = seenKeys,
+            )
+            allItems.filter { item ->
+                item.key in ignoredKeys || item.bggSelectionKeys.any { it in ignoredKeys }
+            }
+        }
+    }
+
+    override suspend fun restoreIgnored(key: String) {
+        val currentlyIgnored = currentIgnoredKeys()
+        if (key in currentlyIgnored) {
+            setAction(key, Action.UNFAVORITED)
+            return
+        }
+        val matchingItem = findItem(key, LocalDate.now())
+        val matchingIgnoredKeys = matchingItem?.bggSelectionKeys?.filter { it in currentlyIgnored }.orEmpty()
+        if (matchingIgnoredKeys.isNotEmpty()) {
+            matchingIgnoredKeys.forEach { setAction(it, Action.UNFAVORITED) }
+        } else {
+            setAction(key, Action.UNFAVORITED)
         }
     }
 
@@ -706,7 +759,9 @@ class DefaultListingRepository(
     }
 
     private fun latestActionsByKey(actions: List<UserActionRow>): Map<String, Action> =
-        actions.mapNotNull { row -> row.keyOrNull()?.let { it to row.action } }
+        actions
+            .filter { it.action != Action.SEEN }
+            .mapNotNull { row -> row.keyOrNull()?.let { it to row.action } }
             .distinctBy { (key, _) -> key }
             .toMap()
 

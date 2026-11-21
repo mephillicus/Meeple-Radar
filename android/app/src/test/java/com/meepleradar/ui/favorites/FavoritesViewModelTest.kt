@@ -4,6 +4,8 @@ import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.GameSavePreview
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
+import com.meepleradar.data.model.Offer
+import com.meepleradar.data.model.Price
 import com.meepleradar.data.model.Source
 import com.meepleradar.data.repo.ListingRepository
 import com.meepleradar.ui.incoming.IncomingUiState
@@ -42,9 +44,11 @@ class FavoritesViewModelTest {
 
     private class FakeRepo(
         private val favoriteItems: List<IncomingItem> = emptyList(),
+        private val ignoredList: MutableList<IncomingItem> = mutableListOf(),
         private val failure: Throwable? = null,
     ) : ListingRepository {
         val actions = mutableListOf<Pair<String, Action>>()
+        val restoredKeys = mutableListOf<String>()
         var requestedSourceIds: Set<String>? = emptySet()
 
         override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> = emptyList()
@@ -53,6 +57,13 @@ class FavoritesViewModelTest {
             requestedSourceIds = sourceIds
             failure?.let { throw it }
             return favoriteItems
+        }
+
+        override suspend fun ignoredItems(today: LocalDate): List<IncomingItem> = ignoredList.toList()
+
+        override suspend fun restoreIgnored(key: String) {
+            restoredKeys += key
+            ignoredList.removeAll { it.key == key }
         }
 
         override suspend fun sources(): List<Source> = emptyList()
@@ -162,5 +173,56 @@ class FavoritesViewModelTest {
 
         assertEquals(listOf("game:5" to Action.IGNORED), repo.actions)
         assertTrue((viewModel.state.value as IncomingUiState.Content).items.isEmpty())
+        assertEquals(listOf("game:5"), viewModel.ignoredItems.value.map { it.key })
+    }
+
+    @Test
+    fun `ricerca e chip disponibilita filtrano i preferiti`() = runTest(dispatcher) {
+        val available = item("game:1").copy(
+            title = "Catan",
+            offers = listOf(Offer("s1", "Store", Price(35.0, "EUR"), "url1", "InStock")),
+        )
+        val preorder = item("game:2").copy(
+            title = "Brass",
+            releaseDate = today.plusDays(15),
+            offers = listOf(Offer("s1", "Store", Price(60.0, "EUR"), "url2", "PreOrder", today.plusDays(15))),
+        )
+        val soldOut = item("game:3").copy(
+            title = "Dune",
+            offers = listOf(Offer("s1", "Store", Price(50.0, "EUR"), "url3", "OutOfStock")),
+        )
+        val viewModel = FavoritesViewModel(FakeRepo(listOf(available, preorder, soldOut)), today)
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        viewModel.setAvailabilityFilter(FavoriteAvailabilityFilter.AVAILABLE)
+        assertEquals(listOf("game:1"), (viewModel.state.value as IncomingUiState.Content).items.map { it.key })
+
+        viewModel.setAvailabilityFilter(FavoriteAvailabilityFilter.PREORDER)
+        assertEquals(listOf("game:2"), (viewModel.state.value as IncomingUiState.Content).items.map { it.key })
+
+        viewModel.setAvailabilityFilter(FavoriteAvailabilityFilter.UNAVAILABLE)
+        assertEquals(listOf("game:3"), (viewModel.state.value as IncomingUiState.Content).items.map { it.key })
+
+        viewModel.setAvailabilityFilter(FavoriteAvailabilityFilter.ALL)
+        viewModel.setSearchQuery("cat")
+        assertEquals(listOf("game:1"), (viewModel.state.value as IncomingUiState.Content).items.map { it.key })
+    }
+
+    @Test
+    fun `restoreIgnored rimuove il gioco dagli ignorati e chiama il repository`() = runTest(dispatcher) {
+        val ignoredItem = item("game:9")
+        val repo = FakeRepo(ignoredList = mutableListOf(ignoredItem))
+        val viewModel = FavoritesViewModel(repo, today)
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf("game:9"), viewModel.ignoredItems.value.map { it.key })
+
+        viewModel.restoreIgnored(ignoredItem)
+        advanceUntilIdle()
+
+        assertEquals(listOf("game:9"), repo.restoredKeys)
+        assertTrue(viewModel.ignoredItems.value.isEmpty())
     }
 }

@@ -527,4 +527,53 @@ class DefaultListingRepositoryTest {
         val incomingItem = incoming.single { it.key == "game:6" }
         org.junit.Assert.assertTrue(incomingItem.isSeen)
     }
+
+    @Test
+    fun `Action SEEN piu recente non maschera IGNORED ne FAVORITE`() = runTest {
+        val l1 = listing(id = 1, gameId = 5, title = "Ignorato", releaseDate = today.plusDays(2))
+        val l2 = listing(id = 2, gameId = 6, title = "Preferito", releaseDate = today.plusDays(3))
+        val games = listOf(game(5, "Ignorato"), game(6, "Preferito"))
+        val sources = listOf(Source("s1", "Store Uno"))
+        val cache = FakeLocalCacheStore(CachedDatabase(listings = listOf(l1, l2), games = games, sources = sources))
+        val api = FakeSupabaseApi(
+            listings = listOf(l1, l2),
+            games = games,
+            sources = sources,
+            actions = listOf(
+                UserActionRow(gameId = 5, listingId = null, action = Action.SEEN),
+                UserActionRow(gameId = 5, listingId = null, action = Action.IGNORED),
+                UserActionRow(gameId = 6, listingId = null, action = Action.SEEN),
+                UserActionRow(gameId = 6, listingId = null, action = Action.FAVORITE),
+            ),
+        )
+        val repository = DefaultListingRepository(api, FakeFavoriteStore(), cache)
+
+        assertEquals(listOf("game:6"), repository.incoming(today).map { it.key })
+        assertEquals(setOf("game:6"), repository.favoriteKeys(today))
+        assertEquals(listOf("game:5"), repository.ignoredItems(today).map { it.key })
+    }
+
+    @Test
+    fun `ignoredItems e restoreIgnored ripristinano il gioco in lista`() = runTest {
+        val l1 = listing(id = 1, gameId = 5, title = "Catan", releaseDate = today.plusDays(2))
+        val games = listOf(game(5, "Catan"))
+        val sources = listOf(Source("s1", "Store Uno"))
+        val cache = FakeLocalCacheStore(CachedDatabase(listings = listOf(l1), games = games, sources = sources))
+        val api = FakeSupabaseApi(
+            listings = listOf(l1),
+            games = games,
+            sources = sources,
+            actions = listOf(UserActionRow(gameId = 5, listingId = null, action = Action.IGNORED)),
+        )
+        val repository = DefaultListingRepository(api, FakeFavoriteStore(), cache)
+
+        assertEquals(emptyList<String>(), repository.incoming(today).map { it.key })
+        assertEquals(listOf("game:5"), repository.ignoredItems(today).map { it.key })
+
+        repository.restoreIgnored("game:5")
+
+        assertEquals(emptyList<String>(), repository.ignoredItems(today).map { it.key })
+        assertEquals(listOf("game:5"), repository.incoming(today).map { it.key })
+        assertEquals(Action.UNFAVORITED, api.inserted.last().action)
+    }
 }

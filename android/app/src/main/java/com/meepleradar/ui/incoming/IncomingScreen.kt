@@ -1,79 +1,59 @@
 package com.meepleradar.ui.incoming
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
-import com.meepleradar.data.model.Source
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.ui.components.AlphabetFastScroller
+import com.meepleradar.ui.components.CompactSearchBar
 import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.components.ErrorView
-import com.meepleradar.ui.components.HideFilterChipsSection
+import com.meepleradar.ui.components.IgnoredGamesSheet
 import com.meepleradar.ui.components.ListingCard
+import com.meepleradar.ui.components.ListingFilterDrawerOverlay
+import com.meepleradar.ui.components.ListingSortOption
 import com.meepleradar.ui.components.LoadingView
 import com.meepleradar.ui.components.MarkAllSeenButton
 import com.meepleradar.ui.components.MarkAllSeenConfirmDialog
@@ -81,8 +61,9 @@ import com.meepleradar.ui.components.MeepleVector
 import com.meepleradar.ui.components.ScreenContentInsets
 import com.meepleradar.ui.components.ScreenHeader
 import com.meepleradar.ui.components.UnseenFilterPill
-import kotlinx.coroutines.launch
+import com.meepleradar.ui.components.isAlphabetical
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IncomingScreen(
     vm: IncomingViewModel,
@@ -91,20 +72,23 @@ fun IncomingScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val isRefreshing by vm.isRefreshing.collectAsStateWithLifecycle()
     val sources by vm.sources.collectAsStateWithLifecycle()
     val selectedSources by vm.selectedSources.collectAsStateWithLifecycle()
     val hideUndated by vm.hideUndated.collectAsStateWithLifecycle()
     val hidePriceless by vm.hidePriceless.collectAsStateWithLifecycle()
     val hideSeen by vm.hideSeen.collectAsStateWithLifecycle()
     val selectedAvailability by vm.selectedAvailability.collectAsStateWithLifecycle()
+    val sortOption by vm.sortOption.collectAsStateWithLifecycle()
     val syncProgress by vm.syncProgress.collectAsStateWithLifecycle()
     val searchQueryState by vm.searchQuery.collectAsStateWithLifecycle()
+    val ignoredItems by vm.ignoredItems.collectAsStateWithLifecycle()
     val newlyAddedCount by vm.newlyAddedCountFlow.collectAsStateWithLifecycle()
     val unseenCount by vm.unseenCount.collectAsStateWithLifecycle()
 
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    var isFilterDrawerOpen by remember { mutableStateOf(false) }
     var showMarkAllSeenDialog by remember { mutableStateOf(false) }
+    var showIgnoredSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.refreshSeenStatus()
@@ -117,6 +101,7 @@ fun IncomingScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             val selSources = selectedSources
             val hasActiveFilters = hideUndated || hidePriceless || hideSeen ||
+                sortOption != ListingSortOption.DEFAULT ||
                 (selSources != null && selSources.size < sources.size) ||
                 selectedAvailability.size < AvailabilityStatus.entries.size
 
@@ -168,20 +153,17 @@ fun IncomingScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // Filtro rapido Non visti (nascondi già visti)
                         UnseenFilterPill(
                             unseenCount = unseenCount,
                             hideSeen = hideSeen,
                             onToggle = { vm.toggleHideSeen() },
                         )
 
-                        // Tasto Segna tutti come già visti (con conferma)
                         MarkAllSeenButton(
                             unseenCount = unseenCount,
                             onClick = { showMarkAllSeenDialog = true },
                         )
 
-                        // Compact Grouped Refresh + Filter Buttons (No text "Filtri")
                         Row(
                             modifier = Modifier
                                 .height(34.dp)
@@ -206,7 +188,7 @@ fun IncomingScreen(
                             }
 
                             IconButton(
-                                onClick = { scope.launch { drawerState.open() } },
+                                onClick = { isFilterDrawerOpen = true },
                                 modifier = Modifier.size(30.dp),
                             ) {
                                 Icon(
@@ -221,84 +203,11 @@ fun IncomingScreen(
                 },
             )
 
-            // Campo di ricerca compatto su riga dedicata
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 8.dp)
-                    .height(36.dp),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    BasicTextField(
-                        value = searchQueryState,
-                        onValueChange = { vm.setSearchQuery(it) },
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
-                        modifier = Modifier.weight(1f),
-                        decorationBox = { innerTextField ->
-                            if (searchQueryState.isEmpty()) {
-                                Text(
-                                    "Cerca nella lista...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                )
-                            }
-                            innerTextField()
-                        },
-                    )
-
-                    Box(
-                        modifier = Modifier.size(20.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Crossfade(
-                            targetState = searchQueryState.isNotEmpty(),
-                            animationSpec = tween(durationMillis = 180),
-                            label = "searchAction",
-                        ) { showClear ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .then(
-                                        if (showClear) {
-                                            Modifier.clickable(
-                                                onClickLabel = "Cancella",
-                                                role = Role.Button,
-                                            ) { vm.setSearchQuery("") }
-                                        } else {
-                                            Modifier
-                                        },
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (showClear) {
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        contentDescription = "Cancella",
-                                        modifier = Modifier.size(14.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Filled.Search,
-                                        contentDescription = "Cerca",
-                                        modifier = Modifier.size(15.dp),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            CompactSearchBar(
+                query = searchQueryState,
+                placeholder = "Cerca nella lista...",
+                onQueryChange = vm::setSearchQuery,
+            )
 
             if (syncProgress is SyncProgressState.Progress) {
                 SyncProgressCard(progress = syncProgress as SyncProgressState.Progress)
@@ -312,81 +221,96 @@ fun IncomingScreen(
                     onRetry = { vm.refresh() },
                 )
 
-                is IncomingUiState.Content -> if (current.items.isEmpty()) {
-                    EmptyView("Nessuna uscita in arrivo con i filtri selezionati")
-                } else {
-                    val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        LazyColumn(
-                            state = lazyListState,
-                            contentPadding = PaddingValues(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxSize(),
+                is IncomingUiState.Content -> PullToRefreshBox(
+                    isRefreshing = isRefreshing,
+                    onRefresh = { vm.refresh(showLoadingState = false) },
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                ) {
+                    if (current.items.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
                         ) {
-                            items(current.items.size, key = { current.items[it].key }) { index ->
-                                val item = current.items[index]
-                                ListingCard(
-                                    item = item,
-                                    isFavorite = item.key in current.favorites,
-                                    onOpen = { onOpen(item) },
-                                    onToggleFavorite = { vm.toggleFavorite(item) },
-                                    onIgnore = { vm.ignore(item) },
-                                    imageLookup = imageLookup,
+                            EmptyView("Nessuna uscita in arrivo con i filtri selezionati")
+                        }
+                    } else {
+                        val lazyListState = rememberLazyListState()
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            LazyColumn(
+                                state = lazyListState,
+                                contentPadding = PaddingValues(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                items(current.items.size, key = { current.items[it].key }) { index ->
+                                    val item = current.items[index]
+                                    ListingCard(
+                                        item = item,
+                                        isFavorite = item.key in current.favorites,
+                                        onOpen = { onOpen(item) },
+                                        onToggleFavorite = { vm.toggleFavorite(item) },
+                                        onIgnore = { vm.ignore(item) },
+                                        imageLookup = imageLookup,
+                                    )
+                                }
+                            }
+
+                            if (sortOption.isAlphabetical) {
+                                AlphabetFastScroller(
+                                    items = current.items,
+                                    lazyListState = lazyListState,
+                                    modifier = Modifier.fillMaxSize(),
                                 )
                             }
                         }
-
-                        AlphabetFastScroller(
-                            items = current.items,
-                            lazyListState = lazyListState,
-                            modifier = Modifier.fillMaxSize(),
-                        )
                     }
                 }
             }
         }
     }
 
-    // Full Screen Drawer Overlay (Overlaps even bottom navigation bar)
-    if (drawerState.isOpen) {
-        Popup(
-            onDismissRequest = { scope.launch { drawerState.close() } },
-            properties = PopupProperties(focusable = true, clippingEnabled = false),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .clickable { scope.launch { drawerState.close() } },
-            ) {
-                ModalDrawerSheet(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(320.dp)
-                        .clickable(enabled = false) {},
-                ) {
-                    FilterDrawerContent(
-                        sources = sources,
-                        selectedSources = selectedSources,
-                        hideUndated = hideUndated,
-                        hidePriceless = hidePriceless,
-                        hideSeen = hideSeen,
-                        selectedAvailability = selectedAvailability,
-                        onApply = { newSelectedSources, newHideUndated, newHidePriceless, newHideSeen, newAvailability ->
-                            vm.applyFilters(newSelectedSources, newHideUndated, newHidePriceless, newHideSeen, newAvailability)
-                            scope.launch { drawerState.close() }
-                        },
-                        onReset = {
-                            vm.resetFilters()
-                            scope.launch { drawerState.close() }
-                        },
-                        onClose = {
-                            scope.launch { drawerState.close() }
-                        },
-                    )
-                }
-            }
-        }
+    if (isFilterDrawerOpen) {
+        ListingFilterDrawerOverlay(
+            sources = sources,
+            selectedSources = selectedSources,
+            hideUndated = hideUndated,
+            hidePriceless = hidePriceless,
+            hideSeen = hideSeen,
+            selectedAvailability = selectedAvailability,
+            sortOption = sortOption,
+            onSortOptionChange = vm::setSortOption,
+            ignoredCount = ignoredItems.size,
+            onManageIgnored = {
+                isFilterDrawerOpen = false
+                vm.loadIgnoredItems()
+                showIgnoredSheet = true
+            },
+            onApply = { newSelectedSources, newHideUndated, newHidePriceless, newHideSeen, newAvailability, newSort ->
+                vm.applyFilters(
+                    newSelectedSources,
+                    newHideUndated,
+                    newHidePriceless,
+                    newHideSeen,
+                    newAvailability,
+                    newSort,
+                )
+                isFilterDrawerOpen = false
+            },
+            onReset = {
+                vm.resetFilters()
+                isFilterDrawerOpen = false
+            },
+            onClose = { isFilterDrawerOpen = false },
+        )
+    }
+
+    if (showIgnoredSheet) {
+        IgnoredGamesSheet(
+            ignoredItems = ignoredItems,
+            onRestore = vm::restoreIgnored,
+            onDismiss = { showIgnoredSheet = false },
+        )
     }
 
     if (showMarkAllSeenDialog) {
@@ -448,327 +372,6 @@ fun SyncProgressCard(progress: SyncProgressState.Progress, modifier: Modifier = 
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
             )
-        }
-    }
-}
-
-@Composable
-private fun FilterDrawerContent(
-    sources: List<Source>,
-    selectedSources: Set<String>?,
-    hideUndated: Boolean,
-    hidePriceless: Boolean,
-    hideSeen: Boolean,
-    selectedAvailability: Set<AvailabilityStatus>,
-    onApply: (Set<String>?, Boolean, Boolean, Boolean, Set<AvailabilityStatus>) -> Unit,
-    onReset: () -> Unit,
-    onClose: () -> Unit,
-) {
-    var localHideUndated by remember(hideUndated) { mutableStateOf(hideUndated) }
-    var localHidePriceless by remember(hidePriceless) { mutableStateOf(hidePriceless) }
-    var localHideSeen by remember(hideSeen) { mutableStateOf(hideSeen) }
-    var localSelectedSources by remember(selectedSources, sources) {
-        mutableStateOf(
-            selectedSources?.toMutableSet() ?: sources.map { it.id }.toMutableSet(),
-        )
-    }
-    var localAvailability by remember(selectedAvailability) {
-        mutableStateOf(selectedAvailability.toMutableSet())
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Filtri e Opzioni", style = MaterialTheme.typography.titleMedium)
-            IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
-                Icon(Icons.Filled.Close, contentDescription = "Chiudi", modifier = Modifier.size(16.dp))
-            }
-        }
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-
-        val sourcesForApply = {
-            if (sources.isEmpty() || localSelectedSources.size == sources.size) null else localSelectedSources.toSet()
-        }
-
-        // Section 1: Nascondi con FilterChip che vanno a capo se serve
-        HideFilterChipsSection(
-            hideUndated = localHideUndated,
-            hidePriceless = localHidePriceless,
-            hideSeen = localHideSeen,
-            onToggleUndated = {
-                localHideUndated = !localHideUndated
-                onApply(sourcesForApply(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
-            },
-            onTogglePriceless = {
-                localHidePriceless = !localHidePriceless
-                onApply(sourcesForApply(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
-            },
-            onToggleSeen = {
-                localHideSeen = !localHideSeen
-                onApply(sourcesForApply(), localHideUndated, localHidePriceless, localHideSeen, localAvailability.toSet())
-            },
-        )
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-
-        // Section 2: Tipologia Disponibilità (Tabella 2 colonne con pulsanti verticali a Sx)
-        val allAvailability = remember { AvailabilityStatus.entries.toSet() }
-
-        val availabilityOptions = listOf(
-            AvailabilityStatus.AVAILABLE to "Disponibile",
-            AvailabilityStatus.PREORDER to "Preordine",
-            AvailabilityStatus.BACKORDER to "Su richiesta",
-            AvailabilityStatus.UNAVAILABLE to "Non disponibile",
-            AvailabilityStatus.DISCONTINUED to "Fuori produzione",
-            AvailabilityStatus.UNKNOWN to "Da verificare",
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SquareSelectButtonsVertical(
-                onSelectAll = { localAvailability = allAvailability.toMutableSet() },
-                onDeselectAll = { localAvailability = mutableSetOf() },
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-            ) {
-                availabilityOptions.chunked(2).forEach { rowOptions ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        rowOptions.forEach { (status, label) ->
-                            val isSelected = status in localAvailability
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    val next = localAvailability.toMutableSet()
-                                    if (isSelected) next.remove(status) else next.add(status)
-                                    localAvailability = next
-                                },
-                                label = {
-                                    Text(
-                                        text = label,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontSize = 11.sp,
-                                    )
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-
-        // Section 3: Negozi
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Negozi (${localSelectedSources.size}/${sources.size})",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            SquareSelectButtonsHorizontal(
-                onSelectAll = { localSelectedSources = sources.map { it.id }.toMutableSet() },
-                onDeselectAll = { localSelectedSources = mutableSetOf() },
-            )
-        }
-
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
-        ) {
-            items(sources.chunked(2), key = { row -> row.first().id }) { rowSources ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    rowSources.forEach { source ->
-                        val isChecked = localSelectedSources.contains(source.id)
-                        FilterChip(
-                            selected = isChecked,
-                            onClick = {
-                                val next = localSelectedSources.toMutableSet()
-                                if (isChecked) next.remove(source.id) else next.add(source.id)
-                                localSelectedSources = next
-                            },
-                            label = {
-                                Text(
-                                    text = source.name,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            },
-                            leadingIcon = if (isChecked) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(12.dp),
-                                    )
-                                }
-                            } else {
-                                null
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    if (rowSources.size == 1) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-
-        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedButton(
-                onClick = onReset,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = 4.dp),
-            ) {
-                Text("Ripristina", style = MaterialTheme.typography.bodySmall)
-            }
-            Button(
-                onClick = {
-                    onApply(
-                        localSelectedSources.toSet(),
-                        localHideUndated,
-                        localHidePriceless,
-                        localHideSeen,
-                        localAvailability.toSet(),
-                    )
-                },
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = 4.dp),
-            ) {
-                Text("Applica", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SquareSelectButtonsVertical(
-    onSelectAll: () -> Unit,
-    onDeselectAll: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        verticalArrangement = Arrangement.SpaceBetween,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier.height(64.dp),
-    ) {
-        Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-            modifier = Modifier
-                .size(26.dp)
-                .clickable(onClick = onSelectAll),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = "Seleziona Tutti",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-        }
-
-        Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-            modifier = Modifier
-                .size(26.dp)
-                .clickable(onClick = onDeselectAll),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Deseleziona Tutti",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SquareSelectButtonsHorizontal(
-    onSelectAll: () -> Unit,
-    onDeselectAll: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-            modifier = Modifier
-                .size(26.dp)
-                .clickable(onClick = onSelectAll),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = "Seleziona Tutti",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-        }
-
-        Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-            modifier = Modifier
-                .size(26.dp)
-                .clickable(onClick = onDeselectAll),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Deseleziona Tutti",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
         }
     }
 }

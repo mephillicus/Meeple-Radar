@@ -21,27 +21,27 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +66,7 @@ import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.data.remote.BggLink
+import com.meepleradar.ui.components.CompactSearchBar
 import com.meepleradar.ui.components.EmptyView
 import com.meepleradar.ui.components.GameCover
 import com.meepleradar.ui.components.ListingCard
@@ -79,6 +80,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyCollectionScreen(
     vm: BggCollectionViewModel,
@@ -88,13 +90,13 @@ fun MyCollectionScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val onlyWithExpansionDot by vm.onlyWithExpansionDot.collectAsStateWithLifecycle()
-    var searchQuery by remember { mutableStateOf("") }
+    val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val showBaseGames by vm.showBaseGames.collectAsStateWithLifecycle()
+    val showExpansionPills by vm.showExpansionPills.collectAsStateWithLifecycle()
     var showFilters by remember { mutableStateOf(false) }
     var showLogoutConfirmation by remember { mutableStateOf(false) }
-    var showBaseGames by remember { mutableStateOf(true) }
-    var showExpansionPills by remember { mutableStateOf(true) }
 
-    androidx.compose.material3.Scaffold(
+    Scaffold(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = ScreenContentInsets,
     ) { padding ->
@@ -165,9 +167,10 @@ fun MyCollectionScreen(
             )
 
             if (contentState != null) {
-                SearchBox(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
+                CompactSearchBar(
+                    query = searchQuery,
+                    placeholder = "Cerca nella collezione...",
+                    onQueryChange = vm::setSearchQuery,
                 )
             }
 
@@ -194,7 +197,11 @@ fun MyCollectionScreen(
                             (normalizedQuery.isEmpty() || game.name.lowercase(Locale.ROOT).contains(normalizedQuery))
                     }
 
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    PullToRefreshBox(
+                        isRefreshing = current.refreshing,
+                        onRefresh = vm::refresh,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    ) {
                         Column(modifier = Modifier.fillMaxSize()) {
                             current.error?.let { message ->
                                 Surface(
@@ -211,17 +218,23 @@ fun MyCollectionScreen(
                                 }
                             }
                             if (visibleGames.isEmpty()) {
-                                EmptyView(
-                                    when {
-                                        current.games.none { !it.isExpansionGame() } ->
-                                            "La collezione BGG non contiene giochi base posseduti"
-                                        onlyWithExpansionDot && gamesWithDotCount == 0 ->
-                                            "Nessun gioco nella collezione ha espansioni in novità o preordine"
-                                        else ->
-                                            "Nessun gioco corrisponde alla ricerca o ai filtri"
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth()
+                                        .verticalScroll(rememberScrollState()),
+                                ) {
+                                    EmptyView(
+                                        when {
+                                            current.games.none { !it.isExpansionGame() } ->
+                                                "La collezione BGG non contiene giochi base posseduti"
+                                            onlyWithExpansionDot && gamesWithDotCount == 0 ->
+                                                "Nessun gioco nella collezione ha espansioni in novità o preordine"
+                                            else ->
+                                                "Nessun gioco corrisponde alla ricerca o ai filtri"
+                                        },
+                                    )
+                                }
                             } else {
                                 LazyColumn(
                                     contentPadding = PaddingValues(12.dp),
@@ -272,9 +285,10 @@ fun MyCollectionScreen(
             showBaseGames = showBaseGames,
             showExpansionPills = showExpansionPills,
             onlyWithExpansionDot = onlyWithExpansionDot,
-            onShowBaseGamesChange = { showBaseGames = it },
-            onShowExpansionPillsChange = { showExpansionPills = it },
-            onOnlyWithExpansionDotChange = { vm.setOnlyWithExpansionDot(it) },
+            onShowBaseGamesChange = vm::setShowBaseGames,
+            onShowExpansionPillsChange = vm::setShowExpansionPills,
+            onOnlyWithExpansionDotChange = vm::setOnlyWithExpansionDot,
+            onReset = vm::resetFilters,
             onDismiss = { showFilters = false },
         )
     }
@@ -288,7 +302,6 @@ fun MyCollectionScreen(
                 TextButton(
                     onClick = {
                         showLogoutConfirmation = false
-                        searchQuery = ""
                         vm.logout()
                     },
                 ) { Text("Esci") }
@@ -419,54 +432,6 @@ private fun ExpansionDotFilterPill(
     }
 }
 
-@Composable
-private fun SearchBox(value: String, onValueChange: (String) -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(bottom = 8.dp)
-            .height(36.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
-                modifier = Modifier.weight(1f),
-                decorationBox = { innerTextField ->
-                    if (value.isEmpty()) {
-                        Text(
-                            "Cerca nella collezione...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        )
-                    }
-                    innerTextField()
-                },
-            )
-            Box(
-                modifier = Modifier.size(20.dp).clickable { onValueChange(if (value.isEmpty()) value else "") },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    if (value.isEmpty()) Icons.Filled.Search else Icons.Filled.Close,
-                    contentDescription = if (value.isEmpty()) "Cerca" else "Cancella ricerca",
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun BggCollectionGameGroup(
@@ -837,6 +802,7 @@ private fun CollectionFilterDialog(
     onShowBaseGamesChange: (Boolean) -> Unit,
     onShowExpansionPillsChange: (Boolean) -> Unit,
     onOnlyWithExpansionDotChange: (Boolean) -> Unit,
+    onReset: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -865,9 +831,7 @@ private fun CollectionFilterDialog(
         dismissButton = {
             TextButton(
                 onClick = {
-                    onShowBaseGamesChange(true)
-                    onShowExpansionPillsChange(true)
-                    onOnlyWithExpansionDotChange(false)
+                    onReset()
                     onDismiss()
                 },
             ) { Text("Azzera") }

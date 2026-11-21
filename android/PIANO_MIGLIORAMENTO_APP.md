@@ -2,8 +2,8 @@
 
 > **Ambito:** modulo Android (`android/`, package `com.meepleradar`).
 > **Documento gemello (backend/collector/CI):** `../PIANO_MIGLIORAMENTO_BACKEND.md`.
-> **Ultimo aggiornamento:** 2026-11-21 — **Sprint 1 completato** (`64cd190`), **Sprint 2 in proposta**.
-> **Stato baseline verificato:** AGP `9.4.1`, Kotlin `2.4.20`, Compose BOM `2026.09.00`, `compileSdk = 37`, `targetSdk = 36`, `minSdk = 26`, 127 unit test verdi, lint e release R8 verdi.
+> **Ultimo aggiornamento:** 2026-11-21 — **Sprint 1 (`64cd190`) e Sprint 2 completati**, **Sprint 3 prossimo**.
+> **Stato baseline verificato:** AGP `9.4.1`, Kotlin `2.4.20`, Compose BOM `2026.09.00`, `compileSdk = 37`, `targetSdk = 36`, `minSdk = 26`, 139 unit test verdi, lint e debug build verdi.
 
 ---
 
@@ -60,12 +60,12 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
   - Scaricare solo le righe modificate dopo `lastSyncAt` (`updated_at=gt.<iso>` / `last_seen_at=gt.<iso>` / `created_at=gt.<iso>`), mantenendo un full sync periodico (es. 1 volta a settimana o su richiesta) per riallineare eventuali cancellazioni da `purgeStale`.
   - Dipendenza backend: vedere `P1.2` / `P2.1` in `../PIANO_MIGLIORAMENTO_BACKEND.md`.
 
-### P1.3 — Eliminazione duplicazioni tra Lista, Novità e Preordini
-- **File coinvolti:** `NewsScreen.kt`, `PreordersScreen.kt`, `IncomingScreen.kt`, `NewsViewModel.kt`, `PreordersViewModel.kt`, `IncomingViewModel.kt`, `StateViews.kt`.
-- **Intervento:**
-  - Estrarre una classe immutabile `ListingFilterState` e un motore puro `ListingFilterEngine` (con unit test dedicati) condiviso dai 3 ViewModel.
-  - Estrarre un composable riutilizzabile `ListingFilterDrawer` e una `CompactSearchBar` condivisa in `ui/components/`.
-  - Riduzione stimata: ~900–1100 righe duplicate eliminate e coerenza garantita tra tutte le tab.
+### [x] P1.3 — Eliminazione duplicazioni tra Lista, Novità e Preordini — *Completato (Sprint 2)*
+- **File coinvolti:** `ListingFilterEngine.kt`, `ListingFilterDrawer.kt`, `StateViews.kt`, `NewsScreen.kt`, `PreordersScreen.kt`, `IncomingScreen.kt`, `NewsViewModel.kt`, `PreordersViewModel.kt`, `IncomingViewModel.kt`.
+- **Intervento applicato:**
+  - Estratti `ListingFilterState`, `ListingSortOption` e `filterAndSortListings` in `ui/components/ListingFilterEngine.kt` con suite di unit test (`ListingFilterEngineTest.kt`).
+  - Estratti `ListingFilterDrawerOverlay` / `ListingFilterDrawerContent` in `ui/components/ListingFilterDrawer.kt` e `CompactSearchBar` + `BlockVector` in `ui/components/StateViews.kt`.
+  - Rimossa la duplicazione tra `NewsScreen`, `PreordersScreen`, `IncomingScreen` e rispettivi ViewModel.
 
 ### P1.4 — Modularizzazione di `DetailScreen.kt` e `DetailViewModel.kt`
 - **File coinvolti:** `ui/detail/DetailScreen.kt` (1397 righe), `ui/detail/DetailViewModel.kt` (600 righe).
@@ -73,11 +73,11 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
   - Spezzare `DetailScreen.kt` in file dedicati per sezione: `DetailHeaderSection.kt`, `DetailOffersSection.kt`, `DetailBggMetadataSection.kt`, `DetailBggDialogs.kt`.
   - Estrarre le operazioni di ricerca/associazione/salvataggio BGG in un `BggLinkingUseCase` separato e testabile.
 
-### P1.5 — Riallineamento reattivo della schermata "Miei" (`MyCollectionScreen.kt`, `BggCollectionViewModel.kt`)
-- **Problema:** `BggCollectionViewModel.loadListingData()` gira solo in `init` e dopo `fetch()` da BGG; se l'utente aggiorna Novità/Preordini/Lista durante la stessa sessione, i pallini verdi/blu su "Miei" non si aggiornano finché non riavvia l'app o ricarica da BGG. Inoltre `searchQuery`, `showBaseGames` e `showExpansionPills` vivono in `remember` invece che nel ViewModel.
-- **Intervento:**
-  - Osservare `repository.lastDbModifiedTimestampFlow()` in `BggCollectionViewModel` per ricalcolare automaticamente `listingsByBggId` e `expansionAvailabilityById` ogni volta che la cache Supabase cambia.
-  - Spostare `searchQuery`, `showBaseGames` e `showExpansionPills` nel ViewModel così non si perdono aprendo il dettaglio di un gioco.
+### [x] P1.5 — Riallineamento reattivo della schermata "Miei" (`MyCollectionScreen.kt`, `BggCollectionViewModel.kt`) — *Completato (Sprint 2)*
+- **Problema:** `BggCollectionViewModel.loadListingData()` girava solo in `init` e dopo `fetch()` da BGG; `searchQuery`, `showBaseGames` e `showExpansionPills` vivevano in `remember`.
+- **Intervento applicato:**
+  - `BggCollectionViewModel` osserva `repository.lastDbModifiedTimestampFlow()` (`drop(1).distinctUntilChanged()`) per aggiornare automaticamente `listingsByBggId` e `expansionAvailabilityById` ad ogni aggiornamento della cache.
+  - Spostati `searchQuery`, `showBaseGames` e `showExpansionPills` (+ `resetFilters()`) in `BggCollectionViewModel` con unit test dedicati.
 
 ---
 
@@ -88,20 +88,17 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
 - **Intervento applicato:**
   - Adottata `androidx.core:core-splashscreen:1.2.0` con `Theme.MeepleRadar.Starting` su `#0F172A`, `enableEdgeToEdge(...)`, rimozione `delay(800L)`, sistemati inset bottom bar (`MeepleRadarNav`), `DetailScreen` (`WindowInsets.safeDrawing`) e `SetupContent` (`imePadding` + scroll).
 
-### P2.2 — Pull-to-refresh nativo e Ordinamento configurabile
-- **Intervento:**
-  - Avvolgere le liste (`News`, `Preorders`, `Incoming`, `Favorites`, `Miei`) in `PullToRefreshBox` di Material 3.
-  - Aggiungere un selettore di ordinamento nel drawer o sotto la barra di ricerca:
-    - Data di uscita (più recente / più vicina)
-    - Prezzo più basso
-    - Rating BGG decrescente
-    - Alfabetico (A–Z)
+### [x] P2.2 — Pull-to-refresh nativo e Ordinamento configurabile — *Completato (Sprint 2)*
+- **Intervento applicato:**
+  - Avvolte tutte e 5 le schermate lista (`Lista`, `Novità`, `Preordini`, `Preferiti`, `Miei`) in `PullToRefreshBox` di Material 3 con stato `isRefreshing` non distruttivo.
+  - Aggiunta la sezione **"Ordina per"** nel drawer condiviso (`Predefinito`, `A-Z`, `Prezzo ↑`, `Data ↑`, `Data ↓`, `Voto BGG ↓`), nascondendo `AlphabetFastScroller` quando l'ordinamento non è alfabetico.
 
-### P2.3 — Potenziamento schermata Preferiti e gestione "Ignorati"
-- **File coinvolti:** `FavoritesScreen.kt`, `FavoritesViewModel.kt`, nuova sezione/dialog `IgnoredGamesSheet`.
-- **Intervento:**
-  - Aggiungere ricerca, filtro disponibilità (Disponibile ora / Preordine / Esaurito) e badge "Nuovo in stock" / "Calo prezzo" nei Preferiti.
-  - Aggiungere una vista per consultare i giochi segnati come **Ignorati** e ripristinarli con un tap (oggi un gioco ignorato per errore non è più recuperabile dall'app).
+### [x] P2.3 — Potenziamento schermata Preferiti e gestione "Ignorati" — *Completato (Sprint 2)*
+- **File coinvolti:** `FavoritesScreen.kt`, `FavoritesViewModel.kt`, `IgnoredGamesSheet.kt`, `ListingRepository.kt`, `IncomingScreen.kt`, `IncomingViewModel.kt`.
+- **Intervento applicato:**
+  - Potenziata `FavoritesScreen` con pillola `[🚫 N]` per gli ignorati, pulsante refresh, `CompactSearchBar`, chip disponibilità (`Tutti`, `Disponibili`, `Preordini`, `Non disp.`) e `PullToRefreshBox`.
+  - Creato `IgnoredGamesSheet` (`ModalBottomSheet`) con pulsante **"Ripristina"** per ogni gioco ignorato, accessibile dall'header di Preferiti e dal drawer di Lista.
+  - Aggiunti `ignoredItems(today)` e `restoreIgnored(key)` in `ListingRepository` + fix di `latestActionsByKey` affinché `Action.SEEN` non mascheri mai `FAVORITE`/`IGNORED`.
 
 ### P2.4 — Confronto prezzi e badge "Miglior prezzo"
 - **Intervento:**
@@ -131,6 +128,6 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
 | Fase | Stato | Obiettivo | Elementi |
 |---|---|---|---|
 | **Sprint 1** | ✅ Completato (`64cd190`) | Stabilità, sicurezza & CI | P0.1 (Backup/Keystore), P0.2 (OkHttp), P0.3 (R8), P0.4 (Android CI), P2.1 (SplashScreen + Edge-to-Edge) |
-| **Sprint 2** | 🔄 In proposta | Refactoring & UX "Miei"/Liste | P1.3 (Filtro/Drawer condivisi), P1.5 (Sync reattivo "Miei"), P2.2 (Pull-to-refresh + Sort), P2.3 (Preferiti + Ignorati) |
-| **Sprint 3** | ⬜ Da fare | Storage scalabile & Detail modulare | P1.1 (Room), P1.2 (Sync incrementale + RPC 0013/0014), P1.4 (Split DetailScreen/VM) |
+| **Sprint 2** | ✅ Completato | Refactoring & UX "Miei"/Liste | P1.3 (Filtro/Drawer condivisi), P1.5 (Sync reattivo "Miei"), P2.2 (Pull-to-refresh + Sort), P2.3 (Preferiti + Ignorati) |
+| **Sprint 3** | ⬜ Prossimo | Storage scalabile & Detail modulare | P1.1 (Room), P1.2 (Sync incrementale + RPC 0013/0014), P1.4 (Split DetailScreen/VM) |
 | **Sprint 4** | ⬜ Da fare | Automazione & Alert | P3.1 (WorkManager + Notifiche `user_alert`), P2.4 (Storico prezzi `0015`), P3.2 (UI Test) |

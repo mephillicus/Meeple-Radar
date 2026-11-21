@@ -69,6 +69,7 @@ class BggCollectionViewModelTest {
     private class FakeListingRepository : ListingRepository {
         var news = emptyList<IncomingItem>()
         var preorders = emptyList<IncomingItem>()
+        val dbTimestampFlow = kotlinx.coroutines.flow.MutableStateFlow(100L)
 
         override suspend fun incoming(
             today: LocalDate,
@@ -99,7 +100,8 @@ class BggCollectionViewModelTest {
             // No-op per test
             return null
         }
-        override fun lastDbModifiedTimestamp(): Long = 0L
+        override fun lastDbModifiedTimestamp(): Long = dbTimestampFlow.value
+        override fun lastDbModifiedTimestampFlow() = dbTimestampFlow
         override fun newlyAddedCount(): Int = 0
         override fun newlyAddedCountFlow() = kotlinx.coroutines.flow.MutableStateFlow(0)
         override fun preorderCount(): Int = 0
@@ -283,5 +285,56 @@ class BggCollectionViewModelTest {
 
         viewModel.logout()
         assertTrue(!viewModel.onlyWithExpansionDot.value)
+    }
+
+    @Test
+    fun `si sincronizza reattivamente quando cambia lastDbModifiedTimestampFlow e persiste i filtri`() = runTest(dispatcher) {
+        val base = game.copy(bggId = 173346, name = "7 Wonders Duel")
+        val cachedExpansions = listOf(
+            BggExpansion(309116, "Agora", base.bggId, "https://boardgamegeek.com/boardgameexpansion/309116"),
+        )
+        val store = FakeStore(
+            CachedBggCollection("username", listOf(base), 123L, "token", cachedExpansions, true),
+        )
+        val repository = FakeListingRepository()
+        val viewModel = BggCollectionViewModel(FakeApi(Result.success(listOf(base))), store, repository)
+        advanceUntilIdle()
+
+        assertEquals(0, (viewModel.state.value as BggCollectionUiState.Content).gamesWithAvailableExpansionsCount)
+
+        // Simula aggiornamento cache DB da un altro tab
+        repository.preorders = listOf(
+            IncomingItem(
+                key = "game:309116",
+                title = "Agora",
+                imageUrl = null,
+                releaseDate = LocalDate.now().plusDays(10),
+                kind = ItemKind.UPCOMING,
+                game = Game(309116, "Agora", "expansion", 309116, null, null, null),
+                offers = emptyList(),
+            ),
+        )
+        repository.dbTimestampFlow.value = 200L
+        advanceUntilIdle()
+
+        val updated = viewModel.state.value as BggCollectionUiState.Content
+        assertEquals(1, updated.gamesWithAvailableExpansionsCount)
+        assertEquals(ExpansionAvailabilityType.PREORDER, updated.expansionAvailabilityById[309116]?.type)
+
+        // Verifica persistenza e reset filtri nel ViewModel
+        viewModel.setSearchQuery("wonders")
+        viewModel.setShowBaseGames(false)
+        viewModel.setShowExpansionPills(false)
+        assertEquals("wonders", viewModel.searchQuery.value)
+        assertEquals(false, viewModel.showBaseGames.value)
+        assertEquals(false, viewModel.showExpansionPills.value)
+
+        viewModel.resetFilters()
+        assertEquals(true, viewModel.showBaseGames.value)
+        assertEquals(true, viewModel.showExpansionPills.value)
+        assertEquals(false, viewModel.onlyWithExpansionDot.value)
+
+        viewModel.logout()
+        assertEquals("", viewModel.searchQuery.value)
     }
 }

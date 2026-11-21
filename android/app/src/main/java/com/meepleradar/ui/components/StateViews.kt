@@ -1,5 +1,7 @@
 package com.meepleradar.ui.components
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +22,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -42,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -143,6 +148,125 @@ val EyeVector: ImageVector = ImageVector.Builder(
         close()
     }
     build()
+}
+
+val BlockVector: ImageVector = ImageVector.Builder(
+    name = "Block",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).run {
+    path(
+        fill = SolidColor(Color.White),
+        stroke = null,
+    ) {
+        moveTo(12f, 2f)
+        curveTo(6.48f, 2f, 2f, 6.48f, 2f, 12f)
+        curveTo(2f, 17.52f, 6.48f, 22f, 12f, 22f)
+        curveTo(17.52f, 22f, 22f, 17.52f, 22f, 12f)
+        curveTo(22f, 6.48f, 17.52f, 2f, 12f, 2f)
+        close()
+        moveTo(4f, 12f)
+        curveTo(4f, 7.58f, 7.58f, 4f, 12f, 4f)
+        curveTo(13.85f, 4f, 15.55f, 4.63f, 16.9f, 5.69f)
+        lineTo(5.69f, 16.9f)
+        curveTo(4.63f, 15.55f, 4f, 13.85f, 4f, 12f)
+        close()
+        moveTo(12f, 20f)
+        curveTo(10.15f, 20f, 8.45f, 19.37f, 7.1f, 18.31f)
+        lineTo(18.31f, 7.1f)
+        curveTo(19.37f, 8.45f, 20f, 10.15f, 20f, 12f)
+        curveTo(20f, 16.42f, 16.42f, 20f, 12f, 20f)
+        close()
+    }
+    build()
+}
+
+@Composable
+fun CompactSearchBar(
+    query: String,
+    placeholder: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 8.dp)
+            .height(36.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                modifier = Modifier.weight(1f),
+                decorationBox = { innerTextField ->
+                    if (query.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    }
+                    innerTextField()
+                },
+            )
+
+            Box(
+                modifier = Modifier.size(20.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Crossfade(
+                    targetState = query.isNotEmpty(),
+                    animationSpec = tween(durationMillis = 180),
+                    label = "searchAction",
+                ) { showClear ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (showClear) {
+                                    Modifier.clickable(
+                                        onClickLabel = "Cancella",
+                                        role = Role.Button,
+                                    ) { onQueryChange("") }
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (showClear) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Cancella",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = "Cerca",
+                                modifier = Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 val ScreenContentInsets: WindowInsets

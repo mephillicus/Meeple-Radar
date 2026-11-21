@@ -6,10 +6,11 @@ import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Source
-import com.meepleradar.data.model.availabilityStatus
 import com.meepleradar.data.repo.ListingRepository
+import com.meepleradar.ui.components.ListingFilterState
+import com.meepleradar.ui.components.ListingSortOption
+import com.meepleradar.ui.components.filterAndSortListings
 import java.time.LocalDate
-import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,23 +40,29 @@ class IncomingViewModel(
     private val _state = MutableStateFlow<IncomingUiState>(IncomingUiState.Loading)
     val state: StateFlow<IncomingUiState> = _state.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _sources = MutableStateFlow<List<Source>>(emptyList())
     val sources: StateFlow<List<Source>> = _sources.asStateFlow()
 
     private val _selectedSources = MutableStateFlow<Set<String>?>(null)
     val selectedSources: StateFlow<Set<String>?> = _selectedSources.asStateFlow()
 
-    private val _hideUndated = MutableStateFlow<Boolean>(false)
+    private val _hideUndated = MutableStateFlow(false)
     val hideUndated: StateFlow<Boolean> = _hideUndated.asStateFlow()
 
-    private val _hidePriceless = MutableStateFlow<Boolean>(false)
+    private val _hidePriceless = MutableStateFlow(false)
     val hidePriceless: StateFlow<Boolean> = _hidePriceless.asStateFlow()
 
-    private val _hideSeen = MutableStateFlow<Boolean>(false)
+    private val _hideSeen = MutableStateFlow(false)
     val hideSeen: StateFlow<Boolean> = _hideSeen.asStateFlow()
 
     private val _selectedAvailability = MutableStateFlow(AvailabilityStatus.entries.toSet())
     val selectedAvailability: StateFlow<Set<AvailabilityStatus>> = _selectedAvailability.asStateFlow()
+
+    private val _sortOption = MutableStateFlow(ListingSortOption.DEFAULT)
+    val sortOption: StateFlow<ListingSortOption> = _sortOption.asStateFlow()
 
     private val _lastModifiedTimestamp = MutableStateFlow<Long>(repo.lastDbModifiedTimestamp())
     val lastModifiedTimestamp: StateFlow<Long> = _lastModifiedTimestamp.asStateFlow()
@@ -66,16 +73,14 @@ class IncomingViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _ignoredItems = MutableStateFlow<List<IncomingItem>>(emptyList())
+    val ignoredItems: StateFlow<List<IncomingItem>> = _ignoredItems.asStateFlow()
+
     val newlyAddedCountFlow: StateFlow<Int> = repo.newlyAddedCountFlow()
     val newlyAddedCount: Int get() = repo.newlyAddedCount()
 
     private val _unseenCount = MutableStateFlow(0)
     val unseenCount: StateFlow<Int> = _unseenCount.asStateFlow()
-
-    fun toggleHideSeen() {
-        _hideSeen.value = !_hideSeen.value
-        updateFilteredState()
-    }
 
     private var rawItems: List<IncomingItem> = emptyList()
     private var rawFavorites: Set<String> = emptySet()
@@ -84,12 +89,49 @@ class IncomingViewModel(
 
     init {
         loadSources()
-        loadLocal() // Load from local cache on startup without hitting Supabase network
+        loadLocal()
+    }
+
+    fun toggleHideSeen() {
+        _hideSeen.value = !_hideSeen.value
+        updateFilteredState()
+    }
+
+    fun setSortOption(option: ListingSortOption) {
+        _sortOption.value = option
+        updateFilteredState()
     }
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
         updateFilteredState()
+    }
+
+    fun loadIgnoredItems() {
+        viewModelScope.launch {
+            _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(emptyList())
+        }
+    }
+
+    fun restoreIgnored(item: IncomingItem) {
+        viewModelScope.launch {
+            try {
+                repo.restoreIgnored(item.key)
+                _ignoredItems.value = _ignoredItems.value.filterNot { it.key == item.key }
+                rawItems = repo.incoming(
+                    today = today,
+                    sourceIds = null,
+                    includeUndated = true,
+                    includePriceless = true,
+                    forceRefresh = false,
+                )
+                updateFilteredState()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
+            }
+        }
     }
 
     fun refreshSeenStatus() {
@@ -105,6 +147,7 @@ class IncomingViewModel(
                     }
                 }
                 rawFavorites = repo.favoriteKeys(today)
+                _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(_ignoredItems.value)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -145,12 +188,14 @@ class IncomingViewModel(
         hidePriceless: Boolean = false,
         hideSeen: Boolean = false,
         availability: Set<AvailabilityStatus> = AvailabilityStatus.entries.toSet(),
+        sortOption: ListingSortOption = _sortOption.value,
     ) {
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
         _hidePriceless.value = hidePriceless
         _hideSeen.value = hideSeen
         _selectedAvailability.value = availability
+        _sortOption.value = sortOption
         updateFilteredState()
     }
 
@@ -160,6 +205,7 @@ class IncomingViewModel(
         _hidePriceless.value = false
         _hideSeen.value = false
         _selectedAvailability.value = AvailabilityStatus.entries.toSet()
+        _sortOption.value = ListingSortOption.DEFAULT
         _searchQuery.value = ""
         updateFilteredState()
     }
@@ -176,6 +222,7 @@ class IncomingViewModel(
                     forceRefresh = false,
                 )
                 rawFavorites = repo.favoriteKeys(today)
+                _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(emptyList())
 
                 loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
                 _lastModifiedTimestamp.value = loadedCacheTimestamp
@@ -189,8 +236,11 @@ class IncomingViewModel(
         }
     }
 
-    fun refresh() {
-        _state.value = IncomingUiState.Loading
+    fun refresh(showLoadingState: Boolean = true) {
+        if (showLoadingState) {
+            _state.value = IncomingUiState.Loading
+        }
+        _isRefreshing.value = true
         _syncProgress.value = SyncProgressState.Progress(0, "Avvio sincronizzazione…")
         viewModelScope.launch {
             try {
@@ -199,12 +249,13 @@ class IncomingViewModel(
                     sourceIds = null,
                     includeUndated = true,
                     includePriceless = true,
-                    forceRefresh = true, // Force refresh from Supabase via manual button
+                    forceRefresh = true,
                     onProgress = { percent, message ->
                         _syncProgress.value = SyncProgressState.Progress(percent, message)
                     },
                 )
                 rawFavorites = repo.favoriteKeys(today)
+                _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(emptyList())
 
                 loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
                 _lastModifiedTimestamp.value = loadedCacheTimestamp
@@ -217,44 +268,28 @@ class IncomingViewModel(
             } catch (e: Exception) {
                 _syncProgress.value = SyncProgressState.Idle
                 _state.value = IncomingUiState.Error(e.message ?: DEFAULT_ERROR)
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }
 
     private fun updateFilteredState() {
-        val sourceIds = _selectedSources.value
-        val hideUndated = _hideUndated.value
-        val hidePriceless = _hidePriceless.value
-        val selectedAvailability = _selectedAvailability.value
-        val query = _searchQuery.value.trim()
-
-        val queryWords = if (query.length >= 3) {
-            query.lowercase(Locale.ROOT).split(Regex("\\s+")).filter { it.isNotBlank() }
-        } else {
-            emptyList()
-        }
-
-        val hideSeen = _hideSeen.value
-
-        val filtered = rawItems.filter { item ->
-            val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
-            val dateMatch = !hideUndated || item.releaseDate != null
-            val priceMatch = !hidePriceless || item.offers.any { it.price != null }
-            val seenMatch = !hideSeen || !item.isSeen
-            val isItemPreorder = item.releaseDate != null && !item.releaseDate.isBefore(today)
-            val availabilityMatch = selectedAvailability == AvailabilityStatus.entries.toSet() ||
-                (AvailabilityStatus.PREORDER in selectedAvailability && isItemPreorder) ||
-                item.offers.any { availabilityStatus(it.availability, it.releaseDate) in selectedAvailability }
-
-            val searchMatch = if (queryWords.isEmpty()) {
-                true
-            } else {
-                val titleLower = item.title.lowercase(Locale.ROOT)
-                queryWords.all { word -> titleLower.contains(word) }
-            }
-
-            sourceMatch && dateMatch && priceMatch && seenMatch && availabilityMatch && searchMatch
-        }
+        val filtered = filterAndSortListings(
+            items = rawItems,
+            state = ListingFilterState(
+                selectedSources = _selectedSources.value,
+                hideUndated = _hideUndated.value,
+                hidePriceless = _hidePriceless.value,
+                hideSeen = _hideSeen.value,
+                selectedAvailability = _selectedAvailability.value,
+                searchQuery = _searchQuery.value,
+                showOnlyNewlyAdded = false,
+                sortOption = _sortOption.value,
+            ),
+            today = today,
+            matchItemReleaseDateAsPreorder = true,
+        )
 
         _unseenCount.value = rawItems.count { !it.isSeen }
         _state.value = IncomingUiState.Content(items = filtered, favorites = rawFavorites)
@@ -264,7 +299,7 @@ class IncomingViewModel(
         viewModelScope.launch {
             try {
                 _sources.value = repo.sources()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 _sources.value = emptyList()
             }
         }
@@ -297,6 +332,9 @@ class IncomingViewModel(
             try {
                 repo.setAction(item.key, Action.IGNORED)
                 rawItems = rawItems.filterNot { it.key == item.key }
+                if (_ignoredItems.value.none { it.key == item.key }) {
+                    _ignoredItems.value = (_ignoredItems.value + item).sortedBy { it.title.lowercase() }
+                }
                 updateFilteredState()
             } catch (e: CancellationException) {
                 throw e

@@ -6,10 +6,11 @@ import com.meepleradar.data.model.Action
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.Source
-import com.meepleradar.data.model.availabilityStatus
 import com.meepleradar.data.repo.ListingRepository
+import com.meepleradar.ui.components.ListingFilterState
+import com.meepleradar.ui.components.ListingSortOption
+import com.meepleradar.ui.components.filterAndSortListings
 import java.time.LocalDate
-import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +33,9 @@ class PreordersViewModel(
     private val _state = MutableStateFlow<PreordersUiState>(PreordersUiState.Loading)
     val state: StateFlow<PreordersUiState> = _state.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
     private val _sources = MutableStateFlow<List<Source>>(emptyList())
     val sources: StateFlow<List<Source>> = _sources.asStateFlow()
 
@@ -50,6 +54,9 @@ class PreordersViewModel(
     private val _selectedAvailability = MutableStateFlow(AvailabilityStatus.entries.toSet())
     val selectedAvailability: StateFlow<Set<AvailabilityStatus>> = _selectedAvailability.asStateFlow()
 
+    private val _sortOption = MutableStateFlow(ListingSortOption.DEFAULT)
+    val sortOption: StateFlow<ListingSortOption> = _sortOption.asStateFlow()
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
@@ -62,6 +69,17 @@ class PreordersViewModel(
     private val _unseenCount = MutableStateFlow(0)
     val unseenCount: StateFlow<Int> = _unseenCount.asStateFlow()
 
+    private var rawItems: List<IncomingItem> = emptyList()
+    private var rawFavorites: Set<String> = emptySet()
+    private var hasLoaded: Boolean = false
+    private var loadedCacheTimestamp: Long = -1L
+    private var loadJob: Job? = null
+
+    init {
+        loadSources()
+        loadPreorders()
+    }
+
     fun toggleNewlyAddedFilter() {
         _showOnlyNewlyAdded.value = !_showOnlyNewlyAdded.value
         updateFilteredState()
@@ -72,15 +90,9 @@ class PreordersViewModel(
         updateFilteredState()
     }
 
-    private var rawItems: List<IncomingItem> = emptyList()
-    private var rawFavorites: Set<String> = emptySet()
-    private var hasLoaded: Boolean = false
-    private var loadedCacheTimestamp: Long = -1L
-    private var loadJob: Job? = null
-
-    init {
-        loadSources()
-        loadPreorders()
+    fun setSortOption(option: ListingSortOption) {
+        _sortOption.value = option
+        updateFilteredState()
     }
 
     fun loadPreorders() {
@@ -102,9 +114,12 @@ class PreordersViewModel(
         }
     }
 
-    fun refresh() {
+    fun refresh(showLoadingState: Boolean = true) {
         loadJob?.cancel()
-        _state.value = PreordersUiState.Loading
+        if (showLoadingState) {
+            _state.value = PreordersUiState.Loading
+        }
+        _isRefreshing.value = true
         loadJob = viewModelScope.launch {
             try {
                 rawItems = repo.refreshPreorderItems(today)
@@ -120,6 +135,8 @@ class PreordersViewModel(
                 throw e
             } catch (e: Exception) {
                 _state.value = PreordersUiState.Error(e.message ?: "Errore di rete")
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }
@@ -128,7 +145,7 @@ class PreordersViewModel(
         viewModelScope.launch {
             try {
                 _sources.value = repo.sources()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 _sources.value = emptyList()
             }
         }
@@ -191,12 +208,14 @@ class PreordersViewModel(
         hidePriceless: Boolean = false,
         hideSeen: Boolean = false,
         availability: Set<AvailabilityStatus> = AvailabilityStatus.entries.toSet(),
+        sortOption: ListingSortOption = _sortOption.value,
     ) {
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
         _hidePriceless.value = hidePriceless
         _hideSeen.value = hideSeen
         _selectedAvailability.value = availability
+        _sortOption.value = sortOption
         updateFilteredState()
     }
 
@@ -206,6 +225,7 @@ class PreordersViewModel(
         _hidePriceless.value = false
         _hideSeen.value = false
         _selectedAvailability.value = AvailabilityStatus.entries.toSet()
+        _sortOption.value = ListingSortOption.DEFAULT
         _searchQuery.value = ""
         _showOnlyNewlyAdded.value = false
         updateFilteredState()
@@ -249,42 +269,21 @@ class PreordersViewModel(
     }
 
     private fun updateFilteredState() {
-        val sourceIds = _selectedSources.value
-        val hideUndated = _hideUndated.value
-        val hidePriceless = _hidePriceless.value
-        val selectedAvailability = _selectedAvailability.value
-        val query = _searchQuery.value.trim()
-
-        val queryWords = if (query.length >= 3) {
-            query.lowercase(Locale.ROOT).split(Regex("\\s+")).filter { it.isNotBlank() }
-        } else {
-            emptyList()
-        }
-
-        val showNewlyAdded = _showOnlyNewlyAdded.value
-        val hideSeen = _hideSeen.value
-
-        val filtered = rawItems.filter { item ->
-            val sourceMatch = sourceIds == null || item.offers.any { it.sourceId in sourceIds }
-            val dateMatch = !hideUndated || item.releaseDate != null
-            val priceMatch = !hidePriceless || item.offers.any { it.price != null }
-            val seenMatch = !hideSeen || !item.isSeen
-            val isItemPreorder = item.releaseDate != null && !item.releaseDate.isBefore(today)
-            val availabilityMatch = selectedAvailability == AvailabilityStatus.entries.toSet() ||
-                (AvailabilityStatus.PREORDER in selectedAvailability && isItemPreorder) ||
-                item.offers.any { availabilityStatus(it.availability, it.releaseDate) in selectedAvailability }
-
-            val searchMatch = if (queryWords.isEmpty()) {
-                true
-            } else {
-                val titleLower = item.title.lowercase(Locale.ROOT)
-                queryWords.all { word -> titleLower.contains(word) }
-            }
-
-            val newlyAddedMatch = !showNewlyAdded || item.isNewlyAdded
-
-            sourceMatch && dateMatch && priceMatch && seenMatch && availabilityMatch && searchMatch && newlyAddedMatch
-        }
+        val filtered = filterAndSortListings(
+            items = rawItems,
+            state = ListingFilterState(
+                selectedSources = _selectedSources.value,
+                hideUndated = _hideUndated.value,
+                hidePriceless = _hidePriceless.value,
+                hideSeen = _hideSeen.value,
+                selectedAvailability = _selectedAvailability.value,
+                searchQuery = _searchQuery.value,
+                showOnlyNewlyAdded = _showOnlyNewlyAdded.value,
+                sortOption = _sortOption.value,
+            ),
+            today = today,
+            matchItemReleaseDateAsPreorder = true,
+        )
 
         _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
         _unseenCount.value = rawItems.count { !it.isSeen }

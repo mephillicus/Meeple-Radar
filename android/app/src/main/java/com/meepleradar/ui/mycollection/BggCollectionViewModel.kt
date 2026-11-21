@@ -15,9 +15,12 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 sealed interface BggCollectionUiState {
@@ -99,12 +102,29 @@ class BggCollectionViewModel(
     val state: StateFlow<BggCollectionUiState> = _state.asStateFlow()
     private val _onlyWithExpansionDot = MutableStateFlow(false)
     val onlyWithExpansionDot: StateFlow<Boolean> = _onlyWithExpansionDot.asStateFlow()
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    private val _showBaseGames = MutableStateFlow(true)
+    val showBaseGames: StateFlow<Boolean> = _showBaseGames.asStateFlow()
+    private val _showExpansionPills = MutableStateFlow(true)
+    val showExpansionPills: StateFlow<Boolean> = _showExpansionPills.asStateFlow()
     private var cachedApiToken: String? = cached?.apiToken
     private var cachedExpansions: List<BggExpansion> = cached?.expansions.orEmpty()
     private var expansionsLoaded = cached?.expansionsLoaded == true
+    private var listingLoadJob: Job? = null
 
     init {
         cached?.let { loadListingData() }
+        viewModelScope.launch {
+            repository.lastDbModifiedTimestampFlow()
+                .drop(1)
+                .distinctUntilChanged()
+                .collect {
+                    if (_state.value is BggCollectionUiState.Content) {
+                        loadListingData()
+                    }
+                }
+        }
     }
 
     fun connect(username: String, apiToken: String) {
@@ -144,11 +164,32 @@ class BggCollectionViewModel(
         _onlyWithExpansionDot.value = enabled
     }
 
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun setShowBaseGames(show: Boolean) {
+        _showBaseGames.value = show
+    }
+
+    fun setShowExpansionPills(show: Boolean) {
+        _showExpansionPills.value = show
+    }
+
+    fun resetFilters() {
+        _showBaseGames.value = true
+        _showExpansionPills.value = true
+        _onlyWithExpansionDot.value = false
+    }
+
     fun logout() {
         store.clear()
         cachedApiToken = null
         cachedExpansions = emptyList()
         expansionsLoaded = false
+        _searchQuery.value = ""
+        _showBaseGames.value = true
+        _showExpansionPills.value = true
         _onlyWithExpansionDot.value = false
         _state.value = BggCollectionUiState.Setup()
     }
@@ -205,7 +246,8 @@ class BggCollectionViewModel(
     }
 
     private fun loadListingData() {
-        viewModelScope.launch {
+        listingLoadJob?.cancel()
+        listingLoadJob = viewModelScope.launch {
             try {
                 val today = LocalDate.now()
                 val items = repository.incoming(
