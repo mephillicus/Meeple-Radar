@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { fetchShopifyProducts } from '../../src/adapters/shopify.js'
+import {
+  extractDateFromHtml,
+  extractReleaseDateFromTags,
+  fetchShopifyProducts,
+} from '../../src/adapters/shopify.js'
 import fixture from '../fixtures/shopify-products.json' with { type: 'json' }
 
 const now = new Date('2026-10-22T00:00:00Z')
@@ -207,4 +211,68 @@ test('funziona con un oggetto Response nativo di fetch (status/headers su protot
     priceRaw: '29.90',
     availabilityRaw: 'true',
   })
+})
+
+test('extractReleaseDateFromTags parses Boardhouse MM-DD-YYYY, ISO YYYY-MM-DD, and DD-MM-YYYY tags', () => {
+  expect(extractReleaseDateFromTags(['57x89', 'filler', 'uscita:11-27-2026'])).toBe('2026-11-27')
+  expect(extractReleaseDateFromTags('filler, uscita:11-27-2026')).toBe('2026-11-27')
+  expect(extractReleaseDateFromTags(['uscita:2026-12-18'])).toBe('2026-12-18')
+  expect(extractReleaseDateFromTags(['uscita:27-11-2026'])).toBe('2026-11-27')
+  expect(extractReleaseDateFromTags(['uscita:2026-02-30'])).toBeUndefined()
+  expect(extractReleaseDateFromTags(['57x89', 'filler'])).toBeUndefined()
+  expect(extractReleaseDateFromTags(undefined)).toBeUndefined()
+})
+
+test('fetchShopifyProducts usa tag uscita:MM-DD-YYYY come preordine senza scaricare HTML', async () => {
+  const htmlUrls: string[] = []
+  const bhHttp = async (url: string) => {
+    if (url.includes('/products/') && !url.includes('/products.json')) {
+      htmlUrls.push(url)
+      return { status: 500, json: async () => ({}), text: async () => '' }
+    }
+    return {
+      status: 200,
+      json: async () => ({
+        products: [
+          {
+            id: 888,
+            title: 'Boardhouse Preorder Game',
+            handle: 'boardhouse-preorder-game',
+            body_html: '<p>Descrizione senza data</p>',
+            tags: ['57x89', 'filler', 'uscita:11-27-2026'],
+            variants: [{ price: '44.90', available: true }],
+          },
+        ],
+      }),
+      text: async () => '',
+    }
+  }
+  const bhNow = new Date('2026-11-21T00:00:00Z')
+  const out = await fetchShopifyProducts('https://boardhouse.example', bhHttp, undefined, bhNow, {
+    htmlDelayMs: 0,
+  })
+  expect(out).toHaveLength(1)
+  expect(out[0]?.releaseDateRaw).toBe('2026-11-27')
+  expect(out[0]?.availabilityRaw).toBe('preordine')
+  expect(htmlUrls).toHaveLength(0)
+})
+
+test('extractDateFromHtml ignora script/style/noscript e legge la data visibile', async () => {
+  const html = `<!doctype html>
+<html>
+  <head>
+    <script type="application/json">{"published_at":"2026-08-07T17:59:49+02:00"}</script>
+    <style>.foo { content: "2026-01-01"; }</style>
+  </head>
+  <body>
+    <noscript>2026-02-02</noscript>
+    <div class="bh-preordine-avviso">Le spedizioni partiranno dal <strong>27 Novembre 2026</strong></div>
+  </body>
+</html>`
+  const extracted = await extractDateFromHtml(
+    'https://boardhouse.example/products/test',
+    async () => html,
+    async () => {},
+  )
+  expect(extracted).toBe('2026-11-27')
 })

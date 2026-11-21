@@ -27,6 +27,45 @@ export type ShopifyFetchOptions = {
 }
 
 const PAGE_SIZE = 250
+const USCITA_TAG_RE = /^uscita\s*:\s*(\d{1,4})[-\/](\d{1,2})[-\/](\d{1,4})$/i
+
+function toValidIsoDate(year: number, month: number, day: number): string | undefined {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return undefined
+  const d = new Date(Date.UTC(year, month - 1, day))
+  if (
+    d.getUTCFullYear() !== year ||
+    d.getUTCMonth() + 1 !== month ||
+    d.getUTCDate() !== day
+  ) {
+    return undefined
+  }
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+export function extractReleaseDateFromTags(tags?: string[] | string): string | undefined {
+  if (!tags) return undefined
+  const list = (Array.isArray(tags) ? tags : tags.split(','))
+    .map((t) => t.trim())
+    .filter(Boolean)
+
+  for (const tag of list) {
+    const m = USCITA_TAG_RE.exec(tag)
+    if (!m) continue
+    const [, p1, p2, p3] = m
+    if (p1.length === 4) {
+      const iso = toValidIsoDate(Number(p1), Number(p2), Number(p3))
+      if (iso) return iso
+    } else if (p3.length === 4) {
+      const a = Number(p1)
+      const b = Number(p2)
+      const year = Number(p3)
+      const [month, day] = a > 12 && b <= 12 ? [b, a] : [a, b]
+      const iso = toValidIsoDate(year, month, day)
+      if (iso) return iso
+    }
+  }
+  return undefined
+}
 
 function isFutureIso(iso: string, now: Date): boolean {
   const d = new Date(`${iso}T00:00:00Z`)
@@ -42,7 +81,7 @@ export function hasPreorderSignal(product: Pick<ShopifyProduct, 'title' | 'body_
   )
 }
 
-async function extractDateFromHtml(
+export async function extractDateFromHtml(
   url: string,
   fetchText: TextFetcher,
   acquireHtmlSlot: () => Promise<void>,
@@ -52,6 +91,7 @@ async function extractDateFromHtml(
     const html = await fetchText(url)
     if (!html) return undefined
     const $ = cheerio.load(html)
+    $('script, style, noscript').remove()
     return extractReleaseDate($.text()) ?? undefined
   } catch {
     return undefined
@@ -121,7 +161,8 @@ export async function fetchShopifyProducts(
       const variant = p.variants?.[0]
       const available = variant?.available
 
-      let releaseDateRaw = extractReleaseDate(p.body_html ?? undefined) ?? undefined
+      let releaseDateRaw =
+        extractReleaseDateFromTags(p.tags) ?? extractReleaseDate(p.body_html ?? undefined) ?? undefined
 
       if (!releaseDateRaw && (isPreordini || (available !== false && hasPreorderSignal(p)))) {
         const handle = p.handle ?? ''
