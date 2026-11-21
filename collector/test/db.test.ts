@@ -686,3 +686,156 @@ test('insertUserAlerts usa upsert idempotente con onConflict dedupe_key e ignore
     { onConflict: 'dedupe_key', ignoreDuplicates: true },
   )
 })
+
+test('upsertProductsBatch registra lo stato dei campi write-once in getProductFillState', async () => {
+  const select = vi.fn().mockResolvedValue({
+    data: [
+      { id: 101, normalized_title: 'catan', description: 'Esistente', release_date: '2026-11-01', publisher: null },
+      { id: 102, normalized_title: 'dune' },
+    ],
+    error: null,
+  })
+  const upsert = vi.fn(() => ({ select }))
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-11-21T00:00:00Z')
+
+  await store.upsertProductsBatch!([listing('Catan'), listing('Dune')])
+
+  expect(select).toHaveBeenCalledWith('id, normalized_title, description, release_date, publisher')
+  expect(store.getProductFillState!(101)).toEqual({
+    hasDescription: true,
+    hasReleaseDate: true,
+    hasPublisher: false,
+  })
+  // Tollerante ai mock che non restituiscono description/release_date/publisher:
+  expect(store.getProductFillState!(102)).toEqual({
+    hasDescription: false,
+    hasReleaseDate: false,
+    hasPublisher: false,
+  })
+})
+
+test('findGamesMissingMetadata seleziona giochi con metadati mancanti dando priorita alle espansioni', async () => {
+  const limit = vi.fn().mockResolvedValue({
+    data: [
+      { id: 20, bgg_id: 342031, kind: 'expansion' },
+      { id: 5, bgg_id: 316554, kind: 'base' },
+    ],
+    error: null,
+  })
+  const order2 = vi.fn(() => ({ limit }))
+  const order1 = vi.fn(() => ({ order: order2 }))
+  const orFn = vi.fn(() => ({ order: order1 }))
+  const notFn = vi.fn(() => ({ or: orFn }))
+  const select = vi.fn(() => ({ not: notFn }))
+  const from = vi.fn(() => ({ select }))
+  const store = createSupabaseStore({ from } as any)
+
+  const rows = await store.findGamesMissingMetadata!(50)
+  expect(from).toHaveBeenCalledWith('game')
+  expect(select).toHaveBeenCalledWith('id, bgg_id, kind')
+  expect(notFn).toHaveBeenCalledWith('bgg_id', 'is', null)
+  expect(orFn).toHaveBeenCalledWith('and(kind.eq.expansion,expands_bgg_id.is.null),image_url.is.null,description.is.null')
+  expect(order1).toHaveBeenCalledWith('kind', { ascending: false })
+  expect(order2).toHaveBeenCalledWith('id', { ascending: true })
+  expect(limit).toHaveBeenCalledWith(50)
+  expect(rows).toEqual([
+    { id: 20, bggId: 342031, kind: 'expansion' },
+    { id: 5, bggId: 316554, kind: 'base' },
+  ])
+})
+
+test('updateGameMetadata aggiorna i campi non-null sul gioco indicato', async () => {
+  const eq = vi.fn().mockResolvedValue({ error: null })
+  const update = vi.fn(() => ({ eq }))
+  const from = vi.fn(() => ({ update }))
+  const store = createSupabaseStore({ from } as any)
+
+  await store.updateGameMetadata!(20, {
+    imageUrl: 'https://cf.geekdo-images.com/ix.jpg',
+    description: null,
+    expandsBggId: 316554,
+    bggRating: 8.4,
+    bggRank: 15,
+  })
+
+  expect(from).toHaveBeenCalledWith('game')
+  expect(update).toHaveBeenCalledWith({
+    image_url: 'https://cf.geekdo-images.com/ix.jpg',
+    expands_bgg_id: 316554,
+    bgg_rating: 8.4,
+    bgg_rank: 15,
+  })
+  expect(eq).toHaveBeenCalledWith('id', 20)
+})
+
+test('findFavoriteListings interroga listing_best_price e ricostruisce history (latest + previous)', async () => {
+  const actionOrder2 = vi.fn().mockResolvedValue({
+    data: [{ id: 1, game_id: 5, product_id: null, listing_id: null, action: 'favorite', created_at: '2026-11-20T00:00:00Z' }],
+    error: null,
+  })
+  const actionOrder1 = vi.fn(() => ({ order: actionOrder2 }))
+  const actionIn = vi.fn(() => ({ order: actionOrder1 }))
+
+  const listingIn = vi.fn().mockResolvedValue({
+    data: [
+      { id: 10, game_id: 5, product_id: 20, title: 'Dune', url: 'https://shop.it/dune', source_id: 'dungeondice', price: 40, currency: 'EUR', availability: 'available' },
+      { id: 11, game_id: 5, product_id: 20, title: 'Dune 2', url: 'https://shop.it/dune2', source_id: 'magicmerchant', price: 50, currency: 'EUR', availability: 'available' },
+    ],
+    error: null,
+  })
+
+  const bestPriceSelect = vi.fn()
+  const bestPriceIn = vi.fn().mockResolvedValue({
+    data: [
+      {
+        listing_id: 10,
+        current_price: 40,
+        previous_price: 50,
+        current_availability: 'available',
+        previous_availability: 'out_of_stock',
+        recorded_at: '2026-11-21T06:00:00Z',
+      },
+      {
+        listing_id: 11,
+        current_price: 50,
+        previous_price: null,
+        current_availability: 'available',
+        previous_availability: null,
+        recorded_at: '2026-11-21T06:00:00Z',
+      },
+    ],
+    error: null,
+  })
+  bestPriceSelect.mockReturnValue({ in: bestPriceIn })
+
+  const from = vi.fn((table: string) => {
+    if (table === 'user_action') return { select: () => ({ in: actionIn }) }
+    if (table === 'listing') return { select: () => ({ in: listingIn }) }
+    if (table === 'listing_best_price') return { select: bestPriceSelect }
+    throw new Error(`unexpected table ${table}`)
+  })
+
+  const store = createSupabaseStore({ from } as any)
+  const snapshots = await store.findFavoriteListings!()
+
+  expect(from).toHaveBeenCalledWith('listing_best_price')
+  expect(bestPriceSelect).toHaveBeenCalledWith(
+    'listing_id, current_price, previous_price, current_availability, previous_availability, recorded_at',
+  )
+  expect(snapshots).toHaveLength(2)
+  const snap10 = snapshots.find((s) => s.listingId === 10)!
+  expect(snap10.history).toEqual([
+    { listingId: 10, price: 40, currency: 'EUR', availability: 'available', recordedAt: '2026-11-21T06:00:00Z' },
+    { listingId: 10, price: 50, currency: 'EUR', availability: 'out_of_stock', recordedAt: '2026-11-21T06:00:00Z' },
+  ])
+  const snap11 = snapshots.find((s) => s.listingId === 11)!
+  expect(snap11.history).toHaveLength(1)
+  expect(snap11.history[0]).toEqual({
+    listingId: 11,
+    price: 50,
+    currency: 'EUR',
+    availability: 'available',
+    recordedAt: '2026-11-21T06:00:00Z',
+  })
+})

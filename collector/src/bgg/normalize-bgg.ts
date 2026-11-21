@@ -32,5 +32,12 @@ export function normalizeForBggMatch(title: string): string {
     s = next
   }
 
+  // Rimuove il prefisso brand ridondante "Ravensburger " in testa,
+  // senza mai svuotare il titolo se è solo "Ravensburger".
+  const withoutBrand = s.replace(/^ravensburger\s+/i, '').trim()
+  if (withoutBrand.length > 0) {
+    s = withoutBrand
+  }
+
   return s
 }

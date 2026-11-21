@@ -21,3 +21,23 @@ test('only sources with a verified working adapter are enabled', () => {
   const enabled = SOURCES.filter(s => s.enabled).map(s => s.id).sort()
   expect(enabled).toEqual(['asmodee', 'boardhouse', 'cranio', 'dungeondice', 'dvgiochi', 'gateongames', 'ghenos', 'giochiuniti', 'horribleguild', 'houseofgames', 'littlerocket', 'msedizioni', 'pendragon', 'ravensburger', 'supernova', 'uplay'])
 })
+
+test('assigns defaultPublisher only to mono-brand publisher sources', () => {
+  const withPublisher = Object.fromEntries(
+    SOURCES.filter((s) => s.defaultPublisher !== undefined).map((s) => [s.id, s.defaultPublisher]),
+  )
+  expect(withPublisher).toEqual({
+    asmodee: 'Asmodee Italia',
+    cranio: 'Cranio Creations',
+    ghenos: 'Ghenos Games',
+    dvgiochi: 'dV Giochi',
+    horribleguild: 'Horrible Guild',
+    pendragon: 'Pendragon Game Studio',
+    gateongames: 'GateOnGames',
+    msedizioni: 'MS Edizioni',
+    ravensburger: 'Ravensburger',
+    littlerocket: 'Little Rocket Games',
+    supernova: 'Supernova',
+    giochiuniti: 'Giochi Uniti',
+  })
+})

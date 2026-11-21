@@ -58,6 +58,7 @@ export type Source = {
   baseUrl: string
   enabled: boolean
   collection?: string
+  defaultPublisher?: string
 }
 
 export type SourceMetrics = {

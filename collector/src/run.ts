@@ -218,15 +218,46 @@ export async function runCollector(args: {
         }
 
         // Write-once fills: lo store aggiorna solo dove la colonna e ancora null.
+        const localFillState = new Map<
+          number,
+          { hasDescription: boolean; hasReleaseDate: boolean; hasPublisher: boolean }
+        >()
+        const getFillState = (productId: number) => {
+          let state = localFillState.get(productId)
+          if (!state) {
+            const storeState = store.getProductFillState?.(productId)
+            state = storeState
+              ? { ...storeState }
+              : { hasDescription: false, hasReleaseDate: false, hasPublisher: false }
+            localFillState.set(productId, state)
+          }
+          return state
+        }
+
         for (const { p, canonical, canonicalNormTitle } of prepared) {
           const productId = productIdByTitle.get(canonicalNormTitle)
           if (productId === undefined) continue
-          if (canonical.description) await store.fillProductDescription(productId, canonical.description)
+          const fillState = getFillState(productId)
+
+          if (canonical.description && !fillState.hasDescription) {
+            await store.fillProductDescription(productId, canonical.description)
+            fillState.hasDescription = true
+          }
           // La citazione verbatim dell'articolo viaggia fuori da row.description
           // (azzerato per GENERATED_TEXT_KINDS) ed entra solo se ancora assente.
-          if (p.raw.articleDescription) await store.fillProductDescription(productId, p.raw.articleDescription)
-          if (isEditorial && p.row.releaseDate) await store.fillProductReleaseDate(productId, p.row.releaseDate)
-          if (p.raw.publisher) await store.fillProductPublisher(productId, p.raw.publisher)
+          if (p.raw.articleDescription && !fillState.hasDescription) {
+            await store.fillProductDescription(productId, p.raw.articleDescription)
+            fillState.hasDescription = true
+          }
+          if (isEditorial && p.row.releaseDate && !fillState.hasReleaseDate) {
+            await store.fillProductReleaseDate(productId, p.row.releaseDate)
+            fillState.hasReleaseDate = true
+          }
+          const publisher = p.raw.publisher || source.defaultPublisher
+          if (publisher && !fillState.hasPublisher && store.fillProductPublisher) {
+            await store.fillProductPublisher(productId, publisher)
+            fillState.hasPublisher = true
+          }
         }
 
         // Link listings to products in batch (o fallback singolo per mock parziali).

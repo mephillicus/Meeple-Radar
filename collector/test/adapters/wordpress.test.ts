@@ -157,3 +157,61 @@ test('porta in uscita la data della pagina e non quella di WordPress', async () 
   expect(out[0].publishedAtRaw).toBe('2020-05-05T12:00:00')
   expect(out[0].descriptionRaw).toBe('Descrizione dal paragrafo.')
 })
+
+test('scarica le pagine di dettaglio con concorrenza limitata (default 4) e pacing condiviso', async () => {
+  const api = postApi(8)
+  let inFlight = 0
+  let maxInFlight = 0
+  const sleeps: number[] = []
+  const http = async (u: string) => {
+    if (u.includes('/wp-json/')) {
+      return { status: 200, json: async () => api, text: async () => '' }
+    }
+    inFlight++
+    maxInFlight = Math.max(maxInFlight, inFlight)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    inFlight--
+    return { status: 200, json: async () => ({}), text: async () => GHENOS_PAGE_INSTOCK }
+  }
+  const out = await fetchWordPressProducts('https://s.com', http, 'product', undefined, {
+    concurrency: 4,
+    delayMs: 200,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+    },
+  })
+  expect(out).toHaveLength(8)
+  expect(maxInFlight).toBeGreaterThan(1)
+  expect(maxInFlight).toBeLessThanOrEqual(4)
+  expect(sleeps.length).toBeGreaterThanOrEqual(7)
+})
+
+test('ritenta automaticamente le pagine di dettaglio in caso di HTTP 429/503 tramite textFetcher', async () => {
+  const api = [{ id: 42, link: 'https://www.ghenosgames.com/prodotto/retry/', title: { rendered: 'Retry Game' } }]
+  let detailAttempts = 0
+  const sleeps: number[] = []
+  const http = async (u: string) => {
+    if (u.includes('/wp-json/')) {
+      return { status: 200, json: async () => api, text: async () => '' }
+    }
+    detailAttempts++
+    if (detailAttempts === 1) {
+      return {
+        status: 429,
+        headers: { get: (h: string) => (h.toLowerCase() === 'retry-after' ? '2' : null) },
+        json: async () => ({}),
+        text: async () => '',
+      }
+    }
+    return { status: 200, json: async () => ({}), text: async () => GHENOS_PAGE_INSTOCK }
+  }
+  const out = await fetchWordPressProducts('https://www.ghenosgames.com', http, 'product', undefined, {
+    delayMs: 0,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+    },
+  })
+  expect(detailAttempts).toBe(2)
+  expect(sleeps).toContain(2000)
+  expect(out[0]).toMatchObject({ priceRaw: '19.90', currencyRaw: 'EUR', availabilityRaw: 'instock' })
+})

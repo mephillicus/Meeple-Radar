@@ -28,3 +28,10 @@ test('normalizza accenti, diacritici, ligature, apostrofi e trattini tipografici
   expect(normalizeForBggMatch('Dune — Imperium')).toBe('dune imperium')
   expect(normalizeForBggMatch('Æon’s End')).toBe('aeons end')
 })
+
+test('rimuove il prefisso brand ridondante Ravensburger senza svuotare il titolo', () => {
+  expect(normalizeForBggMatch('Ravensburger Le peripezie di Pinocchio')).toBe('le peripezie di pinocchio')
+  expect(normalizeForBggMatch('Ravensburger - Catan (Edizione Italiana)')).toBe('catan')
+  expect(normalizeForBggMatch('Ravensburger')).toBe('ravensburger')
+  expect(normalizeForBggMatch('Ravensburger (Edizione Italiana)')).toBe('ravensburger')
+})

@@ -32,7 +32,8 @@ export async function runBggBackfill(deps: {
   store: ListingStore
   ranks: RanksIndex | null
   searchIds: (query: string) => Promise<number[] | null>
-  fetchGeekItem: (id: number) => Promise<GeekItem | null>
+  fetchGeekItem?: (id: number) => Promise<GeekItem | null>
+  fetchGeekItems?: (ids: number[]) => Promise<GeekItem[] | null>
   skipped: SkipStore
   maxOnlineRequests: number
   sleep?: (ms: number) => Promise<void>
@@ -63,6 +64,11 @@ export async function runBggBackfill(deps: {
     kind: 'base' | 'expansion',
     rating: number | null,
     rank: number | null,
+    extra?: {
+      imageUrl?: string | null
+      description?: string | null
+      expandsBggId?: number | null
+    },
   ): Promise<boolean> => {
     const found = await deps.store.findGameByBggId(bggId)
     const gameId = found?.id ?? (await deps.store.createGame({
@@ -71,6 +77,9 @@ export async function runBggBackfill(deps: {
       bggId,
       ...(rating !== null && { bggRating: rating }),
       ...(rank !== null && { bggRank: rank }),
+      ...(extra?.imageUrl != null && { imageUrl: extra.imageUrl }),
+      ...(extra?.description != null && { description: extra.description }),
+      ...(extra?.expandsBggId != null && { expandsBggId: extra.expandsBggId }),
     }))
     const written = await deps.store.setProductGame(productId, gameId)
     await deps.store.fillListingGame(productId, gameId)
@@ -128,16 +137,30 @@ export async function runBggBackfill(deps: {
 
     const items: GeekItem[] = []
     let itemStopped = false
-    for (const id of ids.slice(0, CANDIDATE_CAP)) {
-      if (itemStopped) break
-      await sleep(ONLINE_SPACING_MS)
-      onlineRequests++
-      const item = await deps.fetchGeekItem(id)
-      if (item === null) {
-        itemStopped = true
-        break
+    const candidateIds = ids.slice(0, CANDIDATE_CAP)
+    if (deps.fetchGeekItems) {
+      if (candidateIds.length > 0) {
+        await sleep(ONLINE_SPACING_MS)
+        onlineRequests++
+        const fetched = await deps.fetchGeekItems(candidateIds)
+        if (fetched === null) {
+          itemStopped = true
+        } else {
+          items.push(...fetched)
+        }
       }
-      items.push(item)
+    } else if (deps.fetchGeekItem) {
+      for (const id of candidateIds) {
+        if (itemStopped) break
+        await sleep(ONLINE_SPACING_MS)
+        onlineRequests++
+        const item = await deps.fetchGeekItem(id)
+        if (item === null) {
+          itemStopped = true
+          break
+        }
+        items.push(item)
+      }
     }
     if (itemStopped) {
       onlineStopped = true
@@ -150,7 +173,21 @@ export async function runBggBackfill(deps: {
       const kind: 'base' | 'expansion' = ranked
         ? ranked.isExpansion ? 'expansion' : 'base'
         : chosen.subtype === 'boardgameexpansion' ? 'expansion' : 'base'
-      const written = await linkGame(product.id, product.title, chosen.bggId, kind, ranked?.average ?? null, ranked?.rank ?? null)
+      const rating = ranked?.average ?? chosen.bggRating ?? null
+      const rank = ranked?.rank ?? chosen.bggRank ?? null
+      const written = await linkGame(
+        product.id,
+        product.title,
+        chosen.bggId,
+        kind,
+        rating,
+        rank,
+        {
+          imageUrl: chosen.imageUrl,
+          description: chosen.description,
+          expandsBggId: chosen.expandsBggId,
+        },
+      )
       if (written) linkedOnline++
       continue
     }

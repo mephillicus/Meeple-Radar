@@ -36,7 +36,7 @@ jobs:
       - name: Download BGG ranks CSV
         run: |
           mkdir -p data
-          curl -L -o data/boardgames_ranks.csv ${{ secrets.BGG_RANKS_CSV_URL }}
+          curl -fsSL -o data/boardgames_ranks.csv ${{ secrets.BGG_RANKS_CSV_URL }}
       - run: npm run collect
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

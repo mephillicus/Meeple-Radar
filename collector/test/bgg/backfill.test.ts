@@ -198,3 +198,46 @@ test('CSV mancante: report csvMissing e nessuna assegnazione', async () => {
   expect(report.csvMissing).toBe(true)
   expect(store.setProductGame).not.toHaveBeenCalled()
 })
+
+test('online: passa imageUrl, description ed expandsBggId a createGame e supporta fetchGeekItems batch', async () => {
+  const store = fakeStore([product(1, '7 Wonders Duel: Agora', '2020-10-01')])
+  const ranks = buildRanksIndex([])
+  const fetchGeekItems = vi.fn().mockResolvedValue([
+    {
+      bggId: 309116,
+      name: '7 Wonders Duel: Agora',
+      subtype: 'boardgameexpansion',
+      alternateNames: [],
+      yearpublished: 2020,
+      imageUrl: 'https://cf.geekdo-images.com/agora.jpg',
+      description: 'Senate expansion',
+      expandsBggId: 173346,
+      bggRating: 7.9,
+      bggRank: null,
+    },
+  ])
+  const report = await runBggBackfill({
+    store: store as never,
+    ranks,
+    searchIds: vi.fn().mockResolvedValue([309116]),
+    fetchGeekItems,
+    skipped: fakeSkipped(),
+    maxOnlineRequests: 10,
+    sleep: noopSleep,
+    loadCaptured: () => ({}),
+    saveCaptured: vi.fn(),
+  })
+  expect(report.linkedOnline).toBe(1)
+  expect(fetchGeekItems).toHaveBeenCalledWith([309116])
+  expect(store.createGame).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: '7 Wonders Duel: Agora',
+      kind: 'expansion',
+      bggId: 309116,
+      bggRating: 7.9,
+      imageUrl: 'https://cf.geekdo-images.com/agora.jpg',
+      description: 'Senate expansion',
+      expandsBggId: 173346,
+    }),
+  )
+})

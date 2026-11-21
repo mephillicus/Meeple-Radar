@@ -287,3 +287,99 @@ test('lato online con fetchGeekItems: ritorno null interrompe silenziosamente il
   expect(report.onlineRequests).toBe(2)
   expect(report.error).toBeUndefined()
 })
+
+test('hydration batch via /xmlapi2/thing: idrata game appena creati da CSV e game esistenti incompleti in chunk da 20 senza consumare ONLINE_BUDGET', async () => {
+  const csvRows = [
+    '1,"Carcassonne",2000,10,7,7.4,100,0,,',
+    ...Array.from({ length: 24 }, (_, i) => `${100 + i},"Expansion ${i}",2024,,7,7.8,50,1,,`),
+  ].join('\n')
+  const idx = buildRanksIndex(parseRanksCsv(HEADER + '\n' + csvRows + '\n'))
+
+  const missingInDb = Array.from({ length: 24 }, (_, i) => ({
+    id: 200 + i,
+    bggId: 100 + i,
+    kind: 'expansion' as const,
+  }))
+
+  const store = {
+    ...storeBase([{ id: 1, title: 'Carcassonne', normalizedTitle: 'carcassonne' }]),
+    createGame: vi.fn().mockResolvedValue(50),
+    findGamesMissingMetadata: vi.fn().mockResolvedValue([
+      // Include anche il game appena creato (bggId 1) per verificare la deduplica
+      { id: 50, bggId: 1, kind: 'base' as const },
+      ...missingInDb,
+    ]),
+    updateGameMetadata: vi.fn().mockResolvedValue(undefined),
+  } as any
+
+  const fetchGeekItems = vi.fn().mockImplementation(async (ids: number[]) =>
+    ids.map((id) =>
+      geek(id, `Game ${id}`, {
+        subtype: id === 1 ? 'boardgame' : 'boardgameexpansion',
+        imageUrl: `https://cf.geekdo-images.com/${id}.jpg`,
+        description: `Desc ${id}`,
+        expandsBggId: id === 1 ? null : 1,
+        bggRating: 6.5,
+        bggRank: 9999,
+      }),
+    ),
+  )
+
+  const sleep = vi.fn().mockResolvedValue(undefined)
+  const report = await runBggEnrichment({
+    store,
+    ranks: idx,
+    searchIds: vi.fn().mockResolvedValue([]),
+    fetchGeekItems,
+    skipped: skipBase(),
+    sleep,
+  })
+
+  // 1 creato via CSV + 24 da findGamesMissingMetadata = 25 game unici -> 2 batch (20 + 5)
+  expect(fetchGeekItems).toHaveBeenCalledTimes(2)
+  expect(fetchGeekItems.mock.calls[0][0]).toHaveLength(20)
+  expect(fetchGeekItems.mock.calls[1][0]).toHaveLength(5)
+  expect(store.updateGameMetadata).toHaveBeenCalledTimes(25)
+  // Verifica che il game 50 (Carcassonne, bggId 1) riceva imageUrl/description da XML e rating/rank dal CSV
+  expect(store.updateGameMetadata).toHaveBeenCalledWith(50, {
+    imageUrl: 'https://cf.geekdo-images.com/1.jpg',
+    description: 'Desc 1',
+    expandsBggId: null,
+    bggRating: 7.4,
+    bggRank: 10,
+  })
+  // Verifica che un'espansione (gameId 200, bggId 100) riceva expandsBggId: 1
+  expect(store.updateGameMetadata).toHaveBeenCalledWith(200, {
+    imageUrl: 'https://cf.geekdo-images.com/100.jpg',
+    description: 'Desc 100',
+    expandsBggId: 1,
+    bggRating: 7.8,
+    bggRank: 9999,
+  })
+  // L'hydration non deve consumare onlineRequests (ONLINE_BUDGET)
+  expect(report.onlineRequests).toBe(0)
+  expect(report.hydratedGames).toBe(25)
+})
+
+test('match CSV su game già esistente aggiorna bggRating e bggRank via updateGameMetadata', async () => {
+  const store = {
+    ...storeBase([{ id: 1, title: 'Carcassonne', normalizedTitle: 'carcassonne' }]),
+    findGameByBggId: vi.fn().mockResolvedValue({ id: 77 }),
+    updateGameMetadata: vi.fn().mockResolvedValue(undefined),
+  } as any
+
+  const report = await runBggEnrichment({
+    store,
+    ranks: ranks(),
+    searchIds: vi.fn().mockResolvedValue([]),
+    skipped: skipBase(),
+  })
+
+  expect(report.viaCsv).toBe(1)
+  expect(store.createGame).not.toHaveBeenCalled()
+  expect(store.updateGameMetadata).toHaveBeenCalledTimes(1)
+  expect(store.updateGameMetadata).toHaveBeenCalledWith(77, {
+    bggRating: 7.4,
+    bggRank: 10,
+  })
+})

@@ -1,22 +1,22 @@
 import type { Source } from './types.js'
 
 export const SOURCES: Source[] = [
-  { id: 'asmodee',       name: 'Asmodee Italia',       kind: 'html',        baseUrl: 'https://www.asmodee.it',           enabled: true },
-  { id: 'cranio',        name: 'Cranio Creations',     kind: 'shopify',     baseUrl: 'https://craniocreations.it',       enabled: true },
-  { id: 'ravensburger',  name: 'Ravensburger',         kind: 'headless',    baseUrl: 'https://www.ravensburger.it',      enabled: true }, // Cloudflare: usa relay Jina AI con JINA_API_KEY + rate-limiter; spec in html/ravensburger.ts
-  { id: 'giochiuniti',   name: 'Giochi Uniti',         kind: 'html',        baseUrl: 'https://www.giochiuniti.it',       enabled: true },
-  { id: 'ghenos',        name: 'Ghenos Games',         kind: 'wordpress',   baseUrl: 'https://www.ghenosgames.com',      enabled: true },
-  { id: 'pendragon',     name: 'Pendragon Game Studio', kind: 'woocommerce', baseUrl: 'https://www.pendragongamestudio.com', enabled: true },
+  { id: 'asmodee',       name: 'Asmodee Italia',       kind: 'html',        baseUrl: 'https://www.asmodee.it',           defaultPublisher: 'Asmodee Italia',        enabled: true },
+  { id: 'cranio',        name: 'Cranio Creations',     kind: 'shopify',     baseUrl: 'https://craniocreations.it',       defaultPublisher: 'Cranio Creations',      enabled: true },
+  { id: 'ravensburger',  name: 'Ravensburger',         kind: 'headless',    baseUrl: 'https://www.ravensburger.it',      defaultPublisher: 'Ravensburger',          enabled: true }, // Cloudflare: usa relay Jina AI con JINA_API_KEY + rate-limiter; spec in html/ravensburger.ts
+  { id: 'giochiuniti',   name: 'Giochi Uniti',         kind: 'html',        baseUrl: 'https://www.giochiuniti.it',       defaultPublisher: 'Giochi Uniti',          enabled: true },
+  { id: 'ghenos',        name: 'Ghenos Games',         kind: 'wordpress',   baseUrl: 'https://www.ghenosgames.com',      defaultPublisher: 'Ghenos Games',          enabled: true },
+  { id: 'pendragon',     name: 'Pendragon Game Studio', kind: 'woocommerce', baseUrl: 'https://www.pendragongamestudio.com', defaultPublisher: 'Pendragon Game Studio', enabled: true },
   { id: 'dungeondice',   name: 'DungeonDice',          kind: 'headless',    baseUrl: 'https://www.dungeondice.it',       enabled: true },  // Cloudflare: risponde 403 a fetch/headless, ma accetta curl; spec in html/dungeondice.ts
   { id: 'magicmerchant', name: 'Magic Merchant',       kind: 'headless',    baseUrl: 'https://magicmerchant.it',         enabled: false }, // Cloudflare managed challenge: blocca fetch/curl e il reader Jina AI → resta disabilitata
   { id: 'uplay',         name: 'uplay.it',             kind: 'headless',    baseUrl: 'https://www.uplay.it',             enabled: true }, // Cloudflare: usa relay Jina AI con JINA_API_KEY + rate-limiter; spec in html/uplay.ts
   { id: 'boardhouse',    name: 'BoardHouse Store',      kind: 'shopify',    baseUrl: 'https://boardhousestore.com',      collection: 'preordini', enabled: true }, // collection preordini: l'intero catalogo sono ~2800 prodotti
-  { id: 'supernova',     name: 'Studio Supernova',      kind: 'shopify',     baseUrl: 'https://www.studiosupernova.it',   enabled: true },   // il dominio senza www ha TLS rotto
-  { id: 'littlerocket',  name: 'Little Rocket Games',   kind: 'woocommerce', baseUrl: 'https://www.littlerocketgames.com', enabled: true },
-  { id: 'msedizioni',    name: 'MS Edizioni',           kind: 'woocommerce', baseUrl: 'https://www.msedizioni.it',        enabled: true },
-  { id: 'dvgiochi',      name: 'dV Games',             kind: 'html',        baseUrl: 'https://www.dvgiochi.com',         enabled: true },
-  { id: 'horribleguild', name: 'Horrible Guild',       kind: 'html',        baseUrl: 'https://horribleguild.com',        enabled: true },
-  { id: 'gateongames',   name: 'GateOnGames',          kind: 'html',        baseUrl: 'https://www.gateongames.com',     enabled: true },
+  { id: 'supernova',     name: 'Studio Supernova',      kind: 'shopify',     baseUrl: 'https://www.studiosupernova.it',   defaultPublisher: 'Supernova',             enabled: true },   // il dominio senza www ha TLS rotto
+  { id: 'littlerocket',  name: 'Little Rocket Games',   kind: 'woocommerce', baseUrl: 'https://www.littlerocketgames.com', defaultPublisher: 'Little Rocket Games',   enabled: true },
+  { id: 'msedizioni',    name: 'MS Edizioni',           kind: 'woocommerce', baseUrl: 'https://www.msedizioni.it',        defaultPublisher: 'MS Edizioni',           enabled: true },
+  { id: 'dvgiochi',      name: 'dV Games',             kind: 'html',        baseUrl: 'https://www.dvgiochi.com',         defaultPublisher: 'dV Giochi',             enabled: true },
+  { id: 'horribleguild', name: 'Horrible Guild',       kind: 'html',        baseUrl: 'https://horribleguild.com',        defaultPublisher: 'Horrible Guild',        enabled: true },
+  { id: 'gateongames',   name: 'GateOnGames',          kind: 'html',        baseUrl: 'https://www.gateongames.com',     defaultPublisher: 'GateOnGames',           enabled: true },
   { id: 'gemini',        name: 'Gemini',               kind: 'gemini',      baseUrl: 'https://generativelanguage.googleapis.com', enabled: false }, // Senza grounding web Gemini risponde solo di memoria (lista vuota o titoli inventati): il passaggio news→Gemini è in google-news; riabilitare solo se serve un estrattore standalone
   { id: 'houseofgames',  name: 'House of Games',       kind: 'roundups',    baseUrl: 'https://www.houseofgames.it', enabled: true }, // Roundup mensili "nuove uscite": scoperta da post-sitemap.xml, parse HTML deterministico (spec docs/superpowers/specs/2026-10-22-hog-roundups-design.md)
   { id: 'google-news',   name: 'Google News',          kind: 'news',        baseUrl: 'https://news.google.com/rss/search', enabled: false }, // Sostituita da houseofgames/roundups: titoli Google News inutili; riabilitare solo se servisse di nuovo

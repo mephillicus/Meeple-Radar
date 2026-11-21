@@ -72,6 +72,7 @@ export interface ListingStore {
   findSources(): Promise<{ id: string; name: string }[]>
   upsertProducts(products: Listing[]): Promise<number[]>
   upsertProductsBatch?(products: Listing[]): Promise<Map<string, number>>
+  getProductFillState?(productId: number): { hasDescription: boolean; hasReleaseDate: boolean; hasPublisher: boolean } | undefined
   linkListingToProduct(listingId: number, productId: number): Promise<void>
   linkListingsToProduct?(listingIds: number[], productId: number): Promise<void>
   fillProductDescription(productId: number, description: string): Promise<void>
@@ -90,6 +91,17 @@ export interface ListingStore {
     description?: string | null
     expandsBggId?: number | null
   }): Promise<number>
+  findGamesMissingMetadata?(limit?: number): Promise<{ id: number; bggId: number; kind: 'base' | 'expansion' }[]>
+  updateGameMetadata?(
+    gameId: number,
+    patch: {
+      imageUrl?: string | null
+      description?: string | null
+      expandsBggId?: number | null
+      bggRating?: number | null
+      bggRank?: number | null
+    },
+  ): Promise<void>
   setProductGame(productId: number, gameId: number): Promise<boolean>
   fillListingGame(productId: number, gameId: number): Promise<number>
   upsertCollectionItem(rows: CollectionItem[]): Promise<void>
@@ -192,6 +204,11 @@ export function createSupabaseStore(
   client: SupabaseLike,
   now: () => string = () => new Date().toISOString(),
 ): ListingStore {
+  const productFillState = new Map<
+    number,
+    { hasDescription: boolean; hasReleaseDate: boolean; hasPublisher: boolean }
+  >()
+
   // Lettore condiviso: createGame ci si riaggancia quando l'insert viene
   // respinto dal vincolo unique(bgg_id), per leggere la riga che ha vinto.
   const findGameByBggId = async (bggId: number): Promise<{ id: number } | null> => {
@@ -367,7 +384,7 @@ export function createSupabaseStore(
             client
               .from('product')
               .upsert(chunk, { onConflict: 'normalized_title' })
-              .select('id, normalized_title')
+              .select('id, normalized_title, description, release_date, publisher')
           )) as { data: Record<string, unknown>[] | null; error: { message: string } | null }
           if (error) throw new Error(`upsertProductsBatch: ${error.message}`)
           const returned = data ?? []
@@ -378,12 +395,34 @@ export function createSupabaseStore(
                 ? String(row.normalized_title)
                 : String(chunk[j]?.normalized_title ?? '')
             if (key && row.id !== null && row.id !== undefined) {
-              result.set(key, Number(row.id))
+              const id = Number(row.id)
+              result.set(key, id)
+              productFillState.set(id, {
+                hasDescription: Boolean(
+                  row.description !== undefined &&
+                    row.description !== null &&
+                    String(row.description).trim().length > 0,
+                ),
+                hasReleaseDate: Boolean(
+                  row.release_date !== undefined &&
+                    row.release_date !== null &&
+                    String(row.release_date).trim().length > 0,
+                ),
+                hasPublisher: Boolean(
+                  row.publisher !== undefined &&
+                    row.publisher !== null &&
+                    String(row.publisher).trim().length > 0,
+                ),
+              })
             }
           }
         }
       }
       return result
+    },
+
+    getProductFillState(productId: number) {
+      return productFillState.get(productId)
     },
 
     async linkListingToProduct(listingId: number, productId: number): Promise<void> {
@@ -537,6 +576,53 @@ export function createSupabaseStore(
       const existing = await findGameByBggId(game.bggId).catch(() => null)
       if (existing) return existing.id
       throw new Error(`createGame: ${error ? error.message : 'id non recuperabile dopo insert'}`)
+    },
+
+    async findGamesMissingMetadata(limit = 200): Promise<{ id: number; bggId: number; kind: 'base' | 'expansion' }[]> {
+      if (limit <= 0) return []
+      const { data, error } = (await retryOperation(() =>
+        client
+          .from('game')
+          .select('id, bgg_id, kind')
+          .not('bgg_id', 'is', null)
+          .or('and(kind.eq.expansion,expands_bgg_id.is.null),image_url.is.null,description.is.null')
+          .order('kind', { ascending: false })
+          .order('id', { ascending: true })
+          .limit(limit)
+      )) as { data: Record<string, unknown>[] | null; error: { message: string } | null }
+      if (error) throw new Error(`findGamesMissingMetadata: ${error.message}`)
+      return (data ?? []).map((row) => ({
+        id: Number(row.id),
+        bggId: Number(row.bgg_id),
+        kind: row.kind === 'expansion' ? 'expansion' : 'base',
+      }))
+    },
+
+    async updateGameMetadata(
+      gameId: number,
+      patch: {
+        imageUrl?: string | null
+        description?: string | null
+        expandsBggId?: number | null
+        bggRating?: number | null
+        bggRank?: number | null
+      },
+    ): Promise<void> {
+      const payload: Record<string, unknown> = {
+        ...(patch.imageUrl != null && { image_url: patch.imageUrl }),
+        ...(patch.description != null && { description: patch.description }),
+        ...(patch.expandsBggId != null && { expands_bgg_id: patch.expandsBggId }),
+        ...(patch.bggRating != null && { bgg_rating: patch.bggRating }),
+        ...(patch.bggRank != null && { bgg_rank: patch.bggRank }),
+      }
+      if (Object.keys(payload).length === 0) return
+      const { error } = (await retryOperation(() =>
+        client
+          .from('game')
+          .update(payload)
+          .eq('id', gameId)
+      )) as { error: { message: string } | null }
+      if (error) throw new Error(`updateGameMetadata(${gameId}): ${error.message}`)
     },
 
     // Write-once sul product: il filtro .is("game_id", null) e cio che
@@ -793,25 +879,52 @@ export function createSupabaseStore(
       for (let i = 0; i < listingIds.length; i += TITLE_QUERY_BATCH_SIZE) {
         const chunk = listingIds.slice(i, i + TITLE_QUERY_BATCH_SIZE)
         const { data, error } = await client
-          .from('listing_price_history')
-          .select('listing_id, price, currency, availability, recorded_at')
+          .from('listing_best_price')
+          .select('listing_id, current_price, previous_price, current_availability, previous_availability, recorded_at')
           .in('listing_id', chunk)
-          .order('recorded_at', { ascending: false })
-          .order('id', { ascending: false })
         if (error) throw new Error(`findFavoriteListings(history): ${error.message}`)
         for (const h of (data ?? []) as Record<string, unknown>[]) {
           const lid = Number(h.listing_id)
-          const bucket = historyByListing.get(lid) ?? []
-          if (bucket.length < 2) {
+          const listingRow = listingsById.get(lid)
+          const currency =
+            h.currency !== null && h.currency !== undefined
+              ? String(h.currency)
+              : listingRow && listingRow.currency !== null && listingRow.currency !== undefined
+                ? String(listingRow.currency)
+                : null
+          const currentPrice =
+            h.current_price === null || h.current_price === undefined ? null : Number(h.current_price)
+          const previousPrice =
+            h.previous_price === null || h.previous_price === undefined ? null : Number(h.previous_price)
+          const currentAvailability =
+            h.current_availability === null || h.current_availability === undefined
+              ? null
+              : String(h.current_availability)
+          const previousAvailability =
+            h.previous_availability === null || h.previous_availability === undefined
+              ? null
+              : String(h.previous_availability)
+          const recordedAt = String(h.recorded_at ?? '')
+
+          const bucket: ListingPriceHistoryRow[] = [
+            {
+              listingId: lid,
+              price: currentPrice,
+              currency,
+              availability: currentAvailability,
+              recordedAt,
+            },
+          ]
+          if (previousPrice !== null || previousAvailability !== null) {
             bucket.push({
               listingId: lid,
-              price: h.price === null || h.price === undefined ? null : Number(h.price),
-              currency: h.currency === null || h.currency === undefined ? null : String(h.currency),
-              availability: h.availability === null || h.availability === undefined ? null : String(h.availability),
-              recordedAt: String(h.recorded_at ?? ''),
+              price: previousPrice,
+              currency,
+              availability: previousAvailability,
+              recordedAt,
             })
-            historyByListing.set(lid, bucket)
           }
+          historyByListing.set(lid, bucket)
         }
       }
 

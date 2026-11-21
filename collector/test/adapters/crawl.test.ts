@@ -92,3 +92,28 @@ test('non supera mai il numero di richieste concorrenti richiesto', async () => 
   const urls = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((x) => `https://s/${x}`)
   expect(await runInParallel(urls, 3)).toBeLessThanOrEqual(3)
 })
+
+test('distanzia le richieste tra tutti i worker concorrenti tramite min-interval limiter condiviso', async () => {
+  let currentNow = 1_000
+  const sleeps: number[] = []
+  const requestTimes: number[] = []
+  const urls = ['a', 'b', 'c', 'd', 'e', 'f'].map((x) => `https://s/${x}`)
+
+  await collectHtmlProducts({
+    spec: { discover: async () => urls.map((url) => ({ url })) },
+    fetchText: async () => {
+      requestTimes.push(currentNow)
+      return P1
+    },
+    concurrency: 6,
+    delayMs: 250,
+    now: () => currentNow,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+      currentNow += ms
+    },
+  })
+
+  expect(requestTimes).toEqual([1000, 1250, 1500, 1750, 2000, 2250])
+  expect(sleeps).toEqual([250, 250, 250, 250, 250])
+})

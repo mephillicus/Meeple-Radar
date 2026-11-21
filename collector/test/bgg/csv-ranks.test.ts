@@ -49,3 +49,19 @@ test('loadRanksIndex: primo path esistente vince, nessun path -> null', () => {
   expect(loadRanksIndex([path.join(dir, 'nope.csv')])).toBeNull()
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+test('loadRanksIndex: ignora CSV vuoto o pagina HTML corrotta (0 righe) e cerca nei fallback o ritorna null', () => {
+  expect(parseRanksCsv('')).toEqual([])
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ranks-empty-'))
+  const emptyCsv = path.join(dir, 'empty.csv')
+  const htmlErrorCsv = path.join(dir, 'html.csv')
+  const validCsv = path.join(dir, 'valid.csv')
+  fs.writeFileSync(emptyCsv, '')
+  fs.writeFileSync(htmlErrorCsv, '<html><body>503 Service Unavailable</body></html>')
+  fs.writeFileSync(validCsv, HEADER + '\n42,"Catan",1995,100,7,7.2,1000,0,,\n')
+
+  expect(loadRanksIndex([emptyCsv, htmlErrorCsv])).toBeNull()
+  const fallbackIndex = loadRanksIndex([emptyCsv, htmlErrorCsv, validCsv])
+  expect(fallbackIndex?.byId.get(42)?.name).toBe('Catan')
+  fs.rmSync(dir, { recursive: true, force: true })
+})

@@ -1,18 +1,29 @@
 import { RawProductSchema, type RawProduct } from '../types.js'
-import { defaultFetch, USER_AGENT, type HttpClient } from './http.js'
+import { defaultFetch, textFetcher, type HttpClient, type TextFetcher } from './http.js'
+import { createMinIntervalLimiter } from './relay.js'
 import { extractReleaseDate } from '../normalize.js'
 import * as cheerio from 'cheerio'
 
 const PREORDER_AVAILABILITY = 'preordine'
+export const DEFAULT_HTML_DELAY_MS = 250
+export const PREORDER_SIGNAL_RE = /pre-?order|preordin|uscita|day[\s-]?one|arrivo/i
 
 type ShopifyProduct = {
   id: number | string
   title?: string
   handle?: string
   body_html?: string
+  tags?: string[] | string
   published_at?: string
   images?: { src?: string }[]
   variants?: { price?: string; available?: boolean }[]
+}
+
+export type ShopifyFetchOptions = {
+  htmlDelayMs?: number
+  sleep?: (ms: number) => Promise<void>
+  maxRetries?: number
+  baseDelayMs?: number
 }
 
 const PAGE_SIZE = 250
@@ -22,11 +33,24 @@ function isFutureIso(iso: string, now: Date): boolean {
   return d > now
 }
 
-async function extractDateFromHtml(url: string, http: HttpClient): Promise<string | undefined> {
+export function hasPreorderSignal(product: Pick<ShopifyProduct, 'title' | 'body_html' | 'tags'>): boolean {
+  const tagsText = Array.isArray(product.tags) ? product.tags.join(' ') : (product.tags ?? '')
+  return (
+    PREORDER_SIGNAL_RE.test(product.title ?? '') ||
+    PREORDER_SIGNAL_RE.test(product.body_html ?? '') ||
+    PREORDER_SIGNAL_RE.test(tagsText)
+  )
+}
+
+async function extractDateFromHtml(
+  url: string,
+  fetchText: TextFetcher,
+  acquireHtmlSlot: () => Promise<void>,
+): Promise<string | undefined> {
   try {
-    const res = await http(url, { 'User-Agent': USER_AGENT })
-    if (res.status !== 200) return undefined
-    const html = await res.text()
+    await acquireHtmlSlot()
+    const html = await fetchText(url)
+    if (!html) return undefined
     const $ = cheerio.load(html)
     return extractReleaseDate($.text()) ?? undefined
   } catch {
@@ -39,19 +63,51 @@ export async function fetchShopifyProducts(
   http: HttpClient = defaultFetch,
   collection?: string,
   now: Date = new Date(),
+  opts?: ShopifyFetchOptions,
 ): Promise<RawProduct[]> {
   const base = baseUrl.replace(/\/+$/, '')
   const isPreordini = collection === 'preordini'
   const path = collection
     ? `/collections/${encodeURIComponent(collection)}/products.json`
     : '/products.json'
+
+  const retryOpts = {
+    sleep: opts?.sleep,
+    maxRetries: opts?.maxRetries,
+    baseDelayMs: opts?.baseDelayMs,
+  }
+  const fetchHtmlText = textFetcher(http, retryOpts)
+  const fetchJsonText = textFetcher(
+    async (url, headers) => {
+      const res = await http(url, headers)
+      return {
+        ...res,
+        text: async () => {
+          const text = await res.text()
+          if (text) return text
+          const json = await res.json()
+          return json === undefined ? '' : JSON.stringify(json)
+        },
+      }
+    },
+    retryOpts,
+  )
+  const htmlDelayMs = opts?.htmlDelayMs ?? DEFAULT_HTML_DELAY_MS
+  const acquireHtmlSlot = createMinIntervalLimiter({
+    minIntervalMs: htmlDelayMs,
+    sleep: opts?.sleep,
+  })
+
   const out: RawProduct[] = []
   for (let page = 1; ; page++) {
-    const res = await http(`${base}${path}?limit=${PAGE_SIZE}&page=${page}`, {
-      'User-Agent': USER_AGENT,
-    })
-    if (res.status !== 200) break
-    const body = (await res.json()) as { products?: ShopifyProduct[] } | null
+    const rawJson = await fetchJsonText(`${base}${path}?limit=${PAGE_SIZE}&page=${page}`)
+    if (!rawJson) break
+    let body: { products?: ShopifyProduct[] } | null = null
+    try {
+      body = JSON.parse(rawJson) as { products?: ShopifyProduct[] } | null
+    } catch {
+      break
+    }
     const products = Array.isArray(body?.products) ? body!.products! : []
     if (products.length === 0) break
     for (const p of products) {
@@ -60,10 +116,14 @@ export async function fetchShopifyProducts(
 
       let releaseDateRaw = extractReleaseDate(p.body_html ?? undefined) ?? undefined
 
-      if (!releaseDateRaw && (isPreordini || available === true)) {
+      if (!releaseDateRaw && (isPreordini || (available !== false && hasPreorderSignal(p)))) {
         const handle = p.handle ?? ''
         if (handle) {
-          const htmlDate = await extractDateFromHtml(`${base}/products/${handle}`, http)
+          const htmlDate = await extractDateFromHtml(
+            `${base}/products/${handle}`,
+            fetchHtmlText,
+            acquireHtmlSlot,
+          )
           if (htmlDate) releaseDateRaw = htmlDate
         }
       }

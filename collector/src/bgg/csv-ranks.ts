@@ -126,7 +126,9 @@ export function loadRanksIndex(candidates: string[]): RanksIndex | null {
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       const text = fs.readFileSync(candidate, 'utf8')
-      return buildRanksIndex(parseRanksCsv(text))
+      const index = buildRanksIndex(parseRanksCsv(text))
+      if (index.byId.size === 0) continue
+      return index
     }
   }
   return null

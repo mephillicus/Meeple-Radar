@@ -1,5 +1,6 @@
 import type { RawProduct } from '../../types.js'
 import type { TextFetcher } from '../http.js'
+import { createMinIntervalLimiter } from '../relay.js'
 import { extractProduct } from './extract.js'
 
 export type DiscoveredProduct = { url: string; releaseDate?: string }
@@ -9,8 +10,6 @@ export type HtmlSourceSpec = {
   extract?: (html: string, url: string) => RawProduct | null
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-
 export const DEFAULT_CONCURRENCY = 6
 
 export async function collectHtmlProducts(args: {
@@ -19,6 +18,8 @@ export async function collectHtmlProducts(args: {
   maxProducts?: number
   delayMs?: number
   concurrency?: number
+  sleep?: (ms: number) => Promise<void>
+  now?: () => number
 }): Promise<RawProduct[]> {
   const { spec, fetchText, delayMs = 250 } = args
   const concurrency = Math.max(1, args.concurrency ?? DEFAULT_CONCURRENCY)
@@ -35,6 +36,11 @@ export async function collectHtmlProducts(args: {
     if (items.length >= maxProducts) break
   }
 
+  const acquireSlot = createMinIntervalLimiter({
+    minIntervalMs: delayMs,
+    sleep: args.sleep,
+    now: args.now,
+  })
   const results: (RawProduct | null)[] = new Array(items.length).fill(null)
   let next = 0
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
@@ -42,7 +48,7 @@ export async function collectHtmlProducts(args: {
       const i = next++
       if (i >= items.length) return
       const item = items[i]
-      if (i > 0 && delayMs > 0) await sleep(delayMs)
+      await acquireSlot()
       let html: string | null = null
       try {
         html = await fetchText(item.url)

@@ -30,6 +30,10 @@ export function buildSearchQuery(title: string): string {
     if (next === cleaned || next.length === 0) break
     cleaned = next
   }
+  const withoutBrand = cleaned.replace(/^ravensburger(?:\s*[-–—/:,]\s*|\s+)/i, '').trim()
+  if (withoutBrand.length > 0) {
+    cleaned = withoutBrand
+  }
   return cleaned || title
 }
 

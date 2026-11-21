@@ -96,3 +96,31 @@ test('i prodotti gia collegati vengono saltati senza richieste di rete', async (
   expect(report.applied).toBe(0)
   expect(fetchGeekItem).not.toHaveBeenCalled()
 })
+
+test('passa imageUrl, description ed expandsBggId dal geekitem a createGame', async () => {
+  const store = fakeStore()
+  await applyReview({
+    store: store as never,
+    ranks: buildRanksIndex([]),
+    fetchGeekItem: vi.fn().mockResolvedValue({
+      bggId: 309116,
+      name: '7 Wonders Duel: Agora',
+      subtype: 'boardgameexpansion',
+      alternateNames: [],
+      yearpublished: 2020,
+      imageUrl: 'https://cf.geekdo-images.com/agora.jpg',
+      description: 'Senate expansion',
+      expandsBggId: 173346,
+      bggRating: 7.9,
+    }),
+    sleep: noopSleep,
+  }, [{ productId: 1, bggId: 309116 }])
+  expect(store.createGame).toHaveBeenCalledWith(expect.objectContaining({
+    bggId: 309116,
+    kind: 'expansion',
+    bggRating: 7.9,
+    imageUrl: 'https://cf.geekdo-images.com/agora.jpg',
+    description: 'Senate expansion',
+    expandsBggId: 173346,
+  }))
+})

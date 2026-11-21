@@ -53,12 +53,18 @@ export async function applyReview(deps: {
     const kind: 'base' | 'expansion' = ranked
       ? ranked.isExpansion ? 'expansion' : 'base'
       : item.subtype === 'boardgameexpansion' ? 'expansion' : 'base'
+    const bggRating = ranked ? ranked.average : (item.bggRating ?? null)
+    const bggRank = ranked ? ranked.rank : (item.bggRank ?? null)
     const found = await deps.store.findGameByBggId(row.bggId)
     const gameId = found?.id ?? (await deps.store.createGame({
       name: product.title,
       kind,
       bggId: row.bggId,
-      ...(ranked ? { bggRating: ranked.average, bggRank: ranked.rank } : {}),
+      ...(ranked || bggRating !== null ? { bggRating } : {}),
+      ...(ranked || bggRank !== null ? { bggRank } : {}),
+      ...(item.imageUrl != null ? { imageUrl: item.imageUrl } : {}),
+      ...(item.description != null ? { description: item.description } : {}),
+      ...(item.expandsBggId != null ? { expandsBggId: item.expandsBggId } : {}),
     }))
     if (await deps.store.setProductGame(product.id, gameId)) applied++
     await deps.store.fillListingGame(product.id, gameId)

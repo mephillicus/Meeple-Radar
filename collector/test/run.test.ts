@@ -353,3 +353,39 @@ test('errori in alerts o healthCheck sono best-effort e non falliscono la run', 
   expect(report.health?.error).toBe('health failed')
   expect(report.failures).toEqual({})
 })
+
+test('salta fillProduct* ridondanti quando getProductFillState indica colonne gia popolate e usa source.defaultPublisher', async () => {
+  const store = {
+    ...storeBase(),
+    findListingsByTitles: vi.fn().mockResolvedValue(new Map()),
+    upsertProductsBatch: vi.fn().mockResolvedValue(new Map([['a', 11], ['b', 12]])),
+    getProductFillState: vi.fn((id: number) =>
+      id === 11
+        ? { hasDescription: true, hasReleaseDate: true, hasPublisher: true }
+        : { hasDescription: false, hasReleaseDate: false, hasPublisher: false },
+    ),
+    fillProductPublisher: vi.fn().mockResolvedValue(undefined),
+    linkListingsToProduct: vi.fn().mockResolvedValue(undefined),
+  } as any
+
+  const adapters = {
+    shopify: async () => [
+      { externalId: '1', title: 'A', url: 'https://e.com/a', descriptionRaw: '<p>Desc A</p>' },
+      { externalId: '2', title: 'B', url: 'https://e.com/b', descriptionRaw: '<p>Desc B</p>' },
+      { externalId: '3', title: 'B', url: 'https://e.com/b2', descriptionRaw: '<p>Desc B2</p>' },
+    ],
+  } as any
+
+  await runCollector({
+    sources: [{ ...src('cranio', 'shopify'), defaultPublisher: 'Cranio Creations' }],
+    adapters,
+    store,
+  })
+
+  // Product 11 (A) has all fill flags true -> skipped completely
+  // Product 12 (B) has fill flags false -> filled once, second item with title 'B' skipped via local state
+  expect(store.fillProductDescription).toHaveBeenCalledTimes(1)
+  expect(store.fillProductDescription).toHaveBeenCalledWith(12, 'Desc B')
+  expect(store.fillProductPublisher).toHaveBeenCalledTimes(1)
+  expect(store.fillProductPublisher).toHaveBeenCalledWith(12, 'Cranio Creations')
+})

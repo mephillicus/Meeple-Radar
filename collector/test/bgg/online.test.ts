@@ -109,6 +109,9 @@ test('buildSearchQuery: rimuove suffissi italiani in coda e parentesi preservand
   expect(buildSearchQuery('Gloomhaven (Edizione Italiana) - ITA')).toBe('Gloomhaven')
   expect(buildSearchQuery('7 Wonders Duel')).toBe('7 Wonders Duel')
   expect(buildSearchQuery('Vita')).toBe('Vita')
+  expect(buildSearchQuery('Ravensburger Le peripezie di Pinocchio')).toBe('Le peripezie di Pinocchio')
+  expect(buildSearchQuery('Ravensburger - Labirinto Magico (Edizione Italiana)')).toBe('Labirinto Magico')
+  expect(buildSearchQuery('Ravensburger')).toBe('Ravensburger')
 })
 
 test('bggXmlSearchUrl e parseXmlSearchIds: estrae boardgame e expansion deduplicati in ordine', () => {

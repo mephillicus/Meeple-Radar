@@ -14,6 +14,7 @@ export type BggReport = {
   listingsLinked: number
   unresolved: number
   onlineRequests: number
+  hydratedGames?: number
   csvMissing: boolean
   error?: string
   collection?: { synced: number; owned: number; wishlist: number; error?: string }
@@ -24,9 +25,27 @@ export const ONLINE_BUDGET = 25
 export const CANDIDATE_CAP = 3
 export const ONLINE_SPACING_MS = 2000
 export const RETRY_DELAY_MS = 30000
+export const THING_BATCH_SIZE = 20
+export const HYDRATE_GAME_LIMIT = 200
+
+type HydratableStore = ListingStore & {
+  findGamesMissingMetadata?: (
+    limit?: number,
+  ) => Promise<{ id: number; bggId: number; kind: 'base' | 'expansion' }[]>
+  updateGameMetadata?: (
+    gameId: number,
+    patch: {
+      imageUrl?: string | null
+      description?: string | null
+      expandsBggId?: number | null
+      bggRating?: number | null
+      bggRank?: number | null
+    },
+  ) => Promise<void>
+}
 
 export async function runBggEnrichment(deps: {
-  store: ListingStore
+  store: HydratableStore
   ranks: RanksIndex | null
   searchIds: (query: string) => Promise<number[] | null>
   fetchGeekItem?: (id: number) => Promise<GeekItem | null>
@@ -56,6 +75,7 @@ export async function runBggEnrichment(deps: {
   let viaSearch = 0
   let listingsLinked = 0
   let onlineRequests = 0
+  let hydratedGames = 0
   let error: string | undefined
 
   const onlineCandidates: {
@@ -64,6 +84,12 @@ export async function runBggEnrichment(deps: {
     normalizedTitle: string
     releaseDate: string | null
   }[] = []
+
+  const newlyCreatedCsvGames = new Map<number, number>()
+  const existingCsvMatches = new Map<
+    number,
+    { bggId: number; average: number | null; rank: number | null }
+  >()
 
   // Lato CSV (bulk, zero rete)
   for (const product of products) {
@@ -83,8 +109,18 @@ export async function runBggEnrichment(deps: {
           bggRating: row.average,
           bggRank: row.rank,
         })
+        if (!newlyCreatedCsvGames.has(row.bggId)) {
+          newlyCreatedCsvGames.set(row.bggId, gameId)
+        }
       } else {
         gameId = found.id
+        if (!existingCsvMatches.has(gameId)) {
+          existingCsvMatches.set(gameId, {
+            bggId: row.bggId,
+            average: row.average,
+            rank: row.rank,
+          })
+        }
       }
       const written = await deps.store.setProductGame(product.id, gameId)
       if (written) {
@@ -94,6 +130,68 @@ export async function runBggEnrichment(deps: {
       listingsLinked += await deps.store.fillListingGame(product.id, gameId)
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  // Batch metadata hydration via /xmlapi2/thing per game creati da CSV o già esistenti con metadati mancanti.
+  // Non consuma ONLINE_BUDGET (riservato alle ricerche searchIds/fetchGeekItem dei prodotti senza match CSV).
+  const hydratedGameIds = new Set<number>()
+  if (deps.fetchGeekItems && deps.store.updateGameMetadata) {
+    try {
+      const gameIdByBggId = new Map<number, number>()
+      for (const [bggId, gameId] of newlyCreatedCsvGames) {
+        if (gameIdByBggId.size >= HYDRATE_GAME_LIMIT) break
+        gameIdByBggId.set(bggId, gameId)
+      }
+      if (gameIdByBggId.size < HYDRATE_GAME_LIMIT && deps.store.findGamesMissingMetadata) {
+        const missing = await deps.store.findGamesMissingMetadata(HYDRATE_GAME_LIMIT)
+        for (const g of missing) {
+          if (gameIdByBggId.size >= HYDRATE_GAME_LIMIT) break
+          if (Number.isInteger(g.bggId) && g.bggId > 0 && !gameIdByBggId.has(g.bggId)) {
+            gameIdByBggId.set(g.bggId, g.id)
+          }
+        }
+      }
+
+      const bggIdsToHydrate = [...gameIdByBggId.keys()]
+      for (let i = 0; i < bggIdsToHydrate.length; i += THING_BATCH_SIZE) {
+        const chunk = bggIdsToHydrate.slice(i, i + THING_BATCH_SIZE)
+        await sleep(ONLINE_SPACING_MS)
+        const items = await deps.fetchGeekItems(chunk)
+        if (items === null) break
+        for (const item of items) {
+          const targetGameId = gameIdByBggId.get(item.bggId)
+          if (targetGameId === undefined) continue
+          const ranked = deps.ranks.byId.get(item.bggId)
+          await deps.store.updateGameMetadata(targetGameId, {
+            imageUrl: item.imageUrl ?? null,
+            description: item.description ?? null,
+            expandsBggId: item.expandsBggId ?? null,
+            bggRating: ranked?.average ?? item.bggRating ?? null,
+            bggRank: ranked?.rank ?? item.bggRank ?? null,
+          })
+          hydratedGameIds.add(targetGameId)
+          hydratedGames++
+        }
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  // Aggiorna rating/rank settimanali dai CSV per i game esistenti matchati che non sono già stati idratati sopra.
+  if (deps.store.updateGameMetadata) {
+    for (const [gameId, info] of existingCsvMatches) {
+      if (hydratedGameIds.has(gameId)) continue
+      if (info.average === null && info.rank === null) continue
+      try {
+        await deps.store.updateGameMetadata(gameId, {
+          bggRating: info.average,
+          bggRank: info.rank,
+        })
+      } catch (err) {
+        error = err instanceof Error ? err.message : String(err)
+      }
     }
   }
 
@@ -198,6 +296,7 @@ export async function runBggEnrichment(deps: {
     listingsLinked,
     unresolved: candidates - linked,
     onlineRequests,
+    hydratedGames,
     csvMissing: false,
     ...(error ? { error } : {}),
   }

@@ -7,7 +7,7 @@ import { createSkipStore } from '../src/bgg/skipped.js'
 import { buildReviewRows, parseReviewCsv, reviewToCsv } from '../src/bgg/review.js'
 import { applyReview } from '../src/bgg/apply-review.js'
 import { createCurlFetcher } from '../src/adapters/headless/fetch.js'
-import { bggSearchUrl, parseGeekItem, parseSearchIds } from '../src/bgg/online.js'
+import { bggSearchUrl, createBggXmlOnlineClient, parseGeekItem, parseSearchIds } from '../src/bgg/online.js'
 import { defaultFetch, USER_AGENT } from '../src/adapters/http.js'
 
 const RANKS_CANDIDATES = ['data/boardgames_ranks.csv', 'boardgames_ranks.csv', '../boardgames_ranks.csv']
@@ -42,17 +42,28 @@ const { supabaseUrl, supabaseServiceKey } = loadConfig(process.env)
 const store = createSupabaseClient(supabaseUrl, supabaseServiceKey)
 const ranks = loadRanksIndex(RANKS_CANDIDATES)
 
-const searchIds = async (query: string): Promise<number[] | null> => {
-  const html = await createCurlFetcher()(bggSearchUrl(query))
-  return html === null ? null : parseSearchIds(html)
-}
-const fetchGeekItem = async (id: number) => {
-  const res = await defaultFetch(
-    `https://api.geekdo.com/api/geekitems?objectid=${id}&objecttype=thing`,
-    { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-  )
-  return res.status === 200 ? parseGeekItem(await res.text(), id) : null
-}
+const bggToken = process.env.BGG_API_TOKEN?.trim()
+const bggXmlClient = bggToken ? createBggXmlOnlineClient({ token: bggToken }) : null
+
+const searchIds = bggXmlClient
+  ? bggXmlClient.searchIds
+  : async (query: string): Promise<number[] | null> => {
+      const html = await createCurlFetcher()(bggSearchUrl(query))
+      return html === null ? null : parseSearchIds(html)
+    }
+
+const fetchGeekItem = bggXmlClient
+  ? async (id: number) => {
+      const items = await bggXmlClient.fetchGeekItems([id])
+      return items === null ? null : (items[0] ?? null)
+    }
+  : async (id: number) => {
+      const res = await defaultFetch(
+        `https://api.geekdo.com/api/geekitems?objectid=${id}&objecttype=thing`,
+        { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      )
+      return res.status === 200 ? parseGeekItem(await res.text(), id) : null
+    }
 
 if (command === 'certain') {
   const maxOnlineRequests = Number(process.argv[3] ?? '200')
@@ -61,6 +72,7 @@ if (command === 'certain') {
     ranks,
     searchIds,
     fetchGeekItem,
+    ...(bggXmlClient ? { fetchGeekItems: bggXmlClient.fetchGeekItems } : {}),
     skipped: createSkipStore(SKIPPED_FILE),
     maxOnlineRequests: Number.isFinite(maxOnlineRequests) && maxOnlineRequests > 0 ? maxOnlineRequests : 200,
     loadCaptured,

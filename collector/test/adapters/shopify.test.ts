@@ -59,23 +59,91 @@ test('esaurito resta "false" anche senza data', async () => {
   expect(esaurito?.availabilityRaw).toBe('false')
 })
 
-test('disponibile senza data con fetch HTML e data futura diventa preordine', async () => {
-  const out = await fetchShopifyProducts('https://shop.example', http, undefined, now)
+test('prodotto ordinario disponibile senza segnali di preordine NON scarica la pagina HTML', async () => {
+  const htmlUrls: string[] = []
+  const trackedHttp = async (url: string) => {
+    if (url.includes('/products/') && !url.includes('/products.json')) {
+      htmlUrls.push(url)
+    }
+    return http(url)
+  }
+  const out = await fetchShopifyProducts('https://shop.example', trackedHttp, undefined, now, {
+    htmlDelayMs: 0,
+  })
+  const senzaData = out.find((p) => p.externalId === '16087837376846')
+  expect(senzaData?.availabilityRaw).toBe('true')
+  expect(senzaData?.releaseDateRaw).toBeUndefined()
+  expect(htmlUrls).not.toContain('https://shop.example/products/gioco-senza-data')
+})
+
+test('prodotto con segnali di preordine (title/body_html/tags) senza data nel body scarica HTML e diventa preordine', async () => {
+  const out = await fetchShopifyProducts('https://shop.example', http, undefined, now, {
+    htmlDelayMs: 0,
+  })
+  const preSenzaData = out.find((p) => p.externalId === '16087837376847')
+  expect(preSenzaData?.availabilityRaw).toBe('preordine')
+  expect(preSenzaData?.releaseDateRaw).toBe('2026-11-12')
+})
+
+test('preordini collection senza data: fetch HTML prende la data anche senza segnali nel titolo/body', async () => {
+  const out = await fetchShopifyProducts('https://shop.example', http, 'preordini', now, {
+    htmlDelayMs: 0,
+  })
   const senzaData = out.find((p) => p.externalId === '16087837376846')
   expect(senzaData?.availabilityRaw).toBe('preordine')
   expect(senzaData?.releaseDateRaw).toBe('2026-11-20')
+  const preSenzaData = out.find((p) => p.externalId === '16087837376847')
+  expect(preSenzaData?.availabilityRaw).toBe('preordine')
+  expect(preSenzaData?.releaseDateRaw).toBe('2026-11-12')
 })
 
-test('preordini collection senza data: fetch HTML prende la data', async () => {
-  const out = await fetchShopifyProducts(
-    'https://shop.example',
-    http,
-    'preordini',
-    now,
-  )
-  const senzaData = out.find((p) => p.externalId === '16087837376847')
-  expect(senzaData?.availabilityRaw).toBe('preordine')
-  expect(senzaData?.releaseDateRaw).toBe('2026-11-12')
+test('segnale di preordine nei tags attiva il fallback HTML e rispetta Retry-After su 429', async () => {
+  let htmlAttempts = 0
+  const sleeps: number[] = []
+  const customHttp = async (url: string) => {
+    if (url.includes('/products.json')) {
+      return {
+        status: 200,
+        json: async () => ({
+          products: [
+            {
+              id: 999,
+              title: 'Nuovo Gioco',
+              handle: 'nuovo-gioco',
+              body_html: '<p>Gioco da tavolo</p>',
+              tags: ['Boardgame', 'Pre-Order'],
+              variants: [{ price: '39.90', available: true }],
+            },
+          ],
+        }),
+        text: async () => '',
+      }
+    }
+    htmlAttempts++
+    if (htmlAttempts === 1) {
+      return {
+        status: 429,
+        headers: { get: (h: string) => (h.toLowerCase() === 'retry-after' ? '3' : null) },
+        json: async () => ({}),
+        text: async () => '',
+      }
+    }
+    return {
+      status: 200,
+      json: async () => ({}),
+      text: async () => productPageHtml('25/12/2026'),
+    }
+  }
+  const out = await fetchShopifyProducts('https://shop.example', customHttp, undefined, now, {
+    htmlDelayMs: 250,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+    },
+  })
+  expect(htmlAttempts).toBe(2)
+  expect(sleeps).toContain(3000)
+  expect(out[0]?.releaseDateRaw).toBe('2026-12-25')
+  expect(out[0]?.availabilityRaw).toBe('preordine')
 })
 
 test('stagione nel body_html diventa preordine con giorno intermedio (Cranio)', async () => {
