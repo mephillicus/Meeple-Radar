@@ -9,7 +9,7 @@ import { SOURCES } from './sources.seed.js'
 import { canonicalizeProduct } from './merge.js'
 import { retentionCutoff } from './retention.js'
 import { loadRanksIndex } from './bgg/csv-ranks.js'
-import { bggSearchUrl, parseGeekItem, parseSearchIds } from './bgg/online.js'
+import { bggSearchUrl, createBggXmlOnlineClient, parseGeekItem, parseSearchIds } from './bgg/online.js'
 import { runBggEnrichment, type BggReport } from './bgg/enrich.js'
 import { createSkipStore } from './bgg/skipped.js'
 import { createCurlFetcher } from './adapters/headless/fetch.js'
@@ -405,21 +405,31 @@ export async function main(): Promise<number> {
     ),
   ) as Record<SourceKind, Adapter>
 
+  const bggToken = process.env.BGG_API_TOKEN?.trim()
+  const bggXmlClient = bggToken ? createBggXmlOnlineClient({ token: bggToken }) : null
+
   const enrich = () =>
     runBggEnrichment({
       store,
       ranks: loadRanksIndex(['data/boardgames_ranks.csv', 'boardgames_ranks.csv', '../boardgames_ranks.csv']),
-      searchIds: async (query: string) => {
-        const html = await createCurlFetcher()(bggSearchUrl(query))
-        return html === null ? null : parseSearchIds(html)
-      },
-      fetchGeekItem: async (id: number) => {
-        const res = await defaultFetch(
-          `https://api.geekdo.com/api/geekitems?objectid=${id}&objecttype=thing`,
-          { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-        )
-        return res.status === 200 ? parseGeekItem(await res.text(), id) : null
-      },
+      ...(bggXmlClient
+        ? {
+            searchIds: bggXmlClient.searchIds,
+            fetchGeekItems: bggXmlClient.fetchGeekItems,
+          }
+        : {
+            searchIds: async (query: string) => {
+              const html = await createCurlFetcher()(bggSearchUrl(query))
+              return html === null ? null : parseSearchIds(html)
+            },
+            fetchGeekItem: async (id: number) => {
+              const res = await defaultFetch(
+                `https://api.geekdo.com/api/geekitems?objectid=${id}&objecttype=thing`,
+                { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+              )
+              return res.status === 200 ? parseGeekItem(await res.text(), id) : null
+            },
+          }),
       skipped: createSkipStore('data/bgg-online-skipped.json'),
     })
 

@@ -29,7 +29,8 @@ export async function runBggEnrichment(deps: {
   store: ListingStore
   ranks: RanksIndex | null
   searchIds: (query: string) => Promise<number[] | null>
-  fetchGeekItem: (id: number) => Promise<GeekItem | null>
+  fetchGeekItem?: (id: number) => Promise<GeekItem | null>
+  fetchGeekItems?: (ids: number[]) => Promise<GeekItem[] | null>
   skipped: SkipStore
   sleep?: (ms: number) => Promise<void>
 }): Promise<BggReport> {
@@ -120,16 +121,30 @@ export async function runBggEnrichment(deps: {
 
     const items: GeekItem[] = []
     let itemStopped = false
-    for (const id of ids.slice(0, CANDIDATE_CAP)) {
-      if (itemStopped) break
-      await sleep(ONLINE_SPACING_MS)
-      onlineRequests++
-      const item = await deps.fetchGeekItem(id)
-      if (item === null) {
-        itemStopped = true
-        break
+    const candidateIds = ids.slice(0, CANDIDATE_CAP)
+    if (deps.fetchGeekItems) {
+      if (candidateIds.length > 0) {
+        await sleep(ONLINE_SPACING_MS)
+        onlineRequests++
+        const fetched = await deps.fetchGeekItems(candidateIds)
+        if (fetched === null) {
+          itemStopped = true
+        } else {
+          items.push(...fetched)
+        }
       }
-      items.push(item)
+    } else if (deps.fetchGeekItem) {
+      for (const id of candidateIds) {
+        if (itemStopped) break
+        await sleep(ONLINE_SPACING_MS)
+        onlineRequests++
+        const item = await deps.fetchGeekItem(id)
+        if (item === null) {
+          itemStopped = true
+          break
+        }
+        items.push(item)
+      }
     }
     if (itemStopped) {
       onlineStopped = true
@@ -150,11 +165,14 @@ export async function runBggEnrichment(deps: {
       const kind = ranked
         ? ranked.isExpansion ? 'expansion' : 'base'
         : chosen.subtype === 'boardgameexpansion' ? 'expansion' : 'base'
+      const bggRating = ranked?.average ?? chosen.bggRating ?? null
+      const bggRank = ranked?.rank ?? chosen.bggRank ?? null
       gameId = await deps.store.createGame({
         name: product.title,
         kind,
         bggId,
-        ...(ranked ? { bggRating: ranked.average, bggRank: ranked.rank } : {}),
+        ...(bggRating != null ? { bggRating } : {}),
+        ...(bggRank != null ? { bggRank } : {}),
         ...(chosen.imageUrl != null ? { imageUrl: chosen.imageUrl } : {}),
         ...(chosen.description != null ? { description: chosen.description } : {}),
         ...(chosen.expandsBggId != null ? { expandsBggId: chosen.expandsBggId } : {}),

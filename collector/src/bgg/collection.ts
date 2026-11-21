@@ -112,7 +112,7 @@ function isQueuedXml(xml: string): boolean {
   return QUEUED_MESSAGE_RE.test(xml) && !/<item\b/i.test(xml)
 }
 
-async function fetchBggXml(
+export async function fetchBggXml(
   url: string,
   opts: BggFetchOptions = {},
 ): Promise<{ ok: true; xml: string } | { ok: false; status: number | null; error: string }> {

@@ -26,6 +26,8 @@ const geek = (
     imageUrl?: string | null
     description?: string | null
     expandsBggId?: number | null
+    bggRating?: number | null
+    bggRank?: number | null
   } = {},
 ): GeekItem => ({
   bggId: id,
@@ -36,6 +38,8 @@ const geek = (
   ...(opts.imageUrl !== undefined ? { imageUrl: opts.imageUrl } : {}),
   ...(opts.description !== undefined ? { description: opts.description } : {}),
   ...(opts.expandsBggId !== undefined ? { expandsBggId: opts.expandsBggId } : {}),
+  ...(opts.bggRating !== undefined ? { bggRating: opts.bggRating } : {}),
+  ...(opts.bggRank !== undefined ? { bggRank: opts.bggRank } : {}),
 })
 
 test('lato CSV bulk: linka, crea game col titolo italiano e riempie i listings', async () => {
@@ -181,4 +185,105 @@ test('errore su un prodotto non ferma la passata, finisce in error', async () =>
   expect(report.error).toBe('db down')
   expect(report.linked).toBe(1)
   expect(store.setProductGame).toHaveBeenCalledTimes(1)
+})
+
+test('lato online con fetchGeekItems batch: 1 sola chiamata per fino a 3 candidati e fallback bggRating/bggRank', async () => {
+  const store = {
+    ...storeBase([{ id: 42, title: 'Gioco Nuovissimo', normalizedTitle: 'gioco nuovissimo' }]),
+    fillProductDescription: vi.fn(),
+  } as any
+  const sleep = vi.fn().mockResolvedValue(undefined)
+  const searchIds = vi.fn().mockResolvedValue([901, 902, 903, 904, 905])
+  const fetchGeekItems = vi.fn().mockResolvedValue([
+    geek(901, 'Altro Gioco', { year: 2024 }),
+    geek(902, 'Brand New Game', {
+      year: 2026,
+      alt: ['Gioco Nuovissimo'],
+      imageUrl: 'https://cf.geekdo-images.com/new.jpg',
+      description: 'Fresh BGG description',
+      bggRating: 7.85,
+      bggRank: 312,
+    }),
+    geek(903, 'Terzo Gioco', { year: 2025 }),
+  ])
+
+  const report = await runBggEnrichment({
+    store,
+    ranks: buildRanksIndex([]),
+    searchIds,
+    fetchGeekItems,
+    skipped: skipBase(),
+    sleep,
+  })
+
+  expect(fetchGeekItems).toHaveBeenCalledTimes(1)
+  expect(fetchGeekItems).toHaveBeenCalledWith([901, 902, 903])
+  expect(report).toMatchObject({ linked: 1, viaSearch: 1, onlineRequests: 2 })
+  expect(store.createGame).toHaveBeenCalledWith(expect.objectContaining({
+    name: 'Gioco Nuovissimo',
+    kind: 'base',
+    bggId: 902,
+    bggRating: 7.85,
+    bggRank: 312,
+    imageUrl: 'https://cf.geekdo-images.com/new.jpg',
+    description: 'Fresh BGG description',
+  }))
+  expect(store.fillProductDescription).not.toHaveBeenCalled()
+})
+
+test('lato online con fetchGeekItems: CSV ha precedenza su bggRating/bggRank se presente', async () => {
+  const idx = buildRanksIndex(parseRanksCsv(
+    HEADER + '\n902,"Brand New Game",2026,15,7.5,8.1,500,0,,\n',
+  ))
+  const store = storeBase([{ id: 43, title: 'Gioco Nuovissimo', normalizedTitle: 'gioco nuovissimo' }])
+  const sleep = vi.fn().mockResolvedValue(undefined)
+  const searchIds = vi.fn().mockResolvedValue([902])
+  const fetchGeekItems = vi.fn().mockResolvedValue([
+    geek(902, 'Brand New Game', {
+      year: 2026,
+      alt: ['Gioco Nuovissimo'],
+      bggRating: 7.0,
+      bggRank: 999,
+    }),
+  ])
+
+  const report = await runBggEnrichment({
+    store,
+    ranks: idx,
+    searchIds,
+    fetchGeekItems,
+    skipped: skipBase(),
+    sleep,
+  })
+
+  expect(report.viaSearch).toBe(1)
+  expect(store.createGame).toHaveBeenCalledWith(expect.objectContaining({
+    bggId: 902,
+    bggRating: 8.1,
+    bggRank: 15,
+  }))
+})
+
+test('lato online con fetchGeekItems: ritorno null interrompe silenziosamente il loop online', async () => {
+  const store = storeBase([
+    { id: 1, title: 'Primo', normalizedTitle: 'primo' },
+    { id: 2, title: 'Secondo', normalizedTitle: 'secondo' },
+  ])
+  const sleep = vi.fn().mockResolvedValue(undefined)
+  const searchIds = vi.fn().mockResolvedValue([101, 102])
+  const fetchGeekItems = vi.fn().mockResolvedValue(null)
+
+  const report = await runBggEnrichment({
+    store,
+    ranks: buildRanksIndex([]),
+    searchIds,
+    fetchGeekItems,
+    skipped: skipBase(),
+    sleep,
+  })
+
+  expect(searchIds).toHaveBeenCalledTimes(1)
+  expect(fetchGeekItems).toHaveBeenCalledTimes(1)
+  expect(report.onlineRequests).toBe(2)
+  expect(report.error).toBeUndefined()
 })
