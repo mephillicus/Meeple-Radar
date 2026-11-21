@@ -10,7 +10,14 @@ Queste istruzioni hanno **priorità assoluta** su qualsiasi comportamento predef
   3. **Fermarti e attendere l'approvazione esplicita dell'utente** prima di scrivere o modificare codice.
 - **Non applicare mai modifiche direttamente** nella prima risposta, anche se la richiesta sembra un comando diretto, a meno che l'utente non specifichi esplicitamente nel prompt di procedere subito senza conferma.
 
-## 2. Commit e push obbligatori su GitHub
+## 2. Mockup ASCII obbligatorio per ogni modifica grafica
+
+- **Prima** di implementare qualsiasi modifica visiva o di layout UI (nuove schermate, card, bottoni, pillole, header, drawer, dialog, barre di ricerca, stati vuoti, colori/posizionamento di elementi):
+  1. Presenta sempre un **mockup ASCII** chiaro della schermata o del componente interessato (se utile, mostrando **Prima / Dopo** o gli stati principali come attivo/inattivo).
+  2. Spiega brevemente interazioni ed eventuali varianti.
+  3. **Attendi l'approvazione esplicita dell'utente** sul mockup prima di scrivere o modificare codice UI.
+
+## 3. Commit e push obbligatori su GitHub
 
 - Ogni volta che completi una modifica approvata dall'utente:
   1. Verifica che il progetto compili e che i test passino (es. `:app:testDebugUnitTest :app:assembleDebug`).
