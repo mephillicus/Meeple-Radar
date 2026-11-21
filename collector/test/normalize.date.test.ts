@@ -67,3 +67,47 @@ test('converte una stagione nel 15 del mese intermedio', () => {
   expect(extractReleaseDate('estate 2027')).toBe('2027-07-15')
   expect(extractReleaseDate('inverno')).toBe(`${year}-01-15`)
 })
+
+test('ignora date dentro URL/attributi HTML grezzi', () => {
+  expect(
+    extractReleaseDate('<p><img src="https://cdn.shop.it/uploads/2026-03/box.jpg" alt="Gioco">Nessuna data qui</p>'),
+  ).toBeNull()
+  expect(
+    extractReleaseDate('<div data-created="2026-05-12"><p>Descrizione del gioco da tavolo</p></div>'),
+  ).toBeNull()
+})
+
+test('abbreviazioni di 3 lettere non producono falsi positivi da testo libero ma matchano con giorno o anno', () => {
+  const year = new Date().getUTCFullYear()
+  expect(extractReleaseDate('Include un set di carte e un set di dadi')).toBeNull()
+  expect(extractReleaseDate('Set base completo per 4 giocatori')).toBeNull()
+  expect(extractReleaseDate('This may be the best game')).toBeNull()
+  expect(extractReleaseDate('15 set 2026')).toBe('2026-09-15')
+  expect(extractReleaseDate('15 set')).toBe(`${year}-09-15`)
+  expect(extractReleaseDate('uscita prevista set 2026')).toBe('2026-09-01')
+  expect(extractReleaseDate('Set base in uscita a ottobre 2026')).toBe('2026-10-01')
+})
+
+test('limita il lookahead dell anno a 20 caratteri per ignorare copyright lontani', () => {
+  const year = new Date().getUTCFullYear()
+  const padding = 'a '.repeat(60)
+  expect(extractReleaseDate(`in uscita a marzo. ${padding} © ${year + 2} Editore`)).toBe(`${year}-03-01`)
+  expect(extractReleaseDate(`March 10, ${year + 1}`)).toBe(`${year + 1}-03-10`)
+})
+
+test('stagioni: ignora lore/flavor text ma accetta anno esplicito o indizio di uscita', () => {
+  const year = new Date().getUTCFullYear()
+  expect(extractReleaseDate("Sopravvivi all'inverno artico in questo cooperativo")).toBeNull()
+  expect(extractReleaseDate('Durante la primavera i mercanti percorrono la valle')).toBeNull()
+  expect(extractReleaseDate('In arrivo in primavera')).toBe(`${year}-04-15`)
+  expect(extractReleaseDate('Preordine aperto, spedizione autunno')).toBe(`${year}-10-15`)
+})
+
+test('giorno/mese con slash richiede indizio di uscita entro 30 caratteri', () => {
+  const year = new Date().getUTCFullYear()
+  expect(extractReleaseDate('Gioco per 2/4 giocatori')).toBeNull()
+  expect(extractReleaseDate('Voto 9/10 e durata 1/2 ora')).toBeNull()
+  expect(extractReleaseDate('Stile 1/2 cooperativo')).toBeNull()
+  expect(extractReleaseDate('Disponibile dal 15/10')).toBe(`${year}-10-15`)
+  expect(extractReleaseDate('Per 2/4 giocatori, day one 20/11')).toBe(`${year}-11-20`)
+})

@@ -121,3 +121,42 @@ test('relay fetcher retries on 504 gateway timeout', async () => {
   expect(await createRelayFetcher(fetchImpl, 'k', noSleep)('https://e.com')).toBe('<html>recovered</html>')
   expect(calls).toBe(2)
 })
+
+test('relay fetcher passes an AbortSignal timeout to fetchImpl', async () => {
+  let capturedSignal: AbortSignal | undefined
+  const fetchImpl: FetchLike = async (_url, init) => {
+    capturedSignal = init?.signal
+    return { ok: true, status: 200, text: async () => '<html>ok</html>' }
+  }
+  const out = await createRelayFetcher(fetchImpl, 'k', noSleep)('https://e.com')
+  expect(out).toBe('<html>ok</html>')
+  expect(capturedSignal).toBeInstanceOf(AbortSignal)
+})
+
+test('relay fetcher honors Retry-After header on HTTP 429', async () => {
+  let calls = 0
+  const sleeps: number[] = []
+  const fetchImpl: FetchLike = async () => {
+    calls++
+    if (calls === 1) {
+      return {
+        ok: false,
+        status: 429,
+        headers: { get: (name) => (name.toLowerCase() === 'retry-after' ? '5' : null) },
+        text: async () => '',
+      }
+    }
+    return { ok: true, status: 200, text: async () => '<html>after-retry</html>' }
+  }
+  const out = await createRelayFetcher(
+    fetchImpl,
+    'k',
+    async (ms) => {
+      sleeps.push(ms)
+    },
+    { minIntervalMs: 0 },
+  )('https://e.com')
+  expect(out).toBe('<html>after-retry</html>')
+  expect(calls).toBe(2)
+  expect(sleeps).toEqual([5000])
+})

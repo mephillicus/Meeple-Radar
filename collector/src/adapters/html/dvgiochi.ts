@@ -52,6 +52,19 @@ function descriptionFrom($: cheerio.CheerioAPI): string | undefined {
   return copy.html()?.trim() || undefined
 }
 
+function imageFrom($: cheerio.CheerioAPI, baseUrl: string): string | undefined {
+  const raw =
+    $('meta[property="og:image"]').first().attr('content')?.trim() ||
+    $('h2 img[src]').first().attr('src')?.trim() ||
+    $('img[src]').first().attr('src')?.trim()
+  if (!raw) return undefined
+  try {
+    return new URL(raw, baseUrl).toString()
+  } catch {
+    return undefined
+  }
+}
+
 export const dvgiochiSpec: HtmlSourceSpec = {
   async discover(fetchText) {
     const html = await fetchText(LISTING_URL)
@@ -77,6 +90,12 @@ export const dvgiochiSpec: HtmlSourceSpec = {
   },
   extract(html, url) {
     const $ = cheerio.load(html)
-    return buildProduct({ title: titleFrom($), url, description: descriptionFrom($) })
+    return buildProduct({
+      title: titleFrom($),
+      url,
+      image: imageFrom($, url),
+      availability: 'preordine',
+      description: descriptionFrom($),
+    })
   },
 }

@@ -64,7 +64,7 @@ export async function fetchSitemapEntries(
   if (!xml) return []
   if (!isSitemapIndex(xml)) return parseSitemapEntries(xml)
 
-  const children = parseSitemapEntries(xml)
+  const children = newestFirst(parseSitemapEntries(xml))
     .map((e) => e.loc)
     .slice(0, maxSitemaps)
   const out: SitemapEntry[] = []

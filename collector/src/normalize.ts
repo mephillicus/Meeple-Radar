@@ -55,8 +55,32 @@ export function areTitlesNearDuplicate(normA: string, normB: string): boolean {
 }
 
 export function toPrice(priceRaw?: string, minorUnit?: number): number | null {
-  if (priceRaw === undefined || priceRaw.trim() === '') return null
-  const n = Number(priceRaw)
+  if (priceRaw === undefined) return null
+  let cleaned = priceRaw
+    .replace(/(?:€|EUR|\$|USD|£|GBP)/gi, '')
+    .replace(/[\s\u00a0]+/g, '')
+    .trim()
+  if (cleaned === '') return null
+
+  const hasComma = cleaned.includes(',')
+  const hasDot = cleaned.includes('.')
+  if (hasComma && hasDot) {
+    if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+      // Formato europeo con separatore migliaia: "1.200,50" -> "1200.50"
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.')
+    } else {
+      // Formato anglosassone: "1,200.50" -> "1200.50"
+      cleaned = cleaned.replace(/,/g, '')
+    }
+  } else if (hasComma) {
+    if (/^\d{1,3}(?:,\d{3})+$/.test(cleaned)) {
+      cleaned = cleaned.replace(/,/g, '')
+    } else {
+      cleaned = cleaned.replace(',', '.')
+    }
+  }
+
+  const n = Number(cleaned)
   if (!Number.isFinite(n)) return null
   if (minorUnit === undefined) return n
   const value = n / 10 ** minorUnit
@@ -81,87 +105,219 @@ function isPlausibleIso(iso: string, nowYear: number): boolean {
   return isValidIso(iso) && isPlausibleYear(Number(iso.slice(0, 4)), nowYear)
 }
 
+const DM_RELEASE_CUE_RE = /\b(?:uscita|arrivo|dal\b|il\b|previst|disponibile|day\s*one\b|spedizion)/i
+const SEASON_RELEASE_CUE_RE = /\b(?:uscita|arrivo|disponibile|previst|preordine|spedizion)/i
+
+const FULL_MONTHS: Record<string, number> = {
+  gennaio: 1, january: 1,
+  febbraio: 2, february: 2,
+  marzo: 3, march: 3,
+  aprile: 4, april: 4,
+  maggio: 5,
+  giugno: 6, june: 6,
+  luglio: 7, july: 7,
+  agosto: 8, august: 8,
+  settembre: 9, september: 9,
+  ottobre: 10, october: 10,
+  novembre: 11, november: 11,
+  dicembre: 12, december: 12,
+}
+
+const ABBREV_MONTHS: Record<string, number> = {
+  gen: 1, jan: 1,
+  febr: 2, feb: 2,
+  mar: 3,
+  apr: 4,
+  mag: 5, may: 5,
+  giu: 6, jun: 6,
+  lug: 7, jul: 7,
+  ago: 8, aug: 8,
+  sept: 9, sep: 9, set: 9,
+  ott: 10, oct: 10,
+  nov: 11,
+  dic: 12, dec: 12,
+}
+
+const ALL_MONTHS: Record<string, number> = { ...FULL_MONTHS, ...ABBREV_MONTHS }
+const MONTH_NAME_RE = new RegExp(
+  '\\b(?:(\\d{1,2})\\s+)?(' + Object.keys(ALL_MONTHS).join('|') + ')\\b',
+  'gi',
+)
+
+const STAGIONI: Record<string, { m: number; d: number }> = {
+  primavera: { m: 4, d: 15 },
+  estate: { m: 7, d: 15 },
+  autunno: { m: 10, d: 15 },
+  inverno: { m: 1, d: 15 },
+}
+
 export function extractReleaseDate(text?: string): string | null {
   if (!text) return null
+  const cleaned = text.includes('<') ? htmlToText(text) : text
+  if (!cleaned) return null
+
   const nowYear = new Date().getUTCFullYear()
   const accept = (iso: string): boolean => isPlausibleIso(iso, nowYear)
 
-  const dmy = text.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)
+  const dmy = cleaned.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)
   if (dmy) {
     const iso = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
     if (accept(iso)) return iso
   }
 
   // anno-mese-giorno: la data intera, non va degradata al primo del mese
-  const ymd = text.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/)
+  const ymd = cleaned.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/)
   if (ymd) {
     const iso = `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
     if (accept(iso)) return iso
   }
 
-  const ym = text.match(/(\d{4})-(\d{1,2})(?!\d)/)
+  const ym = cleaned.match(/(\d{4})-(\d{1,2})(?!\d)/)
   if (ym) {
     const iso = `${ym[1]}-${ym[2].padStart(2, '0')}-01`
     if (accept(iso)) return iso
   }
 
-  // Solo lo slash resta separatore giorno/mese: il trattino ("-") matcherebbe
-  // gli intervalli di giocatori ("2-4", "1-6") e il punto i decimali ("2.5"),
-  // inventando una data a anno corrente da testo che non è una data.
-  const dm = text.match(/(\d{1,2})\/(\d{1,2})(?![\/\-.]\d)/)
-  if (dm) {
+  // Solo lo slash resta separatore giorno/mese, e solo se preceduto entro 30 caratteri
+  // da un indizio di uscita, così rapporti/giocatori ("2/4", "1/2", "9/10") non matchano.
+  for (const dm of cleaned.matchAll(/(\d{1,2})\/(\d{1,2})(?![\/\-.]\d)/g)) {
+    const idx = dm.index ?? 0
+    const before = cleaned.slice(Math.max(0, idx - 30), idx)
+    if (!DM_RELEASE_CUE_RE.test(before)) continue
     const iso = `${nowYear}-${dm[2].padStart(2, '0')}-${dm[1].padStart(2, '0')}`
     if (accept(iso)) return iso
   }
 
-  const months: Record<string, number> = {
-    gennaio: 1, gen: 1, january: 1, jan: 1,
-    febbraio: 2, february: 2, febr: 2, feb: 2,
-    marzo: 3, march: 3, mar: 3,
-    aprile: 4, april: 4, apr: 4,
-    maggio: 5, may: 5, mag: 5,
-    giugno: 6, june: 6, giu: 6, jun: 6,
-    luglio: 7, july: 7, lug: 7, jul: 7,
-    agosto: 8, august: 8, ago: 8, aug: 8,
-    settembre: 9, sept: 9, sep: 9, set: 9,
-    ottobre: 10, oct: 10, ott: 10,
-    novembre: 11, nov: 11,
-    dicembre: 12, dec: 12, dic: 12
-  }
+  for (const mn of cleaned.matchAll(MONTH_NAME_RE)) {
+    const monthKey = mn[2].toLowerCase()
+    const isFull = monthKey in FULL_MONTHS
+    const after = cleaned.slice((mn.index ?? 0) + mn[0].length)
 
-  const monthNameRegex = new RegExp(
-    '\\b(\\d{1,2})?\\s*(' + Object.keys(months).join('|') + ')\\b',
-    'i',
-  )
-  const mn = text.match(monthNameRegex)
-  if (mn) {
-    const monthPart = String(months[mn[2].toLowerCase()]).padStart(2, '0')
-    const after = text.slice((mn.index ?? 0) + mn[0].length)
+    // Le abbreviazioni a 3 lettere ("set", "may", "ago", ...) matchano solo se
+    // precedute da un giorno ("15 set") o seguite subito da un anno 20xx ("set 2026").
+    if (!isFull && !mn[1] && !/^\s*20\d\d\b/.test(after)) continue
+
+    const monthPart = String(ALL_MONTHS[monthKey]).padStart(2, '0')
     // Il giorno può stare prima del nome del mese ("10 marzo") o dopo ("March 10").
     const dayPart = (mn[1] ?? after.match(/^\s*(\d{1,2})\b/)?.[1] ?? '1').padStart(2, '0')
-    // L'anno può seguire il mese ("marzo 2027"): senza di quello corrente si perderebbe.
-    const year = Number(after.match(/\b(\d{4})\b/)?.[1] ?? nowYear)
+    // L'anno deve stare entro 20 caratteri dal mese per non catturare copyright lontani.
+    const yearMatch = after.slice(0, 20).match(/^\s*(?:\d{1,2}[,\s]+)?(\d{4})\b/)
+    const year = Number(yearMatch?.[1] ?? nowYear)
     const iso = `${year}-${monthPart}-${dayPart}`
     if (accept(iso)) return iso
   }
 
-  const stagioni: Record<string, { m: number; d: number }> = {
-    primavera: { m: 4, d: 15 },
-    estate: { m: 7, d: 15 },
-    autunno: { m: 10, d: 15 },
-    inverno: { m: 1, d: 15 },
-  }
-  const stagioneRegex = /\b(primavera|estate|autunno|inverno)\b/i
-  const sn = text.match(stagioneRegex)
-  if (sn) {
-    const mg = stagioni[sn[1].toLowerCase()]
-    const after = text.slice((sn.index ?? 0) + sn[0].length)
-    const year = Number(after.match(/\b(\d{4})\b/)?.[1] ?? nowYear)
+  const trimmedLower = cleaned.trim().toLowerCase()
+  for (const sn of cleaned.matchAll(/\b(primavera|estate|autunno|inverno)\b/gi)) {
+    const seasonKey = sn[1].toLowerCase()
+    const idx = sn.index ?? 0
+    const after = cleaned.slice(idx + sn[0].length)
+    const yearMatch = after.slice(0, 20).match(/^\s*(\d{4})\b/)
+    const before = cleaned.slice(Math.max(0, idx - 30), idx)
+    const isBareSeason = trimmedLower === seasonKey
+    if (!yearMatch && !SEASON_RELEASE_CUE_RE.test(before) && !isBareSeason) continue
+
+    const mg = STAGIONI[seasonKey]
+    const year = Number(yearMatch?.[1] ?? nowYear)
     const iso = `${year}-${String(mg.m).padStart(2, '0')}-${String(mg.d).padStart(2, '0')}`
     if (accept(iso)) return iso
   }
 
   return null
+}
+
+export type CanonicalAvailability =
+  | 'available'
+  | 'out_of_stock'
+  | 'preorder'
+  | 'backorder'
+  | 'discontinued'
+
+const AVAILABILITY_MAP: Record<string, CanonicalAvailability> = {
+  true: 'available',
+  '1': 'available',
+  yes: 'available',
+  available: 'available',
+  instock: 'available',
+  limitedavailability: 'available',
+  instoreonly: 'available',
+  false: 'out_of_stock',
+  '0': 'out_of_stock',
+  no: 'out_of_stock',
+  outofstock: 'out_of_stock',
+  soldout: 'out_of_stock',
+  unavailable: 'out_of_stock',
+  oos: 'out_of_stock',
+  preorder: 'preorder',
+  presale: 'preorder',
+  preordine: 'preorder',
+  preordina: 'preorder',
+  backorder: 'backorder',
+  backordered: 'backorder',
+  ordinabile: 'backorder',
+  suordinazione: 'backorder',
+  discontinued: 'discontinued',
+  fuoriproduzione: 'discontinued',
+}
+
+export function normalizeAvailability(
+  raw?: string | null,
+  releaseDate?: string | null,
+  now?: Date,
+): CanonicalAvailability | null {
+  if (raw === undefined || raw === null) return null
+  const stripped = raw
+    .trim()
+    .replace(/^https?:\/\/schema\.org\//i, '')
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
+  if (stripped === '') return null
+
+  const mapped = AVAILABILITY_MAP[stripped] ?? null
+  if (mapped === 'available' && releaseDate && isValidIso(releaseDate)) {
+    const todayIso = (now ?? new Date()).toISOString().slice(0, 10)
+    if (releaseDate > todayIso) return 'preorder'
+  }
+  return mapped
+}
+
+const NON_BOARDGAME_PATTERNS: readonly RegExp[] = [
+  // Puzzle
+  /\bpuzzle\s+\d+\s*(?:pezzi|pz)\b/i,
+  /\bpuzzle\s+[23]d\b/i,
+  /\bravensburger\s+puzzle\b/i,
+  // BRIO / GraviTrax / giocattoli
+  /\bgravitrax\b/i,
+  /\btreno\s+(?:della|ad\s+alta|merci)\b/i,
+  /\bbinari\b/i,
+  /\bpista\s+di\s+biglie\b/i,
+  /\baction\s+figure\b/i,
+  /\bcreart\b/i,
+  /\btiptoi\b/i,
+  // Bustine / Playmat / Accessori / Cancelleria
+  /\bbust(?:in)?e\s+protettive\b/i,
+  /\b(?:card|custom|katana)\s+sleeves\b/i,
+  /\bplaymat\b/i,
+  /\btappetino\b/i,
+  /\bportamazzo\b/i,
+  /\bdeck\s*box\b/i,
+  /\bset\s+cancelleria\b/i,
+  /\bgift\s+card\b/i,
+  /\bbuono\s+regalo\b/i,
+  // TCG packs
+  /\bbooster\s+pack\b/i,
+  /\bprerelease\s+box\b/i,
+  /\bspotlight\s+deck\b/i,
+  /\bextra\s+booster\b/i,
+  /\bdisplay\s+\d+\s*buste\b/i,
+  // Accessori dadi (non giochi "Dice Game" / "7 Wonders Dice")
+  /\bdice\s+(?:set|block)\b/i,
+  /\bset\s+\d+\s+dadi\b/i,
+  /\bdadi\s+custom\b/i,
+]
+
+export function isNonBoardgameTitle(title: string): boolean {
+  return NON_BOARDGAME_PATTERNS.some((re) => re.test(title))
 }
 
 function isoOrNull(preferred?: string, text?: string): string | null {
@@ -190,7 +346,7 @@ export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
     url: raw.url,
     price: toPrice(raw.priceRaw, raw.minorUnitRaw),
     currency: raw.currencyRaw ? raw.currencyRaw.toUpperCase() : null,
-    availability: raw.availabilityRaw ?? null,
+    availability: normalizeAvailability(raw.availabilityRaw, releaseDate),
     releaseDate,
     // L'assenza di data da una fonte autorevole è un dato ("DA DEFINIRE"):
     // segna la riga perché lo store azzeri una data scritta in precedenza.

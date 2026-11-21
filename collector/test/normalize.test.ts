@@ -1,12 +1,14 @@
 import { expect, test } from 'vitest'
 import {
   areTitlesNearDuplicate,
+  isNonBoardgameTitle,
+  normalizeAvailability,
   toPrice,
   extractReleaseDate,
   normalizeListing,
   normalizeTitle,
 } from '../src/normalize.js'
-import { htmlToText } from '../src/text.js'
+import { decodeHtml, htmlToText } from '../src/text.js'
 
 test('normalizeTitle assimila il suffisso edizione ITA ma mantiene separata l\'edizione inglese', () => {
   expect(normalizeTitle('Black Flag! (ITA)')).toBe('black flag')
@@ -156,4 +158,125 @@ test('normalizeListing porta descriptionRaw nella descrizione come testo pulito'
 test('normalizeListing lascia la descrizione a null quando il sorgente non la ha', () => {
   const row = normalizeListing('cranio', { externalId: '1', title: 'Azul', url: 'https://e.com/a' })
   expect(row.description).toBeNull()
+})
+
+test('decodeHtml decodifica entità nominate comuni e htmlToText rimuove noscript', () => {
+  expect(
+    decodeHtml(
+      '&lsquo;Citt&agrave;&rsquo; &ndash; &ldquo;Et&agrave;&rdquo; &mdash; &hellip; &egrave; &eacute; &igrave; &ograve; &ugrave; &Egrave; &Agrave; 29&euro; &trade;&reg;&copy;',
+    ),
+  ).toBe('‘Città’ – “Età” — … è é ì ò ù È À 29€ ™®©')
+  expect(
+    htmlToText('<p>Testo</p><noscript><img src="https://e.com/2026-03/pixel.gif">NoJS</noscript><p>Fine</p>'),
+  ).toBe('Testo Fine')
+})
+
+test('toPrice gestisce decimali europei con virgola, migliaia e simboli valuta', () => {
+  expect(toPrice('29,90')).toBe(29.9)
+  expect(toPrice('1.200,50')).toBe(1200.5)
+  expect(toPrice('1,200.50')).toBe(1200.5)
+  expect(toPrice('1,200')).toBe(1200)
+  expect(toPrice('€ 29,90')).toBe(29.9)
+  expect(toPrice('29,90 €')).toBe(29.9)
+  expect(toPrice('EUR 49,50')).toBe(49.5)
+  expect(toPrice('49.50 EUR')).toBe(49.5)
+  expect(toPrice('  ')).toBeNull()
+  expect(toPrice('€')).toBeNull()
+  expect(toPrice('1299', 2)).toBe(12.99)
+})
+
+test('normalizeAvailability mappa valori canonici, legacy, schema.org e promuove date future a preorder', () => {
+  const now = new Date('2026-06-15T12:00:00Z')
+  expect(normalizeAvailability('https://schema.org/InStock', null, now)).toBe('available')
+  expect(normalizeAvailability('http://schema.org/LimitedAvailability', null, now)).toBe('available')
+  expect(normalizeAvailability('InStoreOnly', null, now)).toBe('available')
+  expect(normalizeAvailability('true', null, now)).toBe('available')
+  expect(normalizeAvailability('1', null, now)).toBe('available')
+  expect(normalizeAvailability('yes', null, now)).toBe('available')
+
+  expect(normalizeAvailability('https://schema.org/OutOfStock', null, now)).toBe('out_of_stock')
+  expect(normalizeAvailability('false', null, now)).toBe('out_of_stock')
+  expect(normalizeAvailability('0', null, now)).toBe('out_of_stock')
+  expect(normalizeAvailability('no', null, now)).toBe('out_of_stock')
+  expect(normalizeAvailability('sold_out', null, now)).toBe('out_of_stock')
+  expect(normalizeAvailability('oos', null, now)).toBe('out_of_stock')
+
+  expect(normalizeAvailability('https://schema.org/PreOrder', null, now)).toBe('preorder')
+  expect(normalizeAvailability('preordine', null, now)).toBe('preorder')
+  expect(normalizeAvailability('preordina', null, now)).toBe('preorder')
+  expect(normalizeAvailability('pre-sale', null, now)).toBe('preorder')
+
+  expect(normalizeAvailability('https://schema.org/BackOrder', null, now)).toBe('backorder')
+  expect(normalizeAvailability('ordinabile', null, now)).toBe('backorder')
+  expect(normalizeAvailability('su ordinazione', null, now)).toBe('backorder')
+
+  expect(normalizeAvailability('https://schema.org/Discontinued', null, now)).toBe('discontinued')
+  expect(normalizeAvailability('fuori produzione', null, now)).toBe('discontinued')
+
+  expect(normalizeAvailability(null, null, now)).toBeNull()
+  expect(normalizeAvailability('', null, now)).toBeNull()
+  expect(normalizeAvailability('unknown_value', null, now)).toBeNull()
+
+  // Data di uscita strettamente futura promuove 'available' -> 'preorder'
+  expect(normalizeAvailability('true', '2026-06-16', now)).toBe('preorder')
+  expect(normalizeAvailability('https://schema.org/InStock', '2026-06-15', now)).toBe('available')
+  expect(normalizeAvailability('true', '2026-06-10', now)).toBe('available')
+  // Non promuove out_of_stock o null
+  expect(normalizeAvailability('false', '2026-06-20', now)).toBe('out_of_stock')
+  expect(normalizeAvailability(null, '2026-06-20', now)).toBeNull()
+})
+
+test('normalizeListing normalizza availability usando normalizeAvailability', () => {
+  const inStock = normalizeListing('dungeondice', {
+    externalId: '1',
+    title: 'Dune: Imperium',
+    url: 'https://e.com/dune',
+    availabilityRaw: 'https://schema.org/InStock',
+  })
+  expect(inStock.availability).toBe('available')
+
+  const futurePreorder = normalizeListing('cranio', {
+    externalId: '2',
+    title: 'Nuovo Gioco',
+    url: 'https://e.com/new',
+    availabilityRaw: 'true',
+    releaseDateRaw: `${new Date().getUTCFullYear() + 1}-10-01`,
+  })
+  expect(futurePreorder.availability).toBe('preorder')
+})
+
+test('isNonBoardgameTitle filtra accessori/puzzle/BRIO/TCG ma preserva i veri giochi da tavolo', () => {
+  // Non-boardgames -> true
+  expect(isNonBoardgameTitle('Ravensburger Puzzle 1000 Pezzi - Venezia')).toBe(true)
+  expect(isNonBoardgameTitle('Puzzle 3D Torre Eiffel')).toBe(true)
+  expect(isNonBoardgameTitle('GraviTrax Starter Set')).toBe(true)
+  expect(isNonBoardgameTitle('BRIO Treno Merci a Batteria')).toBe(true)
+  expect(isNonBoardgameTitle('Set Binari Curvi')).toBe(true)
+  expect(isNonBoardgameTitle('Pista di Biglie Deluxe')).toBe(true)
+  expect(isNonBoardgameTitle('CreArt Cavalli')).toBe(true)
+  expect(isNonBoardgameTitle('tiptoi Penna Interattiva')).toBe(true)
+  expect(isNonBoardgameTitle('Dragon Shield Bustine Protettive Matte')).toBe(true)
+  expect(isNonBoardgameTitle('Buste Protettive Standard 100pz')).toBe(true)
+  expect(isNonBoardgameTitle('Katana Sleeves Transparent')).toBe(true)
+  expect(isNonBoardgameTitle('Gamegenic Playmat Nero')).toBe(true)
+  expect(isNonBoardgameTitle('Tappetino da Gioco Lorcana')).toBe(true)
+  expect(isNonBoardgameTitle('Portamazzo Sidewinder')).toBe(true)
+  expect(isNonBoardgameTitle('Ultimate Guard Deck Box 100+')).toBe(true)
+  expect(isNonBoardgameTitle('Gift Card 50€')).toBe(true)
+  expect(isNonBoardgameTitle('Buono Regalo Digitale')).toBe(true)
+  expect(isNonBoardgameTitle('Star Wars Unlimited Booster Pack')).toBe(true)
+  expect(isNonBoardgameTitle('Magic Prerelease Box')).toBe(true)
+  expect(isNonBoardgameTitle('Display 24 Buste Pokémon')).toBe(true)
+  expect(isNonBoardgameTitle('Chessex Dice Set 7 dadi')).toBe(true)
+  expect(isNonBoardgameTitle('Set 12 Dadi 16mm')).toBe(true)
+  expect(isNonBoardgameTitle('Dadi Custom Fazione')).toBe(true)
+
+  // Real board games -> false
+  expect(isNonBoardgameTitle('Ra: The Dice Game')).toBe(false)
+  expect(isNonBoardgameTitle('7 Wonders Dice')).toBe(false)
+  expect(isNonBoardgameTitle('Florenza – Dice Game')).toBe(false)
+  expect(isNonBoardgameTitle('Racket Dice')).toBe(false)
+  expect(isNonBoardgameTitle('Dune: Imperium – Rivolta')).toBe(false)
+  expect(isNonBoardgameTitle('Ticket to Ride: Europa')).toBe(false)
+  expect(isNonBoardgameTitle('Heat: Pedal to the Metal')).toBe(false)
 })

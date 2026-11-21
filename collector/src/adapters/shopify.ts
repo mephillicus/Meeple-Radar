@@ -2,16 +2,30 @@ import { RawProductSchema, type RawProduct } from '../types.js'
 import { defaultFetch, textFetcher, type HttpClient, type TextFetcher } from './http.js'
 import { createMinIntervalLimiter } from './relay.js'
 import { extractReleaseDate } from '../normalize.js'
+import { htmlToText } from '../text.js'
 import * as cheerio from 'cheerio'
 
 const PREORDER_AVAILABILITY = 'preordine'
 export const DEFAULT_HTML_DELAY_MS = 250
 export const PREORDER_SIGNAL_RE = /pre-?order|preordin|uscita|day[\s-]?one|arrivo/i
 
+const NON_BOARDGAME_PRODUCT_TYPE_RE =
+  /\b(?:sleeves?|bustin[ae]|playmats?|gift\s*cards?|buon[oi]\s*regalo|accessori(?:o)?|manga|fumett[io]|dadi|cancelleria)\b/i
+
+const HTML_DATE_CONTAINERS = [
+  '.bh-preordine-avviso',
+  '.product-single',
+  '.product-info',
+  '.product',
+  'main',
+  '#MainContent',
+]
+
 type ShopifyProduct = {
   id: number | string
   title?: string
   handle?: string
+  product_type?: string
   body_html?: string
   tags?: string[] | string
   published_at?: string
@@ -27,7 +41,7 @@ export type ShopifyFetchOptions = {
 }
 
 const PAGE_SIZE = 250
-const USCITA_TAG_RE = /^uscita\s*:\s*(\d{1,4})[-\/](\d{1,2})[-\/](\d{1,4})$/i
+const USCITA_TAG_RE = /^uscita\s*:\s*(\d{1,4})([-\/])(\d{1,2})\2(\d{1,4})$/i
 
 function toValidIsoDate(year: number, month: number, day: number): string | undefined {
   if (month < 1 || month > 12 || day < 1 || day > 31) return undefined
@@ -51,7 +65,7 @@ export function extractReleaseDateFromTags(tags?: string[] | string): string | u
   for (const tag of list) {
     const m = USCITA_TAG_RE.exec(tag)
     if (!m) continue
-    const [, p1, p2, p3] = m
+    const [, p1, sep, p2, p3] = m
     if (p1.length === 4) {
       const iso = toValidIsoDate(Number(p1), Number(p2), Number(p3))
       if (iso) return iso
@@ -59,7 +73,14 @@ export function extractReleaseDateFromTags(tags?: string[] | string): string | u
       const a = Number(p1)
       const b = Number(p2)
       const year = Number(p3)
-      const [month, day] = a > 12 && b <= 12 ? [b, a] : [a, b]
+      const [month, day] =
+        sep === '/'
+          ? b > 12 && a <= 12
+            ? [a, b]
+            : [b, a]
+          : a > 12 && b <= 12
+            ? [b, a]
+            : [a, b]
       const iso = toValidIsoDate(year, month, day)
       if (iso) return iso
     }
@@ -76,7 +97,7 @@ export function hasPreorderSignal(product: Pick<ShopifyProduct, 'title' | 'body_
   const tagsText = Array.isArray(product.tags) ? product.tags.join(' ') : (product.tags ?? '')
   return (
     PREORDER_SIGNAL_RE.test(product.title ?? '') ||
-    PREORDER_SIGNAL_RE.test(product.body_html ?? '') ||
+    PREORDER_SIGNAL_RE.test(htmlToText(product.body_html) ?? '') ||
     PREORDER_SIGNAL_RE.test(tagsText)
   )
 }
@@ -91,8 +112,15 @@ export async function extractDateFromHtml(
     const html = await fetchText(url)
     if (!html) return undefined
     const $ = cheerio.load(html)
-    $('script, style, noscript').remove()
-    return extractReleaseDate($.text()) ?? undefined
+    $('script, style, noscript, header, nav, footer').remove()
+    for (const selector of HTML_DATE_CONTAINERS) {
+      const el = $(selector)
+      if (el.length === 0) continue
+      const date = extractReleaseDate(el.text())
+      if (date) return date
+    }
+    const bodyText = $('body').length > 0 ? $('body').text() : $.text()
+    return extractReleaseDate(bodyText) ?? undefined
   } catch {
     return undefined
   }
@@ -158,11 +186,15 @@ export async function fetchShopifyProducts(
     const products = Array.isArray(body?.products) ? body!.products! : []
     if (products.length === 0) break
     for (const p of products) {
-      const variant = p.variants?.[0]
+      if (p.product_type && NON_BOARDGAME_PRODUCT_TYPE_RE.test(p.product_type)) continue
+
+      const variant = p.variants?.find((v) => v.available === true) ?? p.variants?.[0]
       const available = variant?.available
 
       let releaseDateRaw =
-        extractReleaseDateFromTags(p.tags) ?? extractReleaseDate(p.body_html ?? undefined) ?? undefined
+        extractReleaseDateFromTags(p.tags) ??
+        extractReleaseDate(htmlToText(p.body_html) ?? undefined) ??
+        undefined
 
       if (!releaseDateRaw && (isPreordini || (available !== false && hasPreorderSignal(p)))) {
         const handle = p.handle ?? ''
@@ -179,7 +211,7 @@ export async function fetchShopifyProducts(
       let availabilityRaw: string | undefined
       if (available === false) {
         availabilityRaw = 'false'
-      } else if (releaseDateRaw && isFutureIso(releaseDateRaw, now)) {
+      } else if (isPreordini || (releaseDateRaw && isFutureIso(releaseDateRaw, now))) {
         availabilityRaw = PREORDER_AVAILABILITY
       } else {
         availabilityRaw = available === undefined ? undefined : String(available)

@@ -24,3 +24,23 @@ test('asmodee discovers product pages from its product sitemap', async () => {
   const urls = await HTML_SPECS.asmodee.discover(async (u) => pages[u] ?? null)
   expect(urls).toEqual([{ url: 'https://www.asmodee.it/product/catchables/' }])
 })
+
+test('asmodee prefers sitemap_index.xml so product-sitemap2.xml+ are included', async () => {
+  const pages: Record<string, string> = {
+    'https://www.asmodee.it/sitemap_index.xml': `<sitemapindex>
+      <sitemap><loc>https://www.asmodee.it/product-sitemap.xml</loc><lastmod>2026-10-01</lastmod></sitemap>
+      <sitemap><loc>https://www.asmodee.it/product-sitemap2.xml</loc><lastmod>2026-11-01</lastmod></sitemap>
+    </sitemapindex>`,
+    'https://www.asmodee.it/product-sitemap.xml': `<urlset>
+      <url><loc>https://www.asmodee.it/product/gioco-1/</loc><lastmod>2026-10-01</lastmod></url>
+    </urlset>`,
+    'https://www.asmodee.it/product-sitemap2.xml': `<urlset>
+      <url><loc>https://www.asmodee.it/product/gioco-2/</loc><lastmod>2026-11-01</lastmod></url>
+    </urlset>`,
+  }
+  const urls = await HTML_SPECS.asmodee.discover(async (u) => pages[u] ?? null)
+  expect(urls).toEqual([
+    { url: 'https://www.asmodee.it/product/gioco-2/' },
+    { url: 'https://www.asmodee.it/product/gioco-1/' },
+  ])
+})

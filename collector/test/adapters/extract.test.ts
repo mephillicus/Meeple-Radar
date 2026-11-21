@@ -73,3 +73,88 @@ test('non usa il meta name description da tre righe', () => {
   const p = extractProduct(html, 'https://e.com/p')
   expect(p?.descriptionRaw).toBeUndefined()
 })
+
+test('strips script, style, and noscript inside itemprop description', () => {
+  const html = `<html><head>
+    <meta property="og:title" content="Heat" />
+  </head><body>
+    <div itemprop="description">
+      <style>.x { color: red; }</style>
+      <script>window.alert("xss")</script>
+      <noscript>Abilita JS</noscript>
+      Una corsa mozzafiato negli anni Sessanta con gestione della mano.
+    </div>
+  </body></html>`
+  const p = extractProduct(html, 'https://e.com/heat')
+  expect(p?.descriptionRaw).toBe('Una corsa mozzafiato negli anni Sessanta con gestione della mano.')
+})
+
+test('extracts releaseDateRaw from JSON-LD releaseDate or offer.availabilityStarts', () => {
+  const withReleaseDate = `<script type="application/ld+json">{"@type":"Product","name":"Dune","releaseDate":"2026-11-15","offers":{"@type":"Offer","price":"59.90","priceCurrency":"EUR"}}</script>`
+  expect(extractProduct(withReleaseDate, 'https://e.com/dune')?.releaseDateRaw).toBe('2026-11-15')
+
+  const withAvailStarts = `<script type="application/ld+json">{"@type":"Product","name":"Dune 2","offers":{"@type":"Offer","price":"49.90","priceCurrency":"EUR","availability":"https://schema.org/PreOrder","availabilityStarts":"2026-12-01T00:00:00Z"}}</script>`
+  expect(extractProduct(withAvailStarts, 'https://e.com/dune-2')?.releaseDateRaw).toBe('2026-12-01T00:00:00Z')
+})
+
+test('supports AggregateOffer nested offers and prefers InStock or PreOrder offer', () => {
+  const html = `<script type="application/ld+json">{
+    "@type":"Product",
+    "name":"Ark Nova",
+    "offers":{
+      "@type":"AggregateOffer",
+      "priceCurrency":"EUR",
+      "lowPrice":"54.90",
+      "offers":[
+        {"@type":"Offer","price":"64.90","availability":"https://schema.org/OutOfStock"},
+        {"@type":"Offer","price":"59.90","availability":"https://schema.org/PreOrder"},
+        {"@type":"Offer","price":"54.90","availability":"https://schema.org/InStock"}
+      ]
+    }
+  }</script>`
+  const p = extractProduct(html, 'https://e.com/ark-nova')
+  expect(p).toMatchObject({
+    title: 'Ark Nova',
+    priceRaw: '54.90',
+    currencyRaw: 'EUR',
+    availabilityRaw: 'https://schema.org/InStock',
+  })
+
+  const preorderOnly = `<script type="application/ld+json">{
+    "@type":"Product",
+    "name":"Ark Nova Exp",
+    "offers":[
+      {"@type":"Offer","price":"35.00","priceCurrency":"EUR","availability":"https://schema.org/OutOfStock"},
+      {"@type":"Offer","price":"29.90","priceCurrency":"EUR","availability":"https://schema.org/PreOrder"}
+    ]
+  }</script>`
+  expect(extractProduct(preorderOnly, 'https://e.com/ark-nova-exp')).toMatchObject({
+    priceRaw: '29.90',
+    availabilityRaw: 'https://schema.org/PreOrder',
+  })
+})
+
+test('prefers canonical or pageUrl over relative/invalid offer.url', () => {
+  const html = `<html><head><link rel="canonical" href="https://e.com/canonical-catan" /></head><body>
+    <script type="application/ld+json">{"@type":"Product","name":"Catan","offers":{"@type":"Offer","url":"/relative/path","price":"39.90","priceCurrency":"EUR"}}</script>
+  </body></html>`
+  expect(extractProduct(html, 'https://e.com/catan')?.url).toBe('https://e.com/canonical-catan')
+
+  const noCanonical = `<script type="application/ld+json">{"@type":"Product","name":"Catan","offers":{"@type":"Offer","url":"not-a-url","price":"39.90","priceCurrency":"EUR"}}</script>`
+  expect(extractProduct(noCanonical, 'https://e.com/catan')?.url).toBe('https://e.com/catan')
+})
+
+test('strips common trailing site-name suffixes from og:title fallback', () => {
+  const cases: Array<[string, string]> = [
+    ['Heat - Asmodee Italia', 'Heat'],
+    ['Alpaca | GateOnGames', 'Alpaca'],
+    ['Harmonies – DungeonDice.it', 'Harmonies'],
+    ['Catan - Giochi Uniti', 'Catan'],
+    ['Villainous | Ravensburger', 'Villainous'],
+    ['Azul - Uplay.it', 'Azul'],
+  ]
+  for (const [ogTitle, expected] of cases) {
+    const html = `<html><head><meta property="og:title" content="${ogTitle}" /></head></html>`
+    expect(extractProduct(html, 'https://e.com/p')?.title).toBe(expected)
+  }
+})

@@ -1,11 +1,35 @@
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: ' ',
+  quot: '"',
+  apos: "'",
+  lt: '<',
+  gt: '>',
+  rsquo: '\u2019',
+  lsquo: '\u2018',
+  ldquo: '\u201C',
+  rdquo: '\u201D',
+  ndash: '\u2013',
+  mdash: '\u2014',
+  hellip: '\u2026',
+  egrave: 'è',
+  eacute: 'é',
+  agrave: 'à',
+  igrave: 'ì',
+  ograve: 'ò',
+  ugrave: 'ù',
+  Egrave: 'È',
+  Agrave: 'À',
+  euro: '€',
+  trade: '™',
+  reg: '®',
+  copy: '©',
+}
+
 export function decodeHtml(s: string): string {
   return s
     .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    .replace(/&([a-zA-Z]+);/g, (m, name: string) => NAMED_ENTITIES[name] ?? m)
     .replace(/&amp;/g, '&')
 }
 
@@ -18,7 +42,7 @@ const BLOCK_TAG =
 export function htmlToText(html?: string): string | null {
   if (html === undefined) return null
   const text = html
-    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<(script|style|noscript)\b[\s\S]*?<\/\1>/gi, ' ')
     .replace(BLOCK_TAG, ' ')
     .replace(/<[^>]+>/g, '')
   const decoded = decodeHtml(text).replace(/\s+/g, ' ').trim()

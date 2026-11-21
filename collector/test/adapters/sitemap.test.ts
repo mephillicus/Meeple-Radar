@@ -75,3 +75,25 @@ test('follows an index rendered as HTML into child sitemaps', async () => {
   const entries = await fetchSitemapEntries('https://e.com/sitemap.xml', async (u) => pages[u] ?? null)
   expect(entries).toHaveLength(2)
 })
+
+test('sorts child sitemaps by lastmod descending before slicing to maxSitemaps', async () => {
+  const index = `<?xml version="1.0"?><sitemapindex>
+    <sitemap><loc>https://e.com/old.xml</loc><lastmod>2025-01-01T00:00:00Z</lastmod></sitemap>
+    <sitemap><loc>https://e.com/newest.xml</loc><lastmod>2026-11-01T00:00:00Z</lastmod></sitemap>
+    <sitemap><loc>https://e.com/mid.xml</loc><lastmod>2026-05-01T00:00:00Z</lastmod></sitemap>
+  </sitemapindex>`
+  const pages: Record<string, string> = {
+    'https://e.com/sitemap.xml': index,
+    'https://e.com/old.xml': '<urlset><url><loc>https://e.com/old-item</loc></url></urlset>',
+    'https://e.com/mid.xml': '<urlset><url><loc>https://e.com/mid-item</loc></url></urlset>',
+    'https://e.com/newest.xml': '<urlset><url><loc>https://e.com/newest-item</loc></url></urlset>',
+  }
+  const fetched: string[] = []
+  const entries = await fetchSitemapEntries(
+    'https://e.com/sitemap.xml',
+    async (u) => { fetched.push(u); return pages[u] ?? null },
+    { maxSitemaps: 2 },
+  )
+  expect(fetched).toEqual(['https://e.com/sitemap.xml', 'https://e.com/newest.xml', 'https://e.com/mid.xml'])
+  expect(entries.map((e) => e.loc)).toEqual(['https://e.com/newest-item', 'https://e.com/mid-item'])
+})

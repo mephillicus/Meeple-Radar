@@ -50,6 +50,19 @@ function deriveId(url: string): string {
   }
 }
 
+const SITE_SUFFIX_RE =
+  /\s+[-|–]\s+(?:Asmodee(?:\s+Italia)?|GateOnGames|Uplay\.it|DungeonDice\.it|Ravensburger|Giochi\s+Uniti)\s*$/i
+
+function validHttpUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function buildProduct(fields: {
   title?: string
   url: string
@@ -59,6 +72,7 @@ export function buildProduct(fields: {
   availability?: string
   image?: string
   description?: string
+  releaseDate?: string
 }): RawProduct | null {
   const title = fields.title?.trim()
   if (!title) return null
@@ -71,19 +85,50 @@ export function buildProduct(fields: {
     availabilityRaw: fields.availability,
     imageUrl: fields.image,
     descriptionRaw: fields.description,
+    releaseDateRaw: fields.releaseDate,
   })
   return parsed.success ? parsed.data : null
 }
 
-function offerFields(offers: unknown): { price?: string; currency?: string; availability?: string; url?: string } {
-  const first = asArray(offers)[0]
-  if (!first || typeof first !== 'object') return {}
-  const o = first as JsonObject
+function flattenOffers(offers: unknown): JsonObject[] {
+  const out: JsonObject[] = []
+  for (const item of asArray(offers)) {
+    if (!item || typeof item !== 'object') continue
+    const obj = item as JsonObject
+    const nested = obj.offers !== undefined ? flattenOffers(obj.offers) : []
+    if (nested.length > 0) {
+      for (const child of nested) {
+        out.push({
+          ...child,
+          priceCurrency: child.priceCurrency ?? obj.priceCurrency,
+        })
+      }
+    } else {
+      out.push(obj)
+    }
+  }
+  return out
+}
+
+function offerFields(offers: unknown): {
+  price?: string
+  currency?: string
+  availability?: string
+  url?: string
+  availabilityStarts?: string
+} {
+  const list = flattenOffers(offers)
+  if (list.length === 0) return {}
+  const chosen =
+    list.find((o) => /InStock/i.test(asString(o.availability) ?? '')) ??
+    list.find((o) => /PreOrder/i.test(asString(o.availability) ?? '')) ??
+    list[0]
   return {
-    price: asString(o.price) ?? asString(o.lowPrice) ?? asString(o.highPrice),
-    currency: asString(o.priceCurrency),
-    availability: asString(o.availability),
-    url: asString(o.url),
+    price: asString(chosen.price) ?? asString(chosen.lowPrice) ?? asString(chosen.highPrice),
+    currency: asString(chosen.priceCurrency),
+    availability: asString(chosen.availability),
+    url: asString(chosen.url),
+    availabilityStarts: asString(chosen.availabilityStarts),
   }
 }
 
@@ -99,15 +144,17 @@ function fromJsonLd($: cheerio.CheerioAPI, pageUrl: string, canonical?: string):
     collectProductNodes(data, nodes)
     for (const node of nodes) {
       const offer = offerFields(node.offers)
+      const url = validHttpUrl(canonical) ?? validHttpUrl(pageUrl) ?? validHttpUrl(offer.url) ?? pageUrl
       const product = buildProduct({
         title: asString(node.name),
-        url: offer.url ?? canonical ?? pageUrl,
+        url,
         externalId: asString(node.sku) ?? asString(node.productID),
         price: offer.price,
         currency: offer.currency,
         availability: offer.availability,
         image: pickImage(node.image),
         description: asString(node.description),
+        releaseDate: asString(node.releaseDate) ?? offer.availabilityStarts,
       })
       if (product) return product
     }
@@ -120,9 +167,11 @@ function fromOpenGraph($: cheerio.CheerioAPI, pageUrl: string, canonical?: strin
     const el = $(`meta[property="${property}"], meta[name="${property}"]`).first()
     return asString(el.attr('content'))
   }
-  const url = canonical ?? pageUrl
+  const url = validHttpUrl(canonical) ?? validHttpUrl(pageUrl) ?? pageUrl
+  const rawTitle = meta('og:title')
+  const title = rawTitle?.replace(SITE_SUFFIX_RE, '').trim()
   return buildProduct({
-    title: meta('og:title'),
+    title,
     url,
     price: meta('product:price:amount'),
     currency: meta('product:price:currency'),
@@ -137,7 +186,9 @@ export function extractProduct(html: string, pageUrl: string): RawProduct | null
   const canonical = asString($('link[rel="canonical"]').attr('href'))
   const product = fromJsonLd($, pageUrl, canonical) ?? fromOpenGraph($, pageUrl, canonical)
   if (!product) return null
-  const visible = $('div[itemprop="description"]').first().text().trim()
+  const descEl = $('div[itemprop="description"]').first().clone()
+  descEl.find('script, style, noscript').remove()
+  const visible = descEl.text().trim()
   if (visible && (!product.descriptionRaw || product.descriptionRaw.length < visible.length)) {
     return { ...product, descriptionRaw: visible }
   }

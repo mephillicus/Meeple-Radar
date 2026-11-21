@@ -11,7 +11,33 @@ const SEEDS = [
 const PRODUCT_URL = /^https:\/\/www\.gateongames\.com\/([a-z0-9][a-z0-9-]*)\/$/
 
 // Il filtro a slug unico corrisponde anche a pagine normali del sito: si escludono quelle note.
-const NON_PRODOTTI = new Set(['chi-siamo','contattaci','privacy-policy','corti-in-gioco','english-catalogue','rulebook','speciali-mini-crimes','homepage'])
+const NON_PRODOTTI = new Set([
+  'chi-siamo',
+  'contattaci',
+  'contatti',
+  'cookie-policy',
+  'privacy-policy',
+  'termini-e-condizioni',
+  'corti-in-gioco',
+  'english-catalogue',
+  'rulebook',
+  'speciali-mini-crimes',
+  'homepage',
+  'blog',
+  'eventi',
+  'news',
+  'faq',
+  'carrello',
+  'checkout',
+  'my-account',
+  'wishlist',
+  'author',
+  'tag',
+  'category',
+  'page',
+  'shop',
+  'negozio',
+])
 
 export const gateongamesSpec: HtmlSourceSpec = {
   discover: async (fetchText) =>

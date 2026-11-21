@@ -37,7 +37,7 @@ test('assigns defaultPublisher only to mono-brand publisher sources', () => {
     msedizioni: 'MS Edizioni',
     ravensburger: 'Ravensburger',
     littlerocket: 'Little Rocket Games',
-    supernova: 'Supernova',
+    supernova: 'Studio Supernova',
     giochiuniti: 'Giochi Uniti',
   })
 })

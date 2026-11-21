@@ -10,11 +10,17 @@ export async function collectLinks(
   fetchText: TextFetcher,
   seedUrls: string[],
   matches: (url: string) => boolean,
+  options?: { retryDelayMs?: number },
 ): Promise<string[]> {
+  const retryDelayMs = options?.retryDelayMs ?? 300
   const out: string[] = []
   const seen = new Set<string>()
   for (const seed of seedUrls) {
-    const html = await fetchText(seed)
+    let html = await fetchText(seed)
+    if (!html) {
+      if (retryDelayMs > 0) await new Promise((r) => setTimeout(r, retryDelayMs))
+      html = await fetchText(seed)
+    }
     if (!html) continue
     const $ = cheerio.load(html)
     for (const el of $('a[href]').toArray()) {

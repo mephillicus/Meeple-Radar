@@ -4,6 +4,7 @@ import type {
   ListingStore,
   UserAlertInput,
 } from './db.js'
+import { normalizeAvailability } from './normalize.js'
 
 export type AlertsReport = {
   detected: number
@@ -19,11 +20,7 @@ export type AlertsReport = {
 
 export const DEFAULT_PRICE_DROP_THRESHOLD = 0.1
 const WEBHOOK_TIMEOUT_MS = 10_000
-const UNAVAILABLE_STATES = new Set(['preorder', 'out_of_stock'])
-
-function normAvailability(val: string | null | undefined): string {
-  return (val ?? '').trim().toLowerCase()
-}
+const UNAVAILABLE_STATES = new Set(['preorder', 'out_of_stock', 'backorder'])
 
 export function detectFavoriteAlerts(
   snapshots: FavoriteListingSnapshot[],
@@ -36,9 +33,9 @@ export function detectFavoriteAlerts(
     const [latest, previous] = snap.history
     const dateKey = (latest.recordedAt || new Date().toISOString()).slice(0, 10)
 
-    const prevAvail = normAvailability(previous.availability)
-    const currAvail = normAvailability(latest.availability)
-    if (UNAVAILABLE_STATES.has(prevAvail) && currAvail === 'available') {
+    const prevAvail = normalizeAvailability(previous.availability)
+    const currAvail = normalizeAvailability(latest.availability)
+    if (prevAvail !== null && UNAVAILABLE_STATES.has(prevAvail) && currAvail === 'available') {
       alerts.push({
         alertType: 'back_in_stock',
         gameId: snap.gameId,

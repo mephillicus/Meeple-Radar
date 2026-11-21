@@ -1,4 +1,4 @@
-import type { TextFetcher } from './http.js'
+import { parseRetryAfterMs, type TextFetcher } from './http.js'
 
 // Le fonti dietro Cloudflare sono raggiungibili da IP residenziale (curl) ma sfidate
 // dagli IP datacenter dei runner di GitHub Actions. Per l'esecuzione in CI usiamo un
@@ -9,8 +9,13 @@ import type { TextFetcher } from './http.js'
 
 export type FetchLike = (
   url: string,
-  init?: { headers?: Record<string, string> },
-) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>
+  init?: { headers?: Record<string, string>; signal?: AbortSignal },
+) => Promise<{
+  ok: boolean
+  status: number
+  headers?: { get(name: string): string | null }
+  text(): Promise<string>
+}>
 
 export type RelayRateLimiterOptions = {
   minIntervalMs?: number
@@ -24,6 +29,7 @@ export type RelayOptions = {
 }
 
 export const RELAY_ENDPOINT = 'https://r.jina.ai/'
+export const RELAY_TIMEOUT_MS = 30_000
 
 // Limiti di sicurezza rispetto alle quote Jina AI Reader:
 // - con JINA_API_KEY: 200 req/min -> 350 ms (~171 req/min)
@@ -75,19 +81,31 @@ export function createRelayFetcher(
     now: options?.now,
   })
 
+  const now = options?.now ?? Date.now
+
   return async (url) => {
     const headers: Record<string, string> = { 'X-Return-Format': 'html' }
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+    let nextDelayMs: number | null = null
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      if (attempt > 0) await sleep(1000 * 2 ** (attempt - 1))
+      if (attempt > 0) {
+        await sleep(nextDelayMs ?? 1000 * 2 ** (attempt - 1))
+        nextDelayMs = null
+      }
       await acquireSlot()
       try {
-        const res = await fetchImpl(`${RELAY_ENDPOINT}${url}`, { headers })
+        const res = await fetchImpl(`${RELAY_ENDPOINT}${url}`, {
+          headers,
+          signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
+        })
         if (res.ok) {
           const text = await res.text()
           return text || null
         }
         if (!RETRYABLE_STATUSES.has(res.status)) return null
+        if (res.status === 429) {
+          nextDelayMs = parseRetryAfterMs(res.headers?.get('retry-after'), now())
+        }
       } catch {
         // errore di rete: ritenta
       }

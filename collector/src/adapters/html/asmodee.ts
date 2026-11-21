@@ -6,7 +6,10 @@ const PRODUCT_RE = /\/product\/[^/]+\/$/
 
 export const asmodeeSpec: HtmlSourceSpec = {
   async discover(fetchText) {
-    const entries = await fetchSitemapEntries('https://www.asmodee.it/product-sitemap.xml', fetchText)
+    let entries = await fetchSitemapEntries('https://www.asmodee.it/sitemap_index.xml', fetchText)
+    if (entries.length === 0) {
+      entries = await fetchSitemapEntries('https://www.asmodee.it/product-sitemap.xml', fetchText)
+    }
     return toItems(newestFirst(entries)
       .map((e) => e.loc)
       .filter((url) => PRODUCT_RE.test(url)))

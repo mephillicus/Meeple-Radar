@@ -294,3 +294,82 @@ test('dvgiochi discover trova tutti i prodotti di prossime-uscite, anche DA DEFI
   expect(items).toContainEqual({ url: 'https://www.dvgiochi.com/catalogo/blablada-ita/', releaseDate: '2026-10-27' })
   expect(items).toContainEqual({ url: 'https://www.dvgiochi.com/catalogo/tilt-vietato-ai-minori/', releaseDate: '2026-09-18' })
 })
+
+test('dvgiochi extract resolves imageUrl and sets availabilityRaw to preordine', () => {
+  const html = `<html><body>
+    <h2>BANG! Game System | Black Flag! (ITA) | DV Games<br /> <img src="/images/black-flag.jpg" alt="Black Flag! (ITA)" title="Black Flag! (ITA)"></h2>
+  </body></html>`
+  const product = HTML_SPECS.dvgiochi.extract?.(html, 'https://www.dvgiochi.com/catalogo/black-flag-ita/')
+  expect(product?.imageUrl).toBe('https://www.dvgiochi.com/images/black-flag.jpg')
+  expect(product?.availabilityRaw).toBe('preordine')
+})
+
+test('horribleguild discovers paginated /eu/shop/page/N/ links via a.next.page-numbers', async () => {
+  const pages: Record<string, string> = {
+    'https://horribleguild.com/eu/shop/': `<html><body>
+      <a href="https://horribleguild.com/eu/product/game-one/">Game One</a>
+      <a class="next page-numbers" href="https://horribleguild.com/eu/shop/page/2/">Next</a>
+    </body></html>`,
+    'https://horribleguild.com/eu/shop/page/2/': `<html><body>
+      <a href="https://horribleguild.com/eu/product/game-two/">Game Two</a>
+    </body></html>`,
+  }
+  const items = await HTML_SPECS.horribleguild.discover(async (u) => pages[u] ?? null)
+  expect(items).toEqual([
+    { url: 'https://horribleguild.com/eu/product/game-one/' },
+    { url: 'https://horribleguild.com/eu/product/game-two/' },
+  ])
+})
+
+test('horribleguild extract reads imageUrl, availabilityRaw, and releaseDateRaw', () => {
+  const html = `<html><head>
+    <meta property="og:image" content="https://horribleguild.com/wp-content/uploads/railroad.jpg" />
+    <script type="application/ld+json">{"@type":"Product","name":"Railroad Ink","releaseDate":"2026-11-20","offers":{"@type":"Offer","price":"24.90","priceCurrency":"EUR","availability":"https://schema.org/InStock"}}</script>
+  </head><body>
+    <h2 class="single-post-title product_title entry-title">Railroad Ink</h2>
+    <div class="summary entry-summary">
+      <p class="price"><span class="woocommerce-Price-amount amount"><bdi>24.90<span>€</span></bdi></span></p>
+    </div>
+  </body></html>`
+  const product = HTML_SPECS.horribleguild.extract?.(html, 'https://horribleguild.com/eu/product/railroad-ink/')
+  expect(product).toMatchObject({
+    title: 'Railroad Ink',
+    imageUrl: 'https://horribleguild.com/wp-content/uploads/railroad.jpg',
+    availabilityRaw: 'https://schema.org/InStock',
+    releaseDateRaw: '2026-11-20',
+  })
+
+  const wooFallback = `<html><body>
+    <div class="woocommerce-product-gallery__image"><img src="/wp-content/uploads/box.webp" /></div>
+    <h2 class="product_title">Out Game</h2>
+    <div class="summary"><p class="stock out-of-stock">Out of stock</p></div>
+  </body></html>`
+  const p2 = HTML_SPECS.horribleguild.extract?.(wooFallback, 'https://horribleguild.com/eu/product/out-game/')
+  expect(p2).toMatchObject({
+    imageUrl: 'https://horribleguild.com/wp-content/uploads/box.webp',
+    availabilityRaw: 'out_of_stock',
+  })
+})
+
+test('gateongames skips expanded non-product slugs', async () => {
+  const pages: Record<string, string> = {
+    [GOG_SEEDS[0]]: `<html><body>
+      <a href="/alpaca/">Alpaca</a>
+      <a href="/cookie-policy/">Cookie Policy</a>
+      <a href="/blog/">Blog</a>
+      <a href="/eventi/">Eventi</a>
+      <a href="/news/">News</a>
+      <a href="/contatti/">Contatti</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/termini-e-condizioni/">Termini</a>
+      <a href="/carrello/">Carrello</a>
+      <a href="/checkout/">Checkout</a>
+      <a href="/my-account/">Account</a>
+      <a href="/wishlist/">Wishlist</a>
+      <a href="/shop/">Shop</a>
+      <a href="/negozio/">Negozio</a>
+    </body></html>`,
+  }
+  const items = await HTML_SPECS.gateongames.discover(async (u) => pages[u] ?? null)
+  expect(items).toEqual([{ url: 'https://www.gateongames.com/alpaca/' }])
+})

@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url'
 import type { Listing, RawProduct, Source, SourceKind, SourceMetrics } from './types.js'
-import { normalizeListing, normalizeTitle } from './normalize.js'
+import { isNonBoardgameTitle, normalizeListing, normalizeTitle } from './normalize.js'
 import { createSupabaseClient, type ListingRow, type ListingStore } from './db.js'
 import { loadConfig } from './config.js'
 import { buildRegistry } from './adapters/registry.js'
@@ -133,6 +133,7 @@ export async function runCollector(args: {
       let paired = raw
         .map((r) => ({ raw: r, row: normalizeListing(source.id, r) }))
         .map((p) => (GENERATED_TEXT_KINDS.has(source.kind) ? { ...p, row: { ...p.row, description: null } } : p))
+        .filter((p) => !isNonBoardgameTitle(p.row.title))
         .filter((p) => p.row.releaseDate === null || p.row.releaseDate >= cutoff)
 
       if (source.kind === 'roundups' && paired.length > 0) {

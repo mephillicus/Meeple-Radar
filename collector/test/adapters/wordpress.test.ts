@@ -215,3 +215,99 @@ test('ritenta automaticamente le pagine di dettaglio in caso di HTTP 429/503 tra
   expect(sleeps).toContain(2000)
   expect(out[0]).toMatchObject({ priceRaw: '19.90', currencyRaw: 'EUR', availabilityRaw: 'instock' })
 })
+
+test('estrae imageUrl da og:image e cade su twitter:image', () => {
+  const ogHtml = `<meta property="og:image" content="https://www.ghenosgames.com/img/cover.jpg"/>`
+  expect(parseGhenosProductPage(ogHtml).imageUrl).toBe('https://www.ghenosgames.com/img/cover.jpg')
+
+  const twitterHtml = `<meta name="twitter:image" content="https://www.ghenosgames.com/img/tw.jpg"/>`
+  expect(parseGhenosProductPage(twitterHtml).imageUrl).toBe('https://www.ghenosgames.com/img/tw.jpg')
+})
+
+test('parsing data case-insensitive su tutti i paragrafi di .ae-element-custom-field', () => {
+  const html1 = `<div class="ae-element-custom-field"><p>&nbsp;</p><p>Day One 15/12/2026</p><p>Testo descrittivo.</p></div>`
+  expect(parseGhenosProductPage(html1)).toMatchObject({
+    releaseDateRaw: '2026-12-15',
+    descriptionRaw: 'Testo descrittivo.',
+  })
+
+  const html2 = `<div class="ae-element-custom-field"><p>Introduzione al gioco.</p><p>Disponibile dal 20 gennaio 2027</p></div>`
+  expect(parseGhenosProductPage(html2)).toMatchObject({
+    releaseDateRaw: '2027-01-20',
+    descriptionRaw: 'Introduzione al gioco.',
+  })
+
+  const html3 = `<div class="ae-element-custom-field"><p>USCITA prevista: 05/03/2027</p><p>Altra descrizione.</p></div>`
+  expect(parseGhenosProductPage(html3)).toMatchObject({
+    releaseDateRaw: '2027-03-05',
+    descriptionRaw: 'Altra descrizione.',
+  })
+})
+
+test('data di uscita futura sovrascrive instock con preordine e propaga imageUrl', async () => {
+  const api = [
+    { id: 101, link: 'https://www.ghenosgames.com/prodotto/futuro/', title: { rendered: 'Gioco Futuro' } },
+    { id: 102, link: 'https://www.ghenosgames.com/prodotto/passato/', title: { rendered: 'Gioco Passato' } },
+  ]
+  const pageFuture = `
+    <meta property="og:image" content="https://www.ghenosgames.com/img/futuro.jpg"/>
+    <meta property="product:price:amount" content="39.90"/>
+    <meta property="product:price:currency" content="EUR"/>
+    <meta property="product:availability" content="instock"/>
+    <div class="ae-element-custom-field"><p>Day One 15/12/2026</p><p>Descrizione.</p></div>`
+  const pagePast = `
+    <meta property="og:image" content="https://www.ghenosgames.com/img/passato.jpg"/>
+    <meta property="product:availability" content="instock"/>
+    <div class="ae-element-custom-field"><p>Day one 10/01/2026</p><p>Descrizione.</p></div>`
+  const http = async (u: string) => {
+    if (u.includes('/wp-json/')) return { status: 200, json: async () => api, text: async () => '' }
+    if (u.includes('/futuro/')) return { status: 200, json: async () => ({}), text: async () => pageFuture }
+    return { status: 200, json: async () => ({}), text: async () => pagePast }
+  }
+  const out = await fetchWordPressProducts('https://www.ghenosgames.com', http, 'product', undefined, {
+    delayMs: 0,
+    now: new Date('2026-10-22T00:00:00Z'),
+  })
+  expect(out[0]).toMatchObject({
+    externalId: '101',
+    availabilityRaw: 'preordine',
+    releaseDateRaw: '2026-12-15',
+    imageUrl: 'https://www.ghenosgames.com/img/futuro.jpg',
+  })
+  expect(out[1]).toMatchObject({
+    externalId: '102',
+    availabilityRaw: 'instock',
+    releaseDateRaw: '2026-01-10',
+    imageUrl: 'https://www.ghenosgames.com/img/passato.jpg',
+  })
+})
+
+test('ritenta la paginazione WP REST su HTTP 429 con Response nativo', async () => {
+  let apiAttempts = 0
+  const sleeps: number[] = []
+  const nativeHttp = async (u: string) => {
+    if (u.includes('/wp-json/')) {
+      apiAttempts++
+      if (apiAttempts === 1) {
+        return new Response('', { status: 429, headers: { 'retry-after': '3' } }) as any
+      }
+      return new Response(
+        JSON.stringify([
+          { id: 55, link: 'https://www.ghenosgames.com/prodotto/native/', title: { rendered: 'Native WP' } },
+        ]),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ) as any
+    }
+    return new Response(GHENOS_PAGE_INSTOCK, { status: 200 }) as any
+  }
+  const out = await fetchWordPressProducts('https://www.ghenosgames.com', nativeHttp, 'product', undefined, {
+    delayMs: 0,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+    },
+  })
+  expect(apiAttempts).toBe(2)
+  expect(sleeps).toContain(3000)
+  expect(out).toHaveLength(1)
+  expect(out[0].title).toBe('Native WP')
+})

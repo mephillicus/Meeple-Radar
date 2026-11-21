@@ -10,7 +10,7 @@ const SEEDS = [
   'https://www.dungeondice.it/445-ultime-novita?page=4',
 ]
 
-const PRODUCT_URL = /^https:\/\/www\.dungeondice\.it\/\d+-[^/]+\.html$/
+const PRODUCT_URL = /^https:\/\/www\.dungeondice\.it\/(?:[^/?#]+\/)?\d+-[^/?#]+\.html$/
 
 export const dungeondiceSpec: HtmlSourceSpec = {
   discover: async (fetchText) => toItems(await collectLinks(fetchText, SEEDS, (url) => PRODUCT_URL.test(url))),

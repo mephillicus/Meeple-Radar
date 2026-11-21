@@ -389,3 +389,26 @@ test('salta fillProduct* ridondanti quando getProductFillState indica colonne gi
   expect(store.fillProductPublisher).toHaveBeenCalledTimes(1)
   expect(store.fillProductPublisher).toHaveBeenCalledWith(12, 'Cranio Creations')
 })
+
+test('esclude i titoli non-boardgame (puzzle, bustine, playmat, BRIO, TCG) preservando i veri giochi', async () => {
+  const store = storeBase()
+  const adapters = {
+    html: async () => [
+      { externalId: '1', title: 'Ravensburger Puzzle 1000 Pezzi', url: 'https://e.com/1' },
+      { externalId: '2', title: 'Dragon Shield Bustine Protettive', url: 'https://e.com/2' },
+      { externalId: '3', title: 'Star Wars Unlimited Booster Pack', url: 'https://e.com/3' },
+      { externalId: '4', title: 'Ra: The Dice Game', url: 'https://e.com/4' },
+      { externalId: '5', title: '7 Wonders Dice', url: 'https://e.com/5' },
+    ],
+    shopify: async () => [], woocommerce: async () => [], wordpress: async () => [], headless: async () => [],
+  } as any
+
+  await runCollector({
+    sources: [src('dungeondice', 'html')],
+    adapters,
+    store,
+  })
+
+  const written = store.upsertListings.mock.calls[0][0]
+  expect(written.map((r: any) => r.title)).toEqual(['Ra: The Dice Game', '7 Wonders Dice'])
+})

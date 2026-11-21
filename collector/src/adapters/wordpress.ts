@@ -2,7 +2,7 @@ import * as cheerio from 'cheerio'
 import { RawProductSchema, type RawProduct } from '../types.js'
 import { decodeHtml, htmlToText } from '../text.js'
 import { extractReleaseDate } from '../normalize.js'
-import { defaultFetch, textFetcher, USER_AGENT, type HttpClient, type TextFetcher } from './http.js'
+import { defaultFetch, textFetcher, type HttpClient, type TextFetcher } from './http.js'
 import { createMinIntervalLimiter } from './relay.js'
 
 type WpPost = {
@@ -19,12 +19,19 @@ export type WordPressFetchOptions = {
   sleep?: (ms: number) => Promise<void>
   maxRetries?: number
   baseDelayMs?: number
+  now?: Date
 }
 
 const PAGE_SIZE = 100
 export const PAGE_DELAY_MS = 200
 export const DEFAULT_CONCURRENCY = 4
 const PAGE_FAILURE_LIMIT = 5
+const RELEASE_PARAGRAPH_RE = /(?:day[\s-]?one|uscita|disponibile\s+dal)/i
+
+function isFutureIso(iso: string, now: Date): boolean {
+  const d = new Date(`${iso}T00:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d > now
+}
 
 function normalizePermalink(link: string, base: string, postType: string, permalinkBase?: string): string {
   if (!permalinkBase) return link
@@ -38,6 +45,7 @@ type PageFields = {
   priceRaw?: string
   currencyRaw?: string
   availabilityRaw?: string
+  imageUrl?: string
 }
 
 export function parseGhenosProductPage(html: string): PageFields {
@@ -55,17 +63,32 @@ export function parseGhenosProductPage(html: string): PageFields {
   if (currencyRaw) out.currencyRaw = currencyRaw
   const availabilityRaw = meta('product:availability')
   if (availabilityRaw) out.availabilityRaw = availabilityRaw
+  const imageUrl =
+    meta('og:image') ||
+    $('meta[name="twitter:image"]').first().attr('content')?.trim() ||
+    undefined
+  if (imageUrl) out.imageUrl = imageUrl
 
   const block = $('.ae-element-custom-field').first()
   if (block.length === 0) return out
   const paragraphs = block.find('p').get()
   if (paragraphs.length === 0) return out
-  const first = $(paragraphs[0]).text().trim()
-  if (first.startsWith('Day one')) {
-    const iso = extractReleaseDate(first)
-    if (iso) out.releaseDateRaw = iso
+  let releaseParagraphIndex = -1
+  for (let i = 0; i < paragraphs.length; i++) {
+    const text = $(paragraphs[i]).text().trim()
+    if (!text || !RELEASE_PARAGRAPH_RE.test(text)) continue
+    const iso = extractReleaseDate(text)
+    if (iso) {
+      out.releaseDateRaw = iso
+      releaseParagraphIndex = i
+      break
+    }
   }
-  const body = (first.startsWith('Day one') ? paragraphs.slice(1) : paragraphs)
+  const body = (
+    releaseParagraphIndex >= 0
+      ? paragraphs.filter((_, idx) => idx !== releaseParagraphIndex)
+      : paragraphs
+  )
     .map((el) => $(el).html() ?? '')
     .filter((s) => s !== '')
     .join(' ')
@@ -141,13 +164,37 @@ export async function fetchWordPressProducts(
 ): Promise<RawProduct[]> {
   const base = baseUrl.replace(/\/+$/, '')
   const out: RawProduct[] = []
+  const now = opts?.now ?? new Date()
   const concurrency = Math.max(1, opts?.concurrency ?? DEFAULT_CONCURRENCY)
   const delayMs = opts?.delayMs ?? PAGE_DELAY_MS
-  const fetchText = textFetcher(http, {
+  const retryOpts = {
     sleep: opts?.sleep,
     maxRetries: opts?.maxRetries,
     baseDelayMs: opts?.baseDelayMs,
-  })
+  }
+  const fetchText = textFetcher(http, retryOpts)
+  const fetchJsonText = textFetcher(
+    async (url, headers) => {
+      const res = await http(url, headers)
+      return {
+        status: res.status,
+        headers: res.headers,
+        json: () => res.json(),
+        text: async () => {
+          if (typeof res.text === 'function') {
+            const text = await res.text()
+            if (text) return text
+          }
+          if (typeof res.json === 'function') {
+            const json = await res.json()
+            return json === undefined ? '' : JSON.stringify(json)
+          }
+          return ''
+        },
+      }
+    },
+    retryOpts,
+  )
   const acquireSlot = createMinIntervalLimiter({
     minIntervalMs: delayMs,
     sleep: opts?.sleep,
@@ -155,11 +202,16 @@ export async function fetchWordPressProducts(
   const readPage = makePageReader(base, fetchText, acquireSlot)
 
   for (let page = 1; ; page++) {
-    const res = await http(`${base}/wp-json/wp/v2/${postType}?per_page=${PAGE_SIZE}&page=${page}`, {
-      'User-Agent': USER_AGENT,
-    })
-    if (res.status !== 200) break
-    const body = (await res.json()) as WpPost[] | null
+    const rawJson = await fetchJsonText(
+      `${base}/wp-json/wp/v2/${postType}?per_page=${PAGE_SIZE}&page=${page}`,
+    )
+    if (!rawJson) break
+    let body: WpPost[] | null = null
+    try {
+      body = JSON.parse(rawJson) as WpPost[] | null
+    } catch {
+      break
+    }
     const posts = Array.isArray(body) ? body : []
     if (posts.length === 0) break
 
@@ -177,6 +229,10 @@ export async function fetchWordPressProducts(
     for (let i = 0; i < posts.length; i++) {
       const p = posts[i]
       const fields = fieldsByIndex[i]
+      const availabilityRaw =
+        fields.releaseDateRaw && isFutureIso(fields.releaseDateRaw, now)
+          ? 'preordine'
+          : fields.availabilityRaw
       const parsed = RawProductSchema.safeParse({
         externalId: String(p.id),
         title: decodeHtml(p.title?.rendered ?? ''),
@@ -186,7 +242,8 @@ export async function fetchWordPressProducts(
         publishedAtRaw: p.date,
         priceRaw: fields.priceRaw,
         currencyRaw: fields.currencyRaw,
-        availabilityRaw: fields.availabilityRaw,
+        availabilityRaw,
+        imageUrl: fields.imageUrl,
       })
       if (parsed.success) out.push(parsed.data)
     }

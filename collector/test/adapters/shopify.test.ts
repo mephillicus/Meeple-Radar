@@ -276,3 +276,151 @@ test('extractDateFromHtml ignora script/style/noscript e legge la data visibile'
   )
   expect(extracted).toBe('2026-11-27')
 })
+
+test('extractReleaseDateFromTags treats slash-separated dates as DD/MM/YYYY and hyphenated as MM-DD-YYYY', () => {
+  expect(extractReleaseDateFromTags(['uscita:05/11/2026'])).toBe('2026-11-05')
+  expect(extractReleaseDateFromTags(['uscita:27/11/2026'])).toBe('2026-11-27')
+  expect(extractReleaseDateFromTags(['uscita:05-11-2026'])).toBe('2026-05-11')
+  expect(extractReleaseDateFromTags(['uscita:11-27-2026'])).toBe('2026-11-27')
+})
+
+test('body_html viene convertito in testo prima di extractReleaseDate (ignora date negli attributi HTML)', async () => {
+  const imgDateHttp = async (url: string) => {
+    if (url.includes('/products.json')) {
+      return {
+        status: 200,
+        json: async () => ({
+          products: [
+            {
+              id: 1001,
+              title: 'Gioco Con Immagine',
+              handle: 'gioco-con-immagine',
+              body_html:
+                '<p><img src="https://cdn.example/uploads/2027-12-25/box.jpg" alt="Box" />Un classico gioco da tavolo.</p>',
+              variants: [{ price: '35.00', available: true }],
+            },
+          ],
+        }),
+        text: async () => '',
+      }
+    }
+    return { status: 404, json: async () => ({}), text: async () => '' }
+  }
+  const out = await fetchShopifyProducts('https://shop.example', imgDateHttp, undefined, now, {
+    htmlDelayMs: 0,
+  })
+  expect(out).toHaveLength(1)
+  expect(out[0]?.releaseDateRaw).toBeUndefined()
+  expect(out[0]?.availabilityRaw).toBe('true')
+})
+
+test('extractDateFromHtml rimuove header/nav/footer e preferisce i container prodotto', async () => {
+  const html = `<!doctype html>
+<html>
+  <body>
+    <header><p>Promo valida fino al 01/11/2026</p></header>
+    <nav><p>Evento 02/11/2026</p></nav>
+    <div class="sidebar"><p>Altro gioco in uscita il 03/11/2026</p></div>
+    <main>
+      <div class="product-info"><p>Uscita prevista: 18/12/2026</p></div>
+    </main>
+    <footer><p>Copyright 2026-01-01</p></footer>
+  </body>
+</html>`
+  const extracted = await extractDateFromHtml(
+    'https://shop.example/products/test',
+    async () => html,
+    async () => {},
+  )
+  expect(extracted).toBe('2026-12-18')
+})
+
+test('preordini collection emette availabilityRaw="preordine" anche senza data futura se disponibile', async () => {
+  const preHttp = async (url: string) => {
+    if (url.includes('/products.json')) {
+      return {
+        status: 200,
+        json: async () => ({
+          products: [
+            {
+              id: 2001,
+              title: 'Preordine Senza Data',
+              handle: 'preordine-senza-data',
+              body_html: '<p>Nessuna data indicata</p>',
+              variants: [{ price: '49.90', available: true }],
+            },
+            {
+              id: 2002,
+              title: 'Preordine Esaurito',
+              handle: 'preordine-esaurito',
+              body_html: '<p>Nessuna data indicata</p>',
+              variants: [{ price: '49.90', available: false }],
+            },
+          ],
+        }),
+        text: async () => '',
+      }
+    }
+    return { status: 200, json: async () => ({}), text: async () => '<html><body><p>TBA</p></body></html>' }
+  }
+  const out = await fetchShopifyProducts('https://shop.example', preHttp, 'preordini', now, {
+    htmlDelayMs: 0,
+  })
+  expect(out.find((p) => p.externalId === '2001')?.availabilityRaw).toBe('preordine')
+  expect(out.find((p) => p.externalId === '2001')?.releaseDateRaw).toBeUndefined()
+  expect(out.find((p) => p.externalId === '2002')?.availabilityRaw).toBe('false')
+})
+
+test('seleziona la prima variante disponibile invece di fermarsi a variants[0] esaurita', async () => {
+  const variantHttp = async () => ({
+    status: 200,
+    json: async () => ({
+      products: [
+        {
+          id: 3001,
+          title: 'Multi Variant Game',
+          handle: 'multi-variant-game',
+          body_html: '<p>Gioco base</p>',
+          variants: [
+            { price: '10.00', available: false },
+            { price: '45.00', available: true },
+          ],
+        },
+      ],
+    }),
+    text: async () => '',
+  })
+  const out = await fetchShopifyProducts('https://shop.example', variantHttp, undefined, now, {
+    htmlDelayMs: 0,
+  })
+  expect(out).toHaveLength(1)
+  expect(out[0]?.availabilityRaw).toBe('true')
+  expect(out[0]?.priceRaw).toBe('45.00')
+})
+
+test('salta product_type palesemente non giochi da tavolo e mantiene i boardgame', async () => {
+  const mixedHttp = async () => ({
+    status: 200,
+    json: async () => ({
+      products: [
+        { id: 1, title: 'Bustine 63x88', handle: 'bustine', product_type: 'Bustine', variants: [{ price: '3.00', available: true }] },
+        { id: 2, title: 'Sleeves', handle: 'sleeves', product_type: 'Card Sleeves', variants: [{ price: '4.00', available: true }] },
+        { id: 3, title: 'Playmat', handle: 'playmat', product_type: 'Playmat', variants: [{ price: '20.00', available: true }] },
+        { id: 4, title: 'Gift Card', handle: 'gift-card', product_type: 'Gift Card', variants: [{ price: '50.00', available: true }] },
+        { id: 5, title: 'Buono Regalo', handle: 'buono', product_type: 'Buono Regalo', variants: [{ price: '25.00', available: true }] },
+        { id: 6, title: 'Accessori', handle: 'accessori', product_type: 'Accessori', variants: [{ price: '9.00', available: true }] },
+        { id: 7, title: 'Manga Vol 1', handle: 'manga', product_type: 'Manga', variants: [{ price: '7.00', available: true }] },
+        { id: 8, title: 'Fumetto', handle: 'fumetti', product_type: 'Fumetti', variants: [{ price: '12.00', available: true }] },
+        { id: 9, title: 'Set Dadi', handle: 'dadi', product_type: 'Dadi', variants: [{ price: '8.00', available: true }] },
+        { id: 10, title: 'Quaderno', handle: 'cancelleria', product_type: 'Cancelleria', variants: [{ price: '6.00', available: true }] },
+        { id: 11, title: 'Brass Birmingham', handle: 'brass', product_type: 'Giochi da tavolo', variants: [{ price: '79.90', available: true }] },
+        { id: 12, title: 'Cascadia', handle: 'cascadia', variants: [{ price: '39.90', available: true }] },
+      ],
+    }),
+    text: async () => '',
+  })
+  const out = await fetchShopifyProducts('https://shop.example', mixedHttp, undefined, now, {
+    htmlDelayMs: 0,
+  })
+  expect(out.map((p) => p.externalId)).toEqual(['11', '12'])
+})

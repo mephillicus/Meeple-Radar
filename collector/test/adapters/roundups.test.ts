@@ -241,3 +241,46 @@ test('due roundups con lo stesso gioco → una riga sola, vince l\'articolo più
   expect(out).toHaveLength(1)
   expect(out[0].url).toBe(settembre)
 })
+
+test('year rollover: articolo di Oct/Nov/Dec con uscite di Gen/Feb/Mar senza anno usa pubYear + 1', async () => {
+  const sitemapUrl = 'https://www.houseofgames.it/post-sitemap.xml'
+  const dicembre = 'https://www.houseofgames.it/giochi-da-tavolo-le-nuove-uscite-di-dicembre-2026/'
+  const page = `<script type="application/ld+json">{"datePublished":"2026-12-02"}</script>
+    <article><div class="entry-content">
+      <p><strong>CASA</strong></p>
+      <ul>
+        <li><strong>Gioco Gennaio (15 Gennaio)</strong></li>
+        <li><strong>Gioco Marzo (10 Marzo)</strong></li>
+        <li><strong>Gioco Dicembre (20 Dicembre)</strong></li>
+      </ul>
+    </div></article>`
+  const out = await fetchRoundupProducts(SOURCE, undefined, {
+    fetchText: async (u) =>
+      u === sitemapUrl
+        ? `<urlset><url><loc>${dicembre}</loc><lastmod>2026-12-02</lastmod></url></urlset>`
+        : u === dicembre ? page : null,
+    sleep: async () => {},
+  })
+  expect(out).toHaveLength(3)
+  expect(out.find((p) => p.title === 'Gioco Gennaio')?.releaseDateRaw).toBe('2027-01-15')
+  expect(out.find((p) => p.title === 'Gioco Marzo')?.releaseDateRaw).toBe('2027-03-10')
+  expect(out.find((p) => p.title === 'Gioco Dicembre')?.releaseDateRaw).toBe('2026-12-20')
+})
+
+test('parseRoundupArticle limita lo scan a article / .entry-content / main ignorando sidebar e footer', () => {
+  const html = `<html><body>
+    <aside><p><strong>SIDEBAR FAKE</strong></p><ul><li><strong>Fake Sidebar Game (1 Ottobre)</strong></li></ul></aside>
+    <article>
+      <div class="entry-content">
+        <p><strong>ASMODEE</strong></p>
+        <ul><li><strong>Gioco Vero (10 Ottobre)</strong></li></ul>
+        <p>Descrizione vera.</p>
+      </div>
+    </article>
+    <footer><p><strong>FOOTER FAKE</strong></p><ul><li><strong>Fake Footer Game (2 Ottobre)</strong></li></ul></footer>
+  </body></html>`
+  const games = parseRoundupArticle(html)
+  expect(games).toEqual([
+    { title: 'Gioco Vero', dateRaw: '10 Ottobre', publisher: 'ASMODEE', summary: 'Descrizione vera.' },
+  ])
+})

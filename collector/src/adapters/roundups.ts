@@ -59,7 +59,11 @@ export function parseRoundupArticle(html: string): RoundupGame[] {
     summaryParts = []
   }
 
-  for (const el of $('p, li').toArray()) {
+  const entryContent = $('.entry-content').first()
+  const scope = entryContent.length > 0 ? entryContent : $('article, main').first()
+  const elements = (scope.length > 0 ? scope.find('p, li') : $('p, li')).toArray()
+
+  for (const el of elements) {
     const node = $(el)
     if (el.name === 'p') {
       const kids = node.children()
@@ -105,6 +109,22 @@ export type RoundupOptions = {
 
 const ARTICLE_DELAY_MS = 1000
 
+const EXPLICIT_YEAR_RE = /\b20\d{2}\b/
+
+function resolveRoundupReleaseDate(dateRaw: string, datePublished: string): string | null {
+  if (EXPLICIT_YEAR_RE.test(dateRaw)) return extractReleaseDate(dateRaw)
+  const pubYear = Number(datePublished.slice(0, 4))
+  const pubMonth = Number(datePublished.slice(5, 7))
+  if (!Number.isFinite(pubYear)) return null
+  const iso = extractReleaseDate(`${dateRaw} ${pubYear}`)
+  if (iso === null) return null
+  const relMonth = Number(iso.slice(5, 7))
+  if (pubMonth >= 10 && relMonth <= 3) {
+    return extractReleaseDate(`${dateRaw} ${pubYear + 1}`)
+  }
+  return iso
+}
+
 export async function fetchRoundupProducts(
   source: Source,
   gameFinder?: GameFinder,
@@ -147,7 +167,7 @@ export async function fetchRoundupProducts(
           url: entry.loc,
         }
         if (g.dateRaw) {
-          const iso = extractReleaseDate(`${g.dateRaw} ${datePublished.slice(0, 4)}`)
+          const iso = resolveRoundupReleaseDate(g.dateRaw, datePublished)
           if (iso !== null) product.releaseDateRaw = iso
         }
         if (g.summary) product.articleDescription = g.summary

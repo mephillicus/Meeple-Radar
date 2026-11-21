@@ -22,18 +22,23 @@ test('giochiuniti follows its sitemap into the igiochideigrandi catalog', async 
   expect(urls).not.toContainEqual({ url: 'https://www.igiochideigrandi.it/puzzle/1000-pz.html' })
 })
 
-test('ravensburger filters product pages from its italian sitemap', async () => {
+test('ravensburger filters boardgame product pages and excludes puzzles, BRIO, GraviTrax, etc.', async () => {
   const pages: Record<string, string> = {
     'https://www.ravensburger.it/sitemap.xml': `<urlset>
       <url><loc>https://www.ravensburger.it/it-IT/ravensburger/start/category-links</loc></url>
       <url><loc>https://www.ravensburger.it/it-IT/ravensburger/products/games/board-games</loc></url>
+      <url><loc>https://www.ravensburger.it/it-IT/ravensburger/products/games/board-games/disney-villainous-26061</loc></url>
+      <url><loc>https://www.ravensburger.it/it-IT/ravensburger/products/giochi/giochi-da-tavolo/labirinto-magico-26448</loc></url>
       <url><loc>https://www.ravensburger.it/it-IT/ravensburger/products/jigsaw-puzzles/adult-puzzles/afterglow-12001471</loc></url>
       <url><loc>https://www.ravensburger.it/it-IT/brio/products/railway-toys/trains-wagons-vehicles/tow-truck-63352800</loc></url>
+      <url><loc>https://www.ravensburger.it/it-IT/ravensburger/products/gravitrax/starter-set-26832</loc></url>
+      <url><loc>https://www.ravensburger.it/it-IT/ravensburger/products/tiptoi/penna-00112</loc></url>
+      <url><loc>https://www.ravensburger.it/it-IT/ravensburger/products/creart/gatto-20105</loc></url>
     </urlset>`,
   }
   const urls = await ravensburgerSpec.discover(async (u) => pages[u] ?? null)
   expect(urls).toEqual([
-    { url: 'https://www.ravensburger.it/it-IT/ravensburger/products/jigsaw-puzzles/adult-puzzles/afterglow-12001471' },
-    { url: 'https://www.ravensburger.it/it-IT/brio/products/railway-toys/trains-wagons-vehicles/tow-truck-63352800' },
+    { url: 'https://www.ravensburger.it/it-IT/ravensburger/products/games/board-games/disney-villainous-26061' },
+    { url: 'https://www.ravensburger.it/it-IT/ravensburger/products/giochi/giochi-da-tavolo/labirinto-magico-26448' },
   ])
 })

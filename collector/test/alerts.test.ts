@@ -124,3 +124,43 @@ test('runAlerts writes idempotently and sends optional webhook, never throwing o
   expect(errReport.error).toBe('alerts boom')
   expect(errReport.inserted).toBe(0)
 })
+
+test('detectFavoriteAlerts handles canonical backorder and legacy/schema.org availability transitions', () => {
+  const alerts = detectFavoriteAlerts([
+    snap({
+      listingId: 40,
+      history: [
+        { listingId: 40, price: 50, currency: 'EUR', availability: 'available', recordedAt: '2026-11-21T06:00:00Z' },
+        { listingId: 40, price: 50, currency: 'EUR', availability: 'backorder', recordedAt: '2026-11-14T06:00:00Z' },
+      ],
+    }),
+    snap({
+      listingId: 41,
+      history: [
+        { listingId: 41, price: 50, currency: 'EUR', availability: 'true', recordedAt: '2026-11-21T06:00:00Z' },
+        { listingId: 41, price: 50, currency: 'EUR', availability: 'preordine', recordedAt: '2026-11-14T06:00:00Z' },
+      ],
+    }),
+    snap({
+      listingId: 42,
+      history: [
+        { listingId: 42, price: 50, currency: 'EUR', availability: 'https://schema.org/InStock', recordedAt: '2026-11-21T06:00:00Z' },
+        { listingId: 42, price: 50, currency: 'EUR', availability: 'https://schema.org/OutOfStock', recordedAt: '2026-11-14T06:00:00Z' },
+      ],
+    }),
+    snap({
+      listingId: 43,
+      history: [
+        { listingId: 43, price: 50, currency: 'EUR', availability: 'true', recordedAt: '2026-11-21T06:00:00Z' },
+        { listingId: 43, price: 50, currency: 'EUR', availability: 'false', recordedAt: '2026-11-14T06:00:00Z' },
+      ],
+    }),
+  ])
+  expect(alerts).toHaveLength(4)
+  expect(alerts.map((a) => [a.alertType, a.listingId])).toEqual([
+    ['back_in_stock', 40],
+    ['back_in_stock', 41],
+    ['back_in_stock', 42],
+    ['back_in_stock', 43],
+  ])
+})
