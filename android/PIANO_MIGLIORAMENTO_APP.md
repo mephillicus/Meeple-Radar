@@ -2,7 +2,8 @@
 
 > **Ambito:** modulo Android (`android/`, package `com.meepleradar`).
 > **Documento gemello (backend/collector/CI):** `../PIANO_MIGLIORAMENTO_BACKEND.md`.
-> **Stato baseline verificato:** AGP `9.4.1`, Kotlin `2.4.20`, Compose BOM `2026.09.00`, `compileSdk = 37`, `targetSdk = 36`, `minSdk = 26`, 127 unit test verdi.
+> **Ultimo aggiornamento:** 2026-11-21 — **Sprint 1 completato** (`64cd190`), **Sprint 2 in proposta**.
+> **Stato baseline verificato:** AGP `9.4.1`, Kotlin `2.4.20`, Compose BOM `2026.09.00`, `compileSdk = 37`, `targetSdk = 36`, `minSdk = 26`, 127 unit test verdi, lint e release R8 verdi.
 
 ---
 
@@ -20,28 +21,26 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
 
 ## Priorità P0 — Affidabilità, Sicurezza e Qualità Release
 
-### P0.1 — Hardening backup & Keystore (`AndroidManifest.xml`)
+### [x] P0.1 — Hardening backup & Keystore (`AndroidManifest.xml`) — *Completato (`64cd190`)*
 - **Problema:** `android:allowBackup="true"` in `app/src/main/AndroidManifest.xml` può includere nel backup cloud `meeple_radar_bgg_collection` (cifrato con chiave in `AndroidKeyStore`, non trasferibile tra dispositivi), causando errori di decifratura dopo un ripristino.
-- **Intervento:**
-  - Aggiungere `res/xml/backup_rules.xml` (`android:fullBackupContent`) e `res/xml/data_extraction_rules.xml` (`android:dataExtractionRules`) escludendo `meeple_radar_bgg_collection.xml` e `meeple_radar_db_cache.xml`.
-  - Mantenere nel backup solo preferenze leggere non sensibili (se desiderato).
+- **Intervento applicato:**
+  - Creati `res/xml/backup_rules.xml` (`android:fullBackupContent`) e `res/xml/data_extraction_rules.xml` (`android:dataExtractionRules`) escludendo `meeple_radar_bgg_collection.xml` e `meeple_radar_db_cache.xml`.
+  - Aggiunto `android:windowSoftInputMode="adjustResize"` su `MainActivity`.
 
-### P0.2 — Configurazione `OkHttpClient` con timeout e cache HTTP (`AppContainer.kt`)
+### [x] P0.2 — Configurazione `OkHttpClient` con timeout e cache HTTP (`AppContainer.kt`) — *Completato (`64cd190`)*
 - **Problema:** `AppContainer.kt` istanzia `OkHttpClient()` con i default (10s senza cache disco condivisa e senza retry controllato).
-- **Intervento:**
-  - Configurare `connectTimeout(15s)`, `readTimeout(30s)`, `writeTimeout(30s)`, `callTimeout(45s)` e `Cache(File(context.cacheDir, "http_cache"), 20L * 1024 * 1024)`.
-  - Valutare interceptor per logging sicuro solo in `BuildConfig.DEBUG` (senza stampare header `Authorization` o `apikey`).
+- **Intervento applicato:**
+  - Configurati `connectTimeout(15s)`, `readTimeout(30s)`, `writeTimeout(30s)`, `callTimeout(45s)` e `Cache(File(appContext.cacheDir, "http_cache"), 20 MB)`.
 
-### P0.3 — Abilitare R8 / ProGuard in `release` (`app/build.gradle.kts`, `proguard-rules.pro`)
+### [x] P0.3 — Abilitare R8 / ProGuard in `release` (`app/build.gradle.kts`, `proguard-rules.pro`) — *Completato (`64cd190`)*
 - **Problema:** `isMinifyEnabled = false` e `proguard-rules.pro` vuoto producono APK release più grandi e non offuscati.
-- **Intervento:**
-  - Attivare `isMinifyEnabled = true` e `isShrinkResources = true` nel `buildTypes.release`.
-  - Verificare le keep rules necessarie per `kotlinx.serialization` e verificare con `assembleRelease` + test manuale su dispositivo.
+- **Intervento applicato:**
+  - Attivati `isMinifyEnabled = true` e `isShrinkResources = true` in `buildTypes.release`, aggiornato `proguard-rules.pro` e verificato con `:app:assembleRelease`.
 
-### P0.4 — CI GitHub Actions per Android (`.github/workflows/android-ci.yml`)
+### [x] P0.4 — CI GitHub Actions per Android (`.github/workflows/android-ci.yml`) — *Completato (`64cd190`)*
 - **Problema:** Nessuna verifica automatica di build e unit test Android su push/PR.
-- **Intervento:**
-  - Aggiungere un workflow CI su `push`/`pull_request` (path `android/**`) che esegue `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` con cache Gradle.
+- **Intervento applicato:**
+  - Creato `.github/workflows/android-ci.yml` su `push`/`pull_request` (path `android/**`) con JDK 17 + 25, cache Gradle e `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`.
 
 ---
 
@@ -84,10 +83,10 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
 
 ## Priorità P2 — UX, Material 3 e Funzionalità Utente
 
-### P2.1 — SplashScreen API nativa & Edge-to-Edge coerente (`MainActivity.kt`, `Theme.kt`)
+### [x] P2.1 — SplashScreen API nativa & Edge-to-Edge coerente (`MainActivity.kt`, `themes.xml`, `MeepleRadarNav.kt`, `DetailScreen.kt`) — *Completato (`64cd190`)*
 - **Problema:** `MainActivity.kt` usa `delay(800L)` su `Color.White` fisso (abbagliante in dark mode e rallenta artificialmente lo startup).
-- **Intervento:**
-  - Adottare `androidx.core:core-splashscreen` + `enableEdgeToEdge()` con gestione corretta delle barre di sistema in tema chiaro/scuro e rimuovere il `delay(800L)`.
+- **Intervento applicato:**
+  - Adottata `androidx.core:core-splashscreen:1.2.0` con `Theme.MeepleRadar.Starting` su `#0F172A`, `enableEdgeToEdge(...)`, rimozione `delay(800L)`, sistemati inset bottom bar (`MeepleRadarNav`), `DetailScreen` (`WindowInsets.safeDrawing`) e `SetupContent` (`imePadding` + scroll).
 
 ### P2.2 — Pull-to-refresh nativo e Ordinamento configurabile
 - **Intervento:**
@@ -129,9 +128,9 @@ L'app ha una buona copertura di unit test sui flussi core e una UI Material 3 co
 
 ## Roadmap operativa consigliata
 
-| Fase | Obiettivo | Elementi |
-|---|---|---|
-| **Sprint 1** | Stabilità, sicurezza & CI | P0.1 (Backup/Keystore), P0.2 (OkHttp), P0.3 (R8), P0.4 (Android CI), P2.1 (SplashScreen + Edge-to-Edge) |
-| **Sprint 2** | Refactoring & UX "Miei"/Liste | P1.3 (Filtro/Drawer condivisi), P1.5 (Sync reattivo "Miei"), P2.2 (Pull-to-refresh + Sort), P2.3 (Preferiti + Ignorati) |
-| **Sprint 3** | Storage scalabile & Detail modulare | P1.1 (Room), P1.2 (Sync incrementale), P1.4 (Split DetailScreen/VM) |
-| **Sprint 4** | Automazione & Alert | P3.1 (WorkManager + Notifiche), P2.4 (Storico prezzi), P3.2 (UI Test) |
+| Fase | Stato | Obiettivo | Elementi |
+|---|---|---|---|
+| **Sprint 1** | ✅ Completato (`64cd190`) | Stabilità, sicurezza & CI | P0.1 (Backup/Keystore), P0.2 (OkHttp), P0.3 (R8), P0.4 (Android CI), P2.1 (SplashScreen + Edge-to-Edge) |
+| **Sprint 2** | 🔄 In proposta | Refactoring & UX "Miei"/Liste | P1.3 (Filtro/Drawer condivisi), P1.5 (Sync reattivo "Miei"), P2.2 (Pull-to-refresh + Sort), P2.3 (Preferiti + Ignorati) |
+| **Sprint 3** | ⬜ Da fare | Storage scalabile & Detail modulare | P1.1 (Room), P1.2 (Sync incrementale + RPC 0013/0014), P1.4 (Split DetailScreen/VM) |
+| **Sprint 4** | ⬜ Da fare | Automazione & Alert | P3.1 (WorkManager + Notifiche `user_alert`), P2.4 (Storico prezzi `0015`), P3.2 (UI Test) |
