@@ -27,6 +27,23 @@ export const PAGE_DELAY_MS = 200
 export const DEFAULT_CONCURRENCY = 4
 const PAGE_FAILURE_LIMIT = 5
 const RELEASE_PARAGRAPH_RE = /(?:day[\s-]?one|uscita|disponibile\s+dal)/i
+const EXCLUDED_IMAGE_RE = /logo|icon|badge|spinner|elementor\/thumbs/i
+
+function extractFallbackImage($: cheerio.CheerioAPI): string | undefined {
+  let uploadFallback: string | undefined
+  for (const el of $('img').get()) {
+    const src = $(el).attr('src')?.trim() ?? ''
+    const dataSrc = $(el).attr('data-src')?.trim() ?? ''
+    const url = /^https?:\/\//i.test(src) ? src : dataSrc
+    if (!/^https?:\/\//i.test(url)) continue
+    if (EXCLUDED_IMAGE_RE.test(url)) continue
+    if (url.includes('/wp-content/uploads/products/')) return url
+    if (!uploadFallback && url.includes('/wp-content/uploads/')) {
+      uploadFallback = url
+    }
+  }
+  return uploadFallback
+}
 
 function isFutureIso(iso: string, now: Date): boolean {
   const d = new Date(`${iso}T00:00:00Z`)
@@ -66,7 +83,7 @@ export function parseGhenosProductPage(html: string): PageFields {
   const imageUrl =
     meta('og:image') ||
     $('meta[name="twitter:image"]').first().attr('content')?.trim() ||
-    undefined
+    extractFallbackImage($)
   if (imageUrl) out.imageUrl = imageUrl
 
   const block = $('.ae-element-custom-field').first()

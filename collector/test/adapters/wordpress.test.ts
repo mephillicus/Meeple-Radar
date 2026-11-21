@@ -224,6 +224,34 @@ test('estrae imageUrl da og:image e cade su twitter:image', () => {
   expect(parseGhenosProductPage(twitterHtml).imageUrl).toBe('https://www.ghenosgames.com/img/tw.jpg')
 })
 
+test('senza og:image salta il logo e usa il fallback /wp-content/uploads/products/ di Elementor', () => {
+  const ghenosHtml = `
+    <html>
+      <head><title>Spirit Island: Branch &amp; Claw - Ghenos Games</title></head>
+      <body>
+        <header>
+          <img src="https://www.ghenosgames.com/wp-content/uploads/2021/05/Ghenos_Logo-copia_150x120.png" alt="Ghenos Games" />
+          <img src="https://www.ghenosgames.com/wp-content/uploads/elementor/thumbs/banner-thumb.jpg" />
+        </header>
+        <main>
+          <img src="https://www.ghenosgames.com/wp-content/uploads/2024/01/generic-banner.jpg" />
+          <img src="https://www.ghenosgames.com/wp-content/uploads/products/SpiritIslandBranchAndClaw_Front-scaled.jpg" alt="Spirit Island" />
+        </main>
+      </body>
+    </html>`
+  expect(parseGhenosProductPage(ghenosHtml).imageUrl).toBe(
+    'https://www.ghenosgames.com/wp-content/uploads/products/SpiritIslandBranchAndClaw_Front-scaled.jpg',
+  )
+
+  const uploadsFallbackHtml = `
+    <img src="https://www.ghenosgames.com/wp-content/uploads/2021/05/Ghenos_Logo-copia_150x120.png" />
+    <img src="/relative/not-http.jpg" />
+    <img data-src="https://www.ghenosgames.com/wp-content/uploads/2025/03/cover-fallback.jpg" />`
+  expect(parseGhenosProductPage(uploadsFallbackHtml).imageUrl).toBe(
+    'https://www.ghenosgames.com/wp-content/uploads/2025/03/cover-fallback.jpg',
+  )
+})
+
 test('parsing data case-insensitive su tutti i paragrafi di .ae-element-custom-field', () => {
   const html1 = `<div class="ae-element-custom-field"><p>&nbsp;</p><p>Day One 15/12/2026</p><p>Testo descrittivo.</p></div>`
   expect(parseGhenosProductPage(html1)).toMatchObject({
