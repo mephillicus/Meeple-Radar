@@ -203,6 +203,14 @@ private fun DetailContent(
             )
         }
 
+        item {
+            ExternalPriceCompareCard(
+                title = content.item.title,
+                fallbackTitle = content.item.game?.name ?: content.boardGameDetails?.primaryName,
+                onOpenUrl = { url -> runCatching { uriHandler.openUri(url) } },
+            )
+        }
+
         if (content.priceHistory.size >= 2) {
             item {
                 PriceHistoryCard(

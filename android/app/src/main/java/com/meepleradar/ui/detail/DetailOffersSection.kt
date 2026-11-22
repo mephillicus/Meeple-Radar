@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
@@ -26,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -229,6 +232,112 @@ internal fun OfferRow(
             }
         }
     }
+}
+
+@Composable
+internal fun ExternalPriceCompareCard(
+    title: String,
+    onOpenUrl: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    fallbackTitle: String? = null,
+) {
+    val sanitizedQuery = remember(title, fallbackTitle) {
+        sanitizeSearchQuery(title, fallbackTitle)
+    }
+    val links = remember(title, fallbackTitle) {
+        buildExternalPriceSearchLinks(title, fallbackTitle)
+    }
+    if (links.isEmpty()) return
+
+    val isDark = isSystemInDarkTheme()
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "Confronta altrove",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "Ricerca rapida per \"$sanitizedQuery\"",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                links.chunked(2).forEach { rowLinks ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        rowLinks.forEach { link ->
+                            val accent = externalSiteAccentColor(link.site, isDark)
+                            val badgeGlyph = externalSiteGlyph(link.site)
+                            OutlinedButton(
+                                onClick = { onOpenUrl(link.url) },
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .background(accent.copy(alpha = 0.16f), CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        text = badgeGlyph,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = accent,
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = link.site.label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        if (rowLinks.size == 1) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun externalSiteAccentColor(site: ExternalPriceSite, isDark: Boolean): Color = when (site) {
+    ExternalPriceSite.AMAZON_IT -> if (isDark) Color(0xFFFFB74D) else Color(0xFFD97706)
+    ExternalPriceSite.TROVAPREZZI -> if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
+    ExternalPriceSite.IDEALO -> if (isDark) Color(0xFF2DD4BF) else Color(0xFF0F766E)
+    ExternalPriceSite.KEEPA -> if (isDark) Color(0xFF4ADE80) else Color(0xFF15803D)
+}
+
+private fun externalSiteGlyph(site: ExternalPriceSite): String = when (site) {
+    ExternalPriceSite.AMAZON_IT -> "A"
+    ExternalPriceSite.TROVAPREZZI -> "T"
+    ExternalPriceSite.IDEALO -> "I"
+    ExternalPriceSite.KEEPA -> "K"
 }
 
 @Composable
@@ -519,6 +628,10 @@ private fun OfferRowAndHistoryPreview() {
                     isBestOffer = true,
                     bestPrice = sampleBestPrice,
                     onOpen = {},
+                )
+                ExternalPriceCompareCard(
+                    title = "7 Wonders Duel (Edizione Italiana)",
+                    onOpenUrl = {},
                 )
                 PriceHistoryCard(
                     entries = sampleHistory,
