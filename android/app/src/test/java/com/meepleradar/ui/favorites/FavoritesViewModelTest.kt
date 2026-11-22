@@ -43,13 +43,14 @@ class FavoritesViewModelTest {
     }
 
     private class FakeRepo(
-        private val favoriteItems: List<IncomingItem> = emptyList(),
+        var favoriteItems: List<IncomingItem> = emptyList(),
         private val ignoredList: MutableList<IncomingItem> = mutableListOf(),
         private val failure: Throwable? = null,
     ) : ListingRepository {
         val actions = mutableListOf<Pair<String, Action>>()
         val restoredKeys = mutableListOf<String>()
         var requestedSourceIds: Set<String>? = emptySet()
+        val catalogRevision = MutableStateFlow(0L)
 
         override suspend fun incoming(today: LocalDate, sourceIds: Set<String>?, includeUndated: Boolean, includePriceless: Boolean, forceRefresh: Boolean, onProgress: ((Int, String) -> Unit)?): List<IncomingItem> = emptyList()
 
@@ -80,6 +81,8 @@ class FavoritesViewModelTest {
         }
 
         override fun lastDbModifiedTimestamp(): Long = 0L
+
+        override fun catalogRevisionFlow(): StateFlow<Long> = catalogRevision
 
         override fun newlyAddedCount(): Int = 0
 
@@ -224,5 +227,24 @@ class FavoritesViewModelTest {
 
         assertEquals(listOf("game:9"), repo.restoredKeys)
         assertTrue(viewModel.ignoredItems.value.isEmpty())
+    }
+
+    @Test
+    fun `si ricarica automaticamente dalla cache quando cambia catalogRevisionFlow`() = runTest(dispatcher) {
+        val repo = FakeRepo(listOf(item("game:5")))
+        val viewModel = FavoritesViewModel(repo, today)
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf("game:5"), (viewModel.state.value as IncomingUiState.Content).items.map { it.key })
+
+        // Simula aggiornamento catalogo da un altro tab
+        repo.favoriteItems = listOf(item("game:5"), item("game:8"))
+        repo.catalogRevision.value = 1L
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as IncomingUiState.Content
+        assertEquals(listOf("game:5", "game:8"), state.items.map { it.key })
+        assertEquals(setOf("game:5", "game:8"), state.favorites)
     }
 }

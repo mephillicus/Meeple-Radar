@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -34,6 +35,16 @@ class AlertsViewModel(
     val unreadCount: StateFlow<Int> = _alerts
         .map { list -> list.count { it.isUnread } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    init {
+        viewModelScope.launch {
+            repository.catalogRevisionFlow()
+                .drop(1)
+                .collect {
+                    refresh()
+                }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {

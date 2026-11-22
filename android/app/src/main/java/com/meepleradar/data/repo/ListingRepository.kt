@@ -127,6 +127,8 @@ interface ListingRepository {
     suspend fun markAllAlertsRead(alertIds: Collection<Long>) = Unit
 
     fun unreadAlertCountFlow(): StateFlow<Int> = MutableStateFlow(0)
+
+    fun catalogRevisionFlow(): StateFlow<Long> = MutableStateFlow(0L)
 }
 
 class DefaultListingRepository(
@@ -142,6 +144,7 @@ class DefaultListingRepository(
     private val _preorderCount = MutableStateFlow(0)
     private val _lastDbModifiedTimestamp = MutableStateFlow(localCacheStore?.lastModifiedTimestamp() ?: 0L)
     private val _unreadAlertCount = MutableStateFlow(0)
+    private val _catalogRevision = MutableStateFlow(0L)
 
     private val actionsLock = Any()
 
@@ -159,6 +162,12 @@ class DefaultListingRepository(
 
     override fun unreadAlertCountFlow(): StateFlow<Int> = _unreadAlertCount.asStateFlow()
 
+    override fun catalogRevisionFlow(): StateFlow<Long> = _catalogRevision.asStateFlow()
+
+    private fun notifyCatalogUpdated() {
+        _catalogRevision.value = _catalogRevision.value + 1L
+    }
+
     override fun lastDbModifiedTimestamp(): Long {
         val current = _lastDbModifiedTimestamp.value
         if (current > 0L) return current
@@ -175,7 +184,7 @@ class DefaultListingRepository(
         val current = _preorderCount.value
         if (current > 0) return current
         val cached = localCacheStore?.load() ?: return 0
-        val count = computePreorderCount(cached, LocalDate.now())
+        val count = computePreorderCount(cached, currentIgnoredKeys(), LocalDate.now())
         _preorderCount.value = count
         return count
     }
@@ -247,8 +256,11 @@ class DefaultListingRepository(
         }
 
         _newlyAddedCount.value = news.count { it.isNewlyAdded }
-        _preorderCount.value = computePreorderCount(db, today)
+        _preorderCount.value = computePreorderCount(db, ignoredKeys, today)
         _lastDbModifiedTimestamp.value = db.lastModifiedTimestamp
+        if (forceRefresh) {
+            notifyCatalogUpdated()
+        }
         return news
     }
 
@@ -432,6 +444,9 @@ class DefaultListingRepository(
                 syncDerivedFlows(cached, ignoredKeys, LocalDate.now())
             }
         }
+        if (action != Action.SEEN) {
+            notifyCatalogUpdated()
+        }
     }
 
     override suspend fun ignoredItems(today: LocalDate): List<IncomingItem> {
@@ -537,6 +552,7 @@ class DefaultListingRepository(
                 localCacheStore?.load()?.let { syncDerivedFlows(it, currentIgnoredKeys(), LocalDate.now()) }
             }
             if (listingId <= 0) refreshListingsAfterBggWrite()
+            notifyCatalogUpdated()
         }
         return gameId to productId
     }
@@ -571,6 +587,7 @@ class DefaultListingRepository(
                     ),
                 )
                 localCacheStore.load()?.let { syncDerivedFlows(it, currentIgnoredKeys(), LocalDate.now()) }
+                notifyCatalogUpdated()
             }
         }
     }
@@ -600,6 +617,7 @@ class DefaultListingRepository(
             )
             localCacheStore?.upsertGame(linkedGame, item.key.removePrefix("listing:").toLongOrNull())
             refreshListingsAfterBggWrite()
+            notifyCatalogUpdated()
         }
         return gameId
     }
@@ -893,6 +911,9 @@ class DefaultListingRepository(
 
         val effectiveToday = if (today == LocalDate.MIN) LocalDate.now() else today
         syncDerivedFlows(db, ignoredKeys, effectiveToday)
+        if (forceRefresh) {
+            notifyCatalogUpdated()
+        }
 
         onProgress?.invoke(100, "Sincronizzazione completata!")
         return result
@@ -900,16 +921,35 @@ class DefaultListingRepository(
 
     private fun syncDerivedFlows(db: CachedDatabase, ignoredKeys: Set<String>, today: LocalDate) {
         _lastDbModifiedTimestamp.value = db.lastModifiedTimestamp
-        _preorderCount.value = computePreorderCount(db, today)
+        _preorderCount.value = computePreorderCount(db, ignoredKeys, today)
         _newlyAddedCount.value = computeNewlyAddedNewsCount(db, ignoredKeys, today)
     }
 
-    private fun computePreorderCount(db: CachedDatabase, today: LocalDate): Int =
-        db.listings
-            .filter { !it.isAccessory() && it.releaseDate != null && !it.releaseDate.isBefore(today) }
-            .map { keyOf(it) }
-            .toSet()
-            .size
+    private fun computePreorderCount(
+        db: CachedDatabase,
+        ignoredKeys: Set<String>,
+        today: LocalDate,
+    ): Int {
+        if (db.listings.isEmpty()) return 0
+        val products = db.products.associateBy { it.id }
+        return db.listings
+            .filter { !it.isAccessory() }
+            .groupBy { keyOf(it) }
+            .count { (key, groupListings) ->
+                val isIgnored = key in ignoredKeys || groupListings.any { listing ->
+                    "listing:${listing.id}" in ignoredKeys ||
+                        listing.gameId?.let { "game:$it" in ignoredKeys } == true ||
+                        listing.productId?.let { "product:$it" in ignoredKeys } == true
+                }
+                if (isIgnored) return@count false
+
+                val futureDate = groupListings.mapNotNull { it.releaseDate }.filter { !it.isBefore(today) }.minOrNull()
+                val releaseDate = futureDate
+                    ?: groupListings.mapNotNull { it.releaseDate }.minOrNull()
+                    ?: groupListings.firstNotNullOfOrNull { l -> l.productId?.let { products[it]?.releaseDate } }
+                releaseDate != null && !releaseDate.isBefore(today)
+            }
+    }
 
     private fun computeNewlyAddedNewsCount(
         db: CachedDatabase,

@@ -70,6 +70,7 @@ class BggCollectionViewModelTest {
         var news = emptyList<IncomingItem>()
         var preorders = emptyList<IncomingItem>()
         val dbTimestampFlow = kotlinx.coroutines.flow.MutableStateFlow(100L)
+        val catalogRevision = kotlinx.coroutines.flow.MutableStateFlow(0L)
 
         override suspend fun incoming(
             today: LocalDate,
@@ -102,6 +103,7 @@ class BggCollectionViewModelTest {
         }
         override fun lastDbModifiedTimestamp(): Long = dbTimestampFlow.value
         override fun lastDbModifiedTimestampFlow() = dbTimestampFlow
+        override fun catalogRevisionFlow() = catalogRevision
         override fun newlyAddedCount(): Int = 0
         override fun newlyAddedCountFlow() = kotlinx.coroutines.flow.MutableStateFlow(0)
         override fun preorderCount(): Int = 0
@@ -336,5 +338,92 @@ class BggCollectionViewModelTest {
 
         viewModel.logout()
         assertEquals("", viewModel.searchQuery.value)
+    }
+
+    @Test
+    fun `espansioni possedute in lista non attivano il pallino ne il contatore filtro`() = runTest(dispatcher) {
+        val baseWithOwnedOnly = game.copy(bggId = 173346, name = "7 Wonders Duel")
+        val ownedAgora = game.copy(
+            bggId = 309116,
+            name = "7 Wonders Duel: Agora",
+            kind = "boardgameexpansion",
+            expandsBggId = baseWithOwnedOnly.bggId,
+        )
+        val baseWithUnowned = game.copy(bggId = 42, name = "The Old King's Crown")
+        val api = FakeApi(Result.success(listOf(baseWithOwnedOnly, ownedAgora, baseWithUnowned))).apply {
+            expansionsResult = Result.success(
+                listOf(
+                    BggExpansion(309116, "7 Wonders Duel: Agora", baseWithOwnedOnly.bggId, "https://boardgamegeek.com/boardgameexpansion/309116"),
+                    BggExpansion(999, "Nuova Espansione Non Posseduta", baseWithUnowned.bggId, "https://boardgamegeek.com/boardgameexpansion/999"),
+                ),
+            )
+        }
+        val repository = FakeListingRepository().apply {
+            preorders = listOf(
+                IncomingItem(
+                    key = "game:309116",
+                    title = "7 Wonders Duel: Agora",
+                    imageUrl = null,
+                    releaseDate = LocalDate.now().plusDays(10),
+                    kind = ItemKind.UPCOMING,
+                    game = Game(309116, "7 Wonders Duel: Agora", "expansion", 309116, null, null, null),
+                    offers = emptyList(),
+                ),
+            )
+            news = listOf(
+                IncomingItem(
+                    key = "game:999",
+                    title = "Nuova Espansione Non Posseduta",
+                    imageUrl = null,
+                    releaseDate = null,
+                    kind = ItemKind.NEW_UNDATED,
+                    game = Game(999, "Nuova Espansione Non Posseduta", "expansion", 999, null, null, null),
+                    offers = emptyList(),
+                ),
+            )
+        }
+        val viewModel = BggCollectionViewModel(api, FakeStore(), repository)
+
+        viewModel.connect("username", "token")
+        advanceUntilIdle()
+
+        val state = viewModel.state.value as BggCollectionUiState.Content
+        assertTrue(!state.hasAvailableExpansion(baseWithOwnedOnly.bggId))
+        assertTrue(state.hasAvailableExpansion(baseWithUnowned.bggId))
+        assertEquals(1, state.gamesWithAvailableExpansionsCount)
+    }
+
+    @Test
+    fun `si sincronizza reattivamente quando cambia catalogRevisionFlow`() = runTest(dispatcher) {
+        val base = game.copy(bggId = 173346, name = "7 Wonders Duel")
+        val cachedExpansions = listOf(
+            BggExpansion(309116, "Agora", base.bggId, "https://boardgamegeek.com/boardgameexpansion/309116"),
+        )
+        val store = FakeStore(
+            CachedBggCollection("username", listOf(base), 123L, "token", cachedExpansions, true),
+        )
+        val repository = FakeListingRepository()
+        val viewModel = BggCollectionViewModel(FakeApi(Result.success(listOf(base))), store, repository)
+        advanceUntilIdle()
+
+        assertEquals(0, (viewModel.state.value as BggCollectionUiState.Content).gamesWithAvailableExpansionsCount)
+
+        repository.news = listOf(
+            IncomingItem(
+                key = "game:309116",
+                title = "Agora",
+                imageUrl = null,
+                releaseDate = null,
+                kind = ItemKind.NEW_UNDATED,
+                game = Game(309116, "Agora", "expansion", 309116, null, null, null),
+                offers = emptyList(),
+            ),
+        )
+        repository.catalogRevision.value = 1L
+        advanceUntilIdle()
+
+        val updated = viewModel.state.value as BggCollectionUiState.Content
+        assertEquals(1, updated.gamesWithAvailableExpansionsCount)
+        assertEquals(ExpansionAvailabilityType.NEWS, updated.expansionAvailabilityById[309116]?.type)
     }
 }

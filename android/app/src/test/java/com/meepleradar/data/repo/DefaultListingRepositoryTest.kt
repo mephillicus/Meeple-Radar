@@ -724,4 +724,55 @@ class DefaultListingRepositoryTest {
         assertEquals(2, fullCalls)
         assertEquals(1, deltaCalls)
     }
+
+    @Test
+    fun `forceRefresh incrementa catalogRevisionFlow aggiorna preorderCountFlow e Action SEEN non notifica`() = runTest {
+        val preorderByListing = listing(id = 1, gameId = 5, title = "Preordine Listing", releaseDate = today.plusDays(10))
+        val preorderByProduct = listing(id = 2, gameId = 6, title = "Preordine Product", releaseDate = null).copy(productId = 20L)
+        val ignoredPreorder = listing(id = 3, gameId = 7, title = "Preordine Ignorato", releaseDate = today.plusDays(15))
+        val pastListing = listing(id = 4, gameId = 8, title = "Gia Uscito", releaseDate = today.minusDays(5))
+        val productFuture = Product(
+            id = 20L,
+            title = "Preordine Product",
+            imageUrl = null,
+            releaseDate = today.plusDays(20),
+            gameId = 6L,
+        )
+
+        val api = object : SupabaseApi {
+            override suspend fun listings(): List<Listing> = listOf(preorderByListing, preorderByProduct, ignoredPreorder, pastListing)
+            override suspend fun games(): List<Game> = listOf(game(5, "G5"), game(6, "G6"), game(7, "G7"), game(8, "G8"))
+            override suspend fun sources(): List<Source> = listOf(Source("s1", "Store Uno"))
+            override suspend fun products(): List<Product> = listOf(productFuture)
+            override suspend fun userActions(): List<UserActionRow> = listOf(
+                UserActionRow(gameId = 7, listingId = null, action = Action.IGNORED),
+            )
+            override suspend fun insertAction(row: UserActionRow) = Unit
+            override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? = null
+        }
+
+        val cache = FakeLocalCacheStore(CachedDatabase())
+        val repository = DefaultListingRepository(api, FakeFavoriteStore(), cache)
+
+        assertEquals(0L, repository.catalogRevisionFlow().value)
+
+        // Un refresh fatto dalla lista aggiorna la revisione e anche il contatore preordini (escludendo ignorati e includendo product.releaseDate)
+        repository.incoming(today, forceRefresh = true)
+        assertEquals(1L, repository.catalogRevisionFlow().value)
+        assertEquals(2, repository.preorderCount())
+        assertEquals(2, repository.preorderCountFlow().value)
+
+        // Anche un refresh da Novita incrementa la revisione per sincronizzare gli altri tab
+        repository.refreshNewsItems(today)
+        assertEquals(2L, repository.catalogRevisionFlow().value)
+        assertEquals(2, repository.preorderCountFlow().value)
+
+        // Action.SEEN non deve incrementare catalogRevisionFlow per evitare tempeste di reload durante markAllAsSeen
+        repository.setAction("game:5", Action.SEEN)
+        assertEquals(2L, repository.catalogRevisionFlow().value)
+
+        // Azioni di stato (FAVORITE / IGNORED) notificano gli altri tab
+        repository.setAction("game:5", Action.FAVORITE)
+        assertEquals(3L, repository.catalogRevisionFlow().value)
+    }
 }

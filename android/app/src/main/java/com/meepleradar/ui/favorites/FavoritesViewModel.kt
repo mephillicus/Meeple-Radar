@@ -14,6 +14,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 enum class FavoriteAvailabilityFilter(val label: String) {
@@ -44,6 +45,34 @@ class FavoritesViewModel(
     val ignoredItems: StateFlow<List<IncomingItem>> = _ignoredItems.asStateFlow()
 
     private var rawItems: List<IncomingItem> = emptyList()
+    private var hasLoaded: Boolean = false
+    private var lastObservedRevision: Long = repo.catalogRevisionFlow().value
+
+    init {
+        viewModelScope.launch {
+            repo.catalogRevisionFlow()
+                .drop(1)
+                .collect { revision ->
+                    if (hasLoaded && !_isRefreshing.value && revision != lastObservedRevision) {
+                        reloadFromLocalCache(revision)
+                    }
+                }
+        }
+    }
+
+    private fun reloadFromLocalCache(revision: Long) {
+        viewModelScope.launch {
+            try {
+                rawItems = repo.favorites(today, forceRefresh = false)
+                _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(_ignoredItems.value)
+                lastObservedRevision = revision
+                updateFilteredState()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     fun refresh(showLoadingState: Boolean = true, forceRefresh: Boolean = false) {
         if (showLoadingState) {
@@ -54,6 +83,8 @@ class FavoritesViewModel(
             try {
                 rawItems = repo.favorites(today, forceRefresh = forceRefresh)
                 _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(emptyList())
+                lastObservedRevision = repo.catalogRevisionFlow().value
+                hasLoaded = true
                 updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
@@ -83,6 +114,7 @@ class FavoritesViewModel(
         viewModelScope.launch {
             try {
                 repo.setAction(item.key, Action.UNFAVORITED)
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 remove(item.key)
             } catch (e: CancellationException) {
                 throw e
@@ -96,6 +128,7 @@ class FavoritesViewModel(
         viewModelScope.launch {
             try {
                 repo.setAction(item.key, Action.IGNORED)
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 remove(item.key)
                 if (_ignoredItems.value.none { it.key == item.key }) {
                     _ignoredItems.value = (_ignoredItems.value + item).sortedBy { it.title.lowercase(Locale.ROOT) }
@@ -112,6 +145,7 @@ class FavoritesViewModel(
         viewModelScope.launch {
             try {
                 repo.restoreIgnored(item.key)
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 _ignoredItems.value = _ignoredItems.value.filterNot { it.key == item.key }
                 rawItems = repo.favorites(today)
                 updateFilteredState()

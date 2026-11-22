@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 
 sealed interface BggCollectionUiState {
@@ -46,9 +47,13 @@ sealed interface BggCollectionUiState {
         val expandedSections: Map<Int, Set<ExpansionOwnership>> = emptyMap(),
         val expansionAvailabilityById: Map<Int, ExpansionAvailability> = emptyMap(),
     ) : BggCollectionUiState {
+        private val ownedExpansionIds: Set<Int>
+            get() = games.filter { it.isExpansionGame() }.map { it.bggId }.toSet()
+
         fun hasAvailableExpansion(gameBggId: Int): Boolean {
+            val ownedIds = ownedExpansionIds
             val expansions = (expansionsByGame[gameBggId] as? ExpansionLoadState.Loaded)?.items.orEmpty()
-            return expansions.any { it.bggId in expansionAvailabilityById }
+            return expansions.any { it.bggId !in ownedIds && it.bggId in expansionAvailabilityById }
         }
 
         val gamesWithAvailableExpansionsCount: Int
@@ -116,14 +121,14 @@ class BggCollectionViewModel(
     init {
         cached?.let { loadListingData() }
         viewModelScope.launch {
-            repository.lastDbModifiedTimestampFlow()
-                .drop(1)
-                .distinctUntilChanged()
-                .collect {
-                    if (_state.value is BggCollectionUiState.Content) {
-                        loadListingData()
-                    }
+            merge(
+                repository.lastDbModifiedTimestampFlow().drop(1).distinctUntilChanged(),
+                repository.catalogRevisionFlow().drop(1).distinctUntilChanged(),
+            ).collect {
+                if (_state.value is BggCollectionUiState.Content) {
+                    loadListingData()
                 }
+            }
         }
     }
 

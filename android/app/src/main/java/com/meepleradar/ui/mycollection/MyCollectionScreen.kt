@@ -504,8 +504,7 @@ private fun BggCollectionGameGroup(
                 ExpansionPill(
                     label = "Possedute",
                     count = ownedCount.takeIf { expansionState is ExpansionLoadState.Loaded },
-                    indicators = expansions.filter { it.bggId in ownedExpansionIds }
-                        .mapNotNull { expansionAvailabilityById[it.bggId] },
+                    indicators = emptyList(),
                     selected = ExpansionOwnership.OWNED in expandedSections,
                     modifier = Modifier.weight(1f),
                     onClick = { onToggleExpansion(ExpansionOwnership.OWNED) },
@@ -559,7 +558,7 @@ private fun BggCollectionGameGroup(
                         ExpansionListColumn(
                             title = "Possedute",
                             expansions = state.items.filter { it.bggId in ownedExpansionIds },
-                            expansionAvailabilityById = expansionAvailabilityById,
+                            expansionAvailabilityById = emptyMap(),
                             modifier = Modifier.weight(1f),
                             onOpenExpansion = onOpenExpansion,
                         )

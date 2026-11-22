@@ -17,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 sealed interface NewsUiState {
@@ -73,11 +74,21 @@ class NewsViewModel(
     private var rawFavorites: Set<String> = emptySet()
     private var hasLoaded: Boolean = false
     private var loadedCacheTimestamp: Long = -1L
+    private var lastObservedRevision: Long = repo.catalogRevisionFlow().value
     private var loadJob: Job? = null
 
     init {
         loadSources()
         loadNews()
+        viewModelScope.launch {
+            repo.catalogRevisionFlow()
+                .drop(1)
+                .collect { revision ->
+                    if (hasLoaded && !_isRefreshing.value && revision != lastObservedRevision) {
+                        reloadFromLocalCache(revision)
+                    }
+                }
+        }
     }
 
     fun toggleNewlyAddedFilter() {
@@ -103,6 +114,7 @@ class NewsViewModel(
                 rawItems = repo.newsItems(today)
                 rawFavorites = repo.favoriteKeys(today)
                 loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 hasLoaded = true
                 _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
                 updateFilteredState()
@@ -124,10 +136,9 @@ class NewsViewModel(
             try {
                 rawItems = repo.refreshNewsItems(today)
                 rawFavorites = repo.favoriteKeys(today)
-                if (_sources.value.isEmpty()) {
-                    _sources.value = runCatching { repo.sources() }.getOrDefault(emptyList())
-                }
+                _sources.value = runCatching { repo.sources() }.getOrDefault(_sources.value)
                 loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 hasLoaded = true
                 _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
                 updateFilteredState()
@@ -156,15 +167,35 @@ class NewsViewModel(
         updateFilteredState()
     }
 
+    private fun reloadFromLocalCache(revision: Long) {
+        viewModelScope.launch {
+            try {
+                rawItems = repo.newsItems(today)
+                rawFavorites = repo.favoriteKeys(today)
+                _sources.value = runCatching { repo.sources() }.getOrDefault(_sources.value)
+                loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
+                lastObservedRevision = revision
+                _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
+                updateFilteredState()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     fun refreshSeenStatus() {
         if (!hasLoaded) return
         viewModelScope.launch {
             try {
                 val currentTimestamp = repo.lastDbModifiedTimestamp()
-                if (currentTimestamp != loadedCacheTimestamp) {
+                val currentRevision = repo.catalogRevisionFlow().value
+                if (currentTimestamp != loadedCacheTimestamp || currentRevision != lastObservedRevision) {
                     val updated = repo.newsItems(today)
                     rawItems = updated
                     loadedCacheTimestamp = currentTimestamp
+                    lastObservedRevision = currentRevision
+                    _sources.value = runCatching { repo.sources() }.getOrDefault(_sources.value)
                 }
                 rawFavorites = repo.favoriteKeys(today)
             } catch (e: CancellationException) {
@@ -239,6 +270,7 @@ class NewsViewModel(
         viewModelScope.launch {
             try {
                 repo.setAction(item.key, action)
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 rawFavorites = if (wasFavorite) {
                     rawFavorites - item.key
                 } else {
@@ -257,6 +289,7 @@ class NewsViewModel(
         viewModelScope.launch {
             try {
                 repo.setAction(item.key, Action.IGNORED)
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 rawItems = rawItems.filterNot { it.key == item.key }
                 _newlyAddedCount.value = rawItems.count { it.isNewlyAdded }
                 updateFilteredState()

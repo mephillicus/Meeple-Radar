@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 sealed interface IncomingUiState {
@@ -86,10 +87,20 @@ class IncomingViewModel(
     private var rawFavorites: Set<String> = emptySet()
     private var hasLoaded: Boolean = false
     private var loadedCacheTimestamp: Long = -1L
+    private var lastObservedRevision: Long = repo.catalogRevisionFlow().value
 
     init {
         loadSources()
         loadLocal()
+        viewModelScope.launch {
+            repo.catalogRevisionFlow()
+                .drop(1)
+                .collect { revision ->
+                    if (hasLoaded && !_isRefreshing.value && revision != lastObservedRevision) {
+                        reloadFromLocalCache(revision)
+                    }
+                }
+        }
     }
 
     fun toggleHideSeen() {
@@ -125,6 +136,7 @@ class IncomingViewModel(
                     includePriceless = true,
                     forceRefresh = false,
                 )
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 updateFilteredState()
             } catch (e: CancellationException) {
                 throw e
@@ -134,17 +146,43 @@ class IncomingViewModel(
         }
     }
 
+    private fun reloadFromLocalCache(revision: Long) {
+        viewModelScope.launch {
+            try {
+                rawItems = repo.incoming(
+                    today = today,
+                    sourceIds = null,
+                    includeUndated = true,
+                    includePriceless = true,
+                    forceRefresh = false,
+                )
+                rawFavorites = repo.favoriteKeys(today)
+                _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(_ignoredItems.value)
+                _sources.value = runCatching { repo.sources() }.getOrDefault(_sources.value)
+                loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
+                _lastModifiedTimestamp.value = loadedCacheTimestamp
+                lastObservedRevision = revision
+                updateFilteredState()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     fun refreshSeenStatus() {
         if (!hasLoaded) return
         viewModelScope.launch {
             try {
                 val currentTimestamp = repo.lastDbModifiedTimestamp()
-                if (currentTimestamp != loadedCacheTimestamp) {
+                val currentRevision = repo.catalogRevisionFlow().value
+                if (currentTimestamp != loadedCacheTimestamp || currentRevision != lastObservedRevision) {
                     val updated = repo.incoming(today, includeUndated = true, includePriceless = true, forceRefresh = false)
-                    if (updated.isNotEmpty()) {
-                        rawItems = updated
-                        loadedCacheTimestamp = currentTimestamp
-                    }
+                    rawItems = updated
+                    loadedCacheTimestamp = currentTimestamp
+                    _lastModifiedTimestamp.value = currentTimestamp
+                    lastObservedRevision = currentRevision
+                    _sources.value = runCatching { repo.sources() }.getOrDefault(_sources.value)
                 }
                 rawFavorites = repo.favoriteKeys(today)
                 _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(_ignoredItems.value)
@@ -226,6 +264,7 @@ class IncomingViewModel(
 
                 loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
                 _lastModifiedTimestamp.value = loadedCacheTimestamp
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 hasLoaded = true
                 updateFilteredState()
             } catch (e: CancellationException) {
@@ -256,9 +295,11 @@ class IncomingViewModel(
                 )
                 rawFavorites = repo.favoriteKeys(today)
                 _ignoredItems.value = runCatching { repo.ignoredItems(today) }.getOrDefault(emptyList())
+                _sources.value = runCatching { repo.sources() }.getOrDefault(_sources.value)
 
                 loadedCacheTimestamp = repo.lastDbModifiedTimestamp()
                 _lastModifiedTimestamp.value = loadedCacheTimestamp
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 hasLoaded = true
                 _syncProgress.value = SyncProgressState.Finished
                 updateFilteredState()
@@ -313,6 +354,7 @@ class IncomingViewModel(
         viewModelScope.launch {
             try {
                 repo.setAction(item.key, action)
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 rawFavorites = if (wasFavorite) {
                     rawFavorites - item.key
                 } else {
@@ -331,6 +373,7 @@ class IncomingViewModel(
         viewModelScope.launch {
             try {
                 repo.setAction(item.key, Action.IGNORED)
+                lastObservedRevision = repo.catalogRevisionFlow().value
                 rawItems = rawItems.filterNot { it.key == item.key }
                 if (_ignoredItems.value.none { it.key == item.key }) {
                     _ignoredItems.value = (_ignoredItems.value + item).sortedBy { it.title.lowercase() }
