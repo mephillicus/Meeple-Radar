@@ -1,14 +1,28 @@
 package com.meepleradar.ui.detail
 
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,9 +30,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -27,20 +41,35 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -48,6 +77,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import kotlinx.coroutines.launch
 import com.meepleradar.data.model.ListingBestPrice
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
@@ -234,12 +265,20 @@ internal fun OfferRow(
     }
 }
 
+private sealed interface ExternalSitePanelState {
+    data object Loading : ExternalSitePanelState
+    data class Loaded(val result: ExternalScrapeResult) : ExternalSitePanelState
+}
+
 @Composable
 internal fun ExternalPriceCompareCard(
     title: String,
     onOpenUrl: (String) -> Unit,
     modifier: Modifier = Modifier,
     fallbackTitle: String? = null,
+    scraperOverride: ExternalSiteScraper? = null,
+    initialSelectedSite: ExternalPriceSite? = null,
+    initialResults: Map<ExternalPriceSite, ExternalScrapeResult> = emptyMap(),
 ) {
     val sanitizedQuery = remember(title, fallbackTitle) {
         sanitizeSearchQuery(title, fallbackTitle)
@@ -249,75 +288,287 @@ internal fun ExternalPriceCompareCard(
     }
     if (links.isEmpty()) return
 
+    val context = LocalContext.current
+    val scraper = remember(context, scraperOverride) {
+        scraperOverride ?: WebViewExternalSiteScraper(context)
+    }
+    val scope = rememberCoroutineScope()
     val isDark = isSystemInDarkTheme()
+
+    var selectedSite by remember(sanitizedQuery) { mutableStateOf(initialSelectedSite) }
+    val panelStates = remember(sanitizedQuery) {
+        mutableStateMapOf<ExternalPriceSite, ExternalSitePanelState>().apply {
+            initialResults.forEach { (site, res) -> put(site, ExternalSitePanelState.Loaded(res)) }
+        }
+    }
+    var selectedKeepaAsin by remember(sanitizedQuery) { mutableStateOf<String?>(null) }
+    var keepaRange by remember(sanitizedQuery) { mutableStateOf(KeepaRange.DAYS_90) }
+
+    fun fetchSite(site: ExternalPriceSite, force: Boolean = false) {
+        val searchUrl = links.firstOrNull { it.site == site }?.url ?: return
+        if (!force && panelStates[site] is ExternalSitePanelState.Loaded) return
+        if (panelStates[site] is ExternalSitePanelState.Loading) return
+
+        panelStates[site] = ExternalSitePanelState.Loading
+        scope.launch {
+            val result = scraper.scrape(site, searchUrl)
+            panelStates[site] = ExternalSitePanelState.Loaded(result)
+            if (site == ExternalPriceSite.AMAZON_IT && result is ExternalScrapeResult.Success) {
+                val firstAsin = result.items.firstNotNullOfOrNull { it.asin }
+                if (firstAsin != null && (force || selectedKeepaAsin == null)) {
+                    selectedKeepaAsin = firstAsin
+                }
+            }
+        }
+    }
 
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            ),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "Confronta altrove",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "Ricerca rapida per \"$sanitizedQuery\"",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Text(
+                text = "Confronta altrove",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                links.forEach { link ->
+                    val isSelected = selectedSite == link.site
+                    val accent = externalSiteAccentColor(link.site, isDark)
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) {
+                            accent.copy(alpha = if (isDark) 0.20f else 0.12f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        },
+                        border = BorderStroke(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) accent else MaterialTheme.colorScheme.outlineVariant,
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .semantics {
+                                contentDescription = "Cerca su ${link.site.label}"
+                            }
+                            .clickable(role = Role.Button) {
+                                if (isSelected) {
+                                    selectedSite = null
+                                } else {
+                                    selectedSite = link.site
+                                    fetchSite(link.site, force = false)
+                                }
+                            },
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            ExternalSiteBrandLogo(site = link.site, isDark = isDark)
+                        }
+                    }
+                }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                links.chunked(2).forEach { rowLinks ->
+            AnimatedVisibility(
+                visible = selectedSite != null,
+                enter = expandVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                ) + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                val activeSite = selectedSite ?: return@AnimatedVisibility
+                val activeSearchUrl = links.firstOrNull { it.site == activeSite }?.url.orEmpty()
+                val activeState = panelStates[activeSite] ?: ExternalSitePanelState.Loading
+
+                ExternalSiteResultsPanel(
+                    site = activeSite,
+                    panelState = activeState,
+                    isDark = isDark,
+                    selectedKeepaAsin = selectedKeepaAsin,
+                    keepaRange = keepaRange,
+                    onSelectKeepaAsin = { selectedKeepaAsin = it },
+                    onSelectKeepaRange = { keepaRange = it },
+                    onRetry = { fetchSite(activeSite, force = true) },
+                    onOpenSearch = { onOpenUrl(activeSearchUrl) },
+                    onOpenUrl = onOpenUrl,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExternalSiteResultsPanel(
+    site: ExternalPriceSite,
+    panelState: ExternalSitePanelState,
+    isDark: Boolean,
+    selectedKeepaAsin: String?,
+    keepaRange: KeepaRange,
+    onSelectKeepaAsin: (String) -> Unit,
+    onSelectKeepaRange: (KeepaRange) -> Unit,
+    onRetry: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenUrl: (String) -> Unit,
+) {
+    val accent = externalSiteAccentColor(site, isDark)
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = site.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = onRetry,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Riprova estrazione da ${site.label}",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                TextButton(
+                    onClick = onOpenSearch,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = "Apri",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+
+            when (panelState) {
+                ExternalSitePanelState.Loading -> {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        rowLinks.forEach { link ->
-                            val accent = externalSiteAccentColor(link.site, isDark)
-                            val badgeGlyph = externalSiteGlyph(link.site)
-                            OutlinedButton(
-                                onClick = { onOpenUrl(link.url) },
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(22.dp)
-                                        .background(accent.copy(alpha = 0.16f), CircleShape),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = badgeGlyph,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = accent,
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = accent,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "Estrazione offerte da ${site.label}…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                is ExternalSitePanelState.Loaded -> {
+                    when (val result = panelState.result) {
+                        is ExternalScrapeResult.Success -> {
+                            val activeAsin = if (site == ExternalPriceSite.AMAZON_IT) {
+                                selectedKeepaAsin?.takeIf { asin -> result.items.any { it.asin == asin } }
+                                    ?: result.items.firstNotNullOfOrNull { it.asin }
+                            } else {
+                                null
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                result.items.forEachIndexed { index, item ->
+                                    if (index > 0) {
+                                        HorizontalDivider(
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                                        )
+                                    }
+                                    ScrapedOfferRow(
+                                        item = item,
+                                        isDark = isDark,
+                                        showKeepaSelector = site == ExternalPriceSite.AMAZON_IT &&
+                                            item.asin != null &&
+                                            result.items.count { it.asin != null } > 1,
+                                        isKeepaSelected = item.asin != null && item.asin == activeAsin,
+                                        onSelectKeepa = { item.asin?.let(onSelectKeepaAsin) },
+                                        onOpen = { onOpenUrl(item.url) },
                                     )
                                 }
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = link.site.label,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                            }
+
+                            if (site == ExternalPriceSite.AMAZON_IT && activeAsin != null) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                                )
+                                KeepaInlineChartSection(
+                                    asin = activeAsin,
+                                    range = keepaRange,
+                                    onRangeChange = onSelectKeepaRange,
+                                    onOpenKeepa = { onOpenUrl(buildKeepaProductUrl(activeAsin)) },
                                 )
                             }
                         }
-                        if (rowLinks.size == 1) {
-                            Spacer(Modifier.weight(1f))
+
+                        is ExternalScrapeResult.Blocked -> {
+                            ExternalSiteFallbackMessage(
+                                message = result.reason,
+                                onRetry = onRetry,
+                                onOpenBrowser = onOpenSearch,
+                            )
+                        }
+
+                        is ExternalScrapeResult.Empty -> {
+                            ExternalSiteFallbackMessage(
+                                message = result.message,
+                                onRetry = onRetry,
+                                onOpenBrowser = onOpenSearch,
+                            )
+                        }
+
+                        is ExternalScrapeResult.Error -> {
+                            ExternalSiteFallbackMessage(
+                                message = result.message,
+                                onRetry = onRetry,
+                                onOpenBrowser = onOpenSearch,
+                            )
                         }
                     }
                 }
@@ -326,18 +577,445 @@ internal fun ExternalPriceCompareCard(
     }
 }
 
-private fun externalSiteAccentColor(site: ExternalPriceSite, isDark: Boolean): Color = when (site) {
-    ExternalPriceSite.AMAZON_IT -> if (isDark) Color(0xFFFFB74D) else Color(0xFFD97706)
-    ExternalPriceSite.TROVAPREZZI -> if (isDark) Color(0xFF60A5FA) else Color(0xFF2563EB)
-    ExternalPriceSite.IDEALO -> if (isDark) Color(0xFF2DD4BF) else Color(0xFF0F766E)
-    ExternalPriceSite.KEEPA -> if (isDark) Color(0xFF4ADE80) else Color(0xFF15803D)
+@Composable
+private fun ScrapedOfferRow(
+    item: ScrapedOfferItem,
+    isDark: Boolean,
+    showKeepaSelector: Boolean,
+    isKeepaSelected: Boolean,
+    onSelectKeepa: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val primeBg = if (isDark) Color(0xFF0C4A6E) else Color(0xFFE0F2FE)
+    val primeFg = if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onOpen)
+            .padding(vertical = 4.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                item.price?.let { price ->
+                    Text(
+                        text = price,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                item.originalPrice?.let { orig ->
+                    Text(
+                        text = orig,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textDecoration = TextDecoration.LineThrough,
+                    )
+                }
+                if (item.isPrime) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = primeBg,
+                    ) {
+                        Text(
+                            text = "prime",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = primeFg,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                if (showKeepaSelector) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (isKeepaSelected) {
+                            MaterialTheme.colorScheme.tertiaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (isKeepaSelected) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant
+                            },
+                        ),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable(onClick = onSelectKeepa),
+                    ) {
+                        Text(
+                            text = if (isKeepaSelected) "Grafico attivo" else "Grafico",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isKeepaSelected) {
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
+
+            val detailLine = listOfNotNull(item.sellerOrMeta, item.deliveryOrAvailability)
+                .joinToString(" · ")
+            if (detailLine.isNotBlank()) {
+                Text(
+                    text = detailLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = "Apri offerta",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
 }
 
-private fun externalSiteGlyph(site: ExternalPriceSite): String = when (site) {
-    ExternalPriceSite.AMAZON_IT -> "A"
-    ExternalPriceSite.TROVAPREZZI -> "T"
-    ExternalPriceSite.IDEALO -> "I"
-    ExternalPriceSite.KEEPA -> "K"
+@Composable
+private fun KeepaInlineChartSection(
+    asin: String,
+    range: KeepaRange,
+    onRangeChange: (KeepaRange) -> Unit,
+    onOpenKeepa: () -> Unit,
+) {
+    val chartUrl = remember(asin, range) { buildKeepaChartUrl(asin, range) }
+    var isLoadingChart by remember(chartUrl) { mutableStateOf(true) }
+    var chartFailed by remember(chartUrl) { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Storico Keepa",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "ASIN $asin",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                KeepaRange.entries.forEach { option ->
+                    val selected = option == range
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant
+                            },
+                        ),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onRangeChange(option) },
+                    ) {
+                        Text(
+                            text = option.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color.White,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(640f / 300f),
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = chartUrl,
+                    contentDescription = "Grafico storico prezzi Keepa per $asin",
+                    contentScale = ContentScale.Fit,
+                    onLoading = {
+                        isLoadingChart = true
+                        chartFailed = false
+                    },
+                    onSuccess = {
+                        isLoadingChart = false
+                        chartFailed = false
+                    },
+                    onError = {
+                        isLoadingChart = false
+                        chartFailed = true
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(4.dp),
+                )
+
+                if (isLoadingChart) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else if (chartFailed) {
+                    Text(
+                        text = "Grafico Keepa non disponibile al momento",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF475569),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                KeepaLegendDot(color = Color(0xFFFF9900), label = "Amazon")
+                KeepaLegendDot(color = Color(0xFF3B82F6), label = "Nuovo")
+            }
+            TextButton(
+                onClick = onOpenKeepa,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = "Apri su Keepa",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun KeepaLegendDot(color: Color, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(color, CircleShape),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ExternalSiteFallbackMessage(
+    message: String,
+    onRetry: () -> Unit,
+    onOpenBrowser: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = onRetry,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Riprova", style = MaterialTheme.typography.labelLarge)
+            }
+            Button(
+                onClick = onOpenBrowser,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Apri nel browser", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExternalSiteBrandLogo(
+    site: ExternalPriceSite,
+    isDark: Boolean,
+) {
+    when (site) {
+        ExternalPriceSite.AMAZON_IT -> {
+            val letterColor = if (isDark) Color(0xFFF8FAFC) else Color(0xFF111827)
+            val smileColor = Color(0xFFFF9900)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = "a",
+                    fontSize = 22.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = letterColor,
+                )
+                Canvas(
+                    modifier = Modifier
+                        .width(28.dp)
+                        .height(10.dp),
+                ) {
+                    val stroke = Stroke(
+                        width = 2.6.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round,
+                    )
+                    val smilePath = Path().apply {
+                        moveTo(size.width * 0.08f, size.height * 0.25f)
+                        quadraticTo(
+                            size.width * 0.48f,
+                            size.height * 1.10f,
+                            size.width * 0.88f,
+                            size.height * 0.30f,
+                        )
+                    }
+                    drawPath(smilePath, color = smileColor, style = stroke)
+                    val arrowHead = Path().apply {
+                        moveTo(size.width * 0.74f, size.height * 0.16f)
+                        lineTo(size.width * 0.92f, size.height * 0.26f)
+                        lineTo(size.width * 0.84f, size.height * 0.72f)
+                    }
+                    drawPath(arrowHead, color = smileColor, style = stroke)
+                }
+            }
+        }
+
+        ExternalPriceSite.TROVAPREZZI -> {
+            val blue = if (isDark) Color(0xFF60A5FA) else Color(0xFF1D63ED)
+            val orange = Color(0xFFF97316)
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(blue.copy(alpha = 0.14f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawCircle(
+                        color = blue,
+                        radius = size.minDimension * 0.42f,
+                        style = Stroke(width = 2.dp.toPx()),
+                    )
+                    drawCircle(
+                        color = orange,
+                        radius = 3.2.dp.toPx(),
+                        center = Offset(size.width * 0.78f, size.height * 0.24f),
+                    )
+                }
+                Text(
+                    text = "tp",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = blue,
+                )
+            }
+        }
+
+        ExternalPriceSite.IDEALO -> {
+            val badgeBg = if (isDark) Color(0xFF1E3A8A) else Color(0xFF0A3761)
+            val dotYellow = Color(0xFFFACC15)
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .background(badgeBg, RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawCircle(
+                        color = dotYellow,
+                        radius = 3.2.dp.toPx(),
+                        center = Offset(size.width * 0.50f, size.height * 0.24f),
+                    )
+                }
+                Text(
+                    text = "ı",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun externalSiteAccentColor(site: ExternalPriceSite, isDark: Boolean): Color = when (site) {
+    ExternalPriceSite.AMAZON_IT -> if (isDark) Color(0xFFFFB74D) else Color(0xFFD97706)
+    ExternalPriceSite.TROVAPREZZI -> if (isDark) Color(0xFF60A5FA) else Color(0xFF1D63ED)
+    ExternalPriceSite.IDEALO -> if (isDark) Color(0xFFFACC15) else Color(0xFF0A3761)
 }
 
 @Composable
@@ -632,6 +1310,30 @@ private fun OfferRowAndHistoryPreview() {
                 ExternalPriceCompareCard(
                     title = "7 Wonders Duel (Edizione Italiana)",
                     onOpenUrl = {},
+                    initialSelectedSite = ExternalPriceSite.AMAZON_IT,
+                    initialResults = mapOf(
+                        ExternalPriceSite.AMAZON_IT to ExternalScrapeResult.Success(
+                            listOf(
+                                ScrapedOfferItem(
+                                    title = "7 Wonders Duel - Edizione Italiana",
+                                    price = "24,90 €",
+                                    originalPrice = "29,90 €",
+                                    url = "https://www.amazon.it/dp/B014DMSTXK",
+                                    asin = "B014DMSTXK",
+                                    isPrime = true,
+                                    deliveryOrAvailability = "Consegna domani",
+                                ),
+                                ScrapedOfferItem(
+                                    title = "7 Wonders Duel: Agora (Espansione)",
+                                    price = "21,50 €",
+                                    url = "https://www.amazon.it/dp/B08J4J5F3Z",
+                                    asin = "B08J4J5F3Z",
+                                    isPrime = true,
+                                    deliveryOrAvailability = "Disponibilità immediata",
+                                ),
+                            ),
+                        ),
+                    ),
                 )
                 PriceHistoryCard(
                     entries = sampleHistory,

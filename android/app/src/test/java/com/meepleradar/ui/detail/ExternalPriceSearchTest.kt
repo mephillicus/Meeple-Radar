@@ -32,7 +32,7 @@ class ExternalPriceSearchTest {
     }
 
     @Test
-    fun `buildExternalPriceSearchLinks genera tutti i 4 siti con codifica corretta`() {
+    fun `buildExternalPriceSearchLinks genera i 3 siti affiancati con codifica corretta`() {
         val links = buildExternalPriceSearchLinks("7 Wonders Duel (Edizione Italiana)")
 
         assertEquals(
@@ -40,7 +40,6 @@ class ExternalPriceSearchTest {
                 ExternalPriceSite.AMAZON_IT,
                 ExternalPriceSite.TROVAPREZZI,
                 ExternalPriceSite.IDEALO,
-                ExternalPriceSite.KEEPA,
             ),
             links.map { it.site },
         )
@@ -58,10 +57,6 @@ class ExternalPriceSearchTest {
             "https://www.idealo.it/risultati.html?q=7+Wonders+Duel",
             bySite[ExternalPriceSite.IDEALO],
         )
-        assertEquals(
-            "https://keepa.com/#!search/8-7%20Wonders%20Duel",
-            bySite[ExternalPriceSite.KEEPA],
-        )
     }
 
     @Test
@@ -74,5 +69,21 @@ class ExternalPriceSearchTest {
             amazonUrl,
         )
         assertTrue(buildExternalPriceSearchLinks("   ").isEmpty())
+    }
+
+    @Test
+    fun `buildKeepaChartUrl e buildKeepaProductUrl normalizzano ASIN e range`() {
+        assertEquals(
+            "https://graph.keepa.com/pricehistory.png?asin=B014DMSTXK&domain=it&amazon=1&new=1&used=0&range=30&width=640&height=300",
+            buildKeepaChartUrl(" b014dmstxk ", KeepaRange.DAYS_30),
+        )
+        assertEquals(
+            "https://graph.keepa.com/pricehistory.png?asin=B014DMSTXK&domain=it&amazon=1&new=1&used=0&range=365&width=640&height=300",
+            buildKeepaChartUrl("B014DMSTXK", KeepaRange.DAYS_365),
+        )
+        assertEquals(
+            "https://keepa.com/#!product/8-B014DMSTXK",
+            buildKeepaProductUrl("b014dmstxk"),
+        )
     }
 }

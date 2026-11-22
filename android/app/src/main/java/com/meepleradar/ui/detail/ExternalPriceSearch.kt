@@ -3,17 +3,22 @@ package com.meepleradar.ui.detail
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-enum class ExternalPriceSite(val label: String) {
-    AMAZON_IT("Amazon.it"),
-    TROVAPREZZI("Trovaprezzi"),
-    IDEALO("Idealo"),
-    KEEPA("Keepa"),
+enum class ExternalPriceSite(val label: String, val baseUrl: String) {
+    AMAZON_IT("Amazon.it", "https://www.amazon.it"),
+    TROVAPREZZI("Trovaprezzi", "https://www.trovaprezzi.it"),
+    IDEALO("Idealo", "https://www.idealo.it"),
 }
 
 data class ExternalPriceSearchLink(
     val site: ExternalPriceSite,
     val url: String,
 )
+
+enum class KeepaRange(val days: Int, val label: String) {
+    DAYS_30(30, "30g"),
+    DAYS_90(90, "90g"),
+    DAYS_365(365, "1a"),
+}
 
 private val NOISE_BRACKETS_REGEX = Regex(
     pattern = """\s*[(\[]\s*(?:preordine|preorder|edizione\s+italiana|ed\.?\s*it(?:aliana)?|italiano|ita|eng|en|nuova\s+edizione|gioco\s+da\s+tavolo|board\s*game)\s*[)\]]""",
@@ -60,7 +65,6 @@ internal fun buildExternalPriceSearchLinks(
 
     val encodedQuery = encodeQueryParam(query)
     val encodedAmazonQuery = encodeQueryParam(amazonQuery)
-    val encodedKeepaQuery = encodeQueryParam(query).replace("+", "%20")
 
     return listOf(
         ExternalPriceSearchLink(
@@ -75,11 +79,17 @@ internal fun buildExternalPriceSearchLinks(
             site = ExternalPriceSite.IDEALO,
             url = "https://www.idealo.it/risultati.html?q=$encodedQuery",
         ),
-        ExternalPriceSearchLink(
-            site = ExternalPriceSite.KEEPA,
-            url = "https://keepa.com/#!search/8-$encodedKeepaQuery",
-        ),
     )
+}
+
+internal fun buildKeepaChartUrl(asin: String, range: KeepaRange = KeepaRange.DAYS_90): String {
+    val cleanAsin = asin.trim().uppercase()
+    return "https://graph.keepa.com/pricehistory.png?asin=$cleanAsin&domain=it&amazon=1&new=1&used=0&range=${range.days}&width=640&height=300"
+}
+
+internal fun buildKeepaProductUrl(asin: String): String {
+    val cleanAsin = asin.trim().uppercase()
+    return "https://keepa.com/#!product/8-$cleanAsin"
 }
 
 private fun encodeQueryParam(value: String): String =
