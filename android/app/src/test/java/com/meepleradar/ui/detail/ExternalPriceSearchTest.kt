@@ -72,18 +72,14 @@ class ExternalPriceSearchTest {
     }
 
     @Test
-    fun `buildKeepaChartUrl e buildKeepaProductUrl normalizzano ASIN e range`() {
+    fun `buildKeepaProductUrl e buildCamelProductUrl normalizzano ASIN`() {
         assertEquals(
-            "https://graph.keepa.com/pricehistory.png?asin=B014DMSTXK&domain=it&amazon=1&new=1&used=0&range=30&width=640&height=300",
-            buildKeepaChartUrl(" b014dmstxk ", KeepaRange.DAYS_30),
+            "https://keepa.com/#!product/8-B0FSKP6GL4",
+            buildKeepaProductUrl(" b0fskp6gl4 "),
         )
         assertEquals(
-            "https://graph.keepa.com/pricehistory.png?asin=B014DMSTXK&domain=it&amazon=1&new=1&used=0&range=365&width=640&height=300",
-            buildKeepaChartUrl("B014DMSTXK", KeepaRange.DAYS_365),
-        )
-        assertEquals(
-            "https://keepa.com/#!product/8-B014DMSTXK",
-            buildKeepaProductUrl("b014dmstxk"),
+            "https://it.camelcamelcamel.com/product/B0FSKP6GL4",
+            buildCamelProductUrl(" b0fskp6gl4 "),
         )
     }
 }

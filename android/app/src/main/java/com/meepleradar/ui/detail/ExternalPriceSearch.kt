@@ -82,14 +82,14 @@ internal fun buildExternalPriceSearchLinks(
     )
 }
 
-internal fun buildKeepaChartUrl(asin: String, range: KeepaRange = KeepaRange.DAYS_90): String {
-    val cleanAsin = asin.trim().uppercase()
-    return "https://graph.keepa.com/pricehistory.png?asin=$cleanAsin&domain=it&amazon=1&new=1&used=0&range=${range.days}&width=640&height=300"
-}
-
 internal fun buildKeepaProductUrl(asin: String): String {
     val cleanAsin = asin.trim().uppercase()
     return "https://keepa.com/#!product/8-$cleanAsin"
+}
+
+internal fun buildCamelProductUrl(asin: String): String {
+    val cleanAsin = asin.trim().uppercase()
+    return "https://it.camelcamelcamel.com/product/$cleanAsin"
 }
 
 private fun encodeQueryParam(value: String): String =

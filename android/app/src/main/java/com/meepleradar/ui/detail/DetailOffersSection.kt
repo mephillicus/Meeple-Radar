@@ -1,6 +1,7 @@
 package com.meepleradar.ui.detail
 
 import android.content.res.Configuration
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -11,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -77,7 +80,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import com.meepleradar.data.model.ListingBestPrice
 import com.meepleradar.data.model.Offer
@@ -270,6 +272,11 @@ private sealed interface ExternalSitePanelState {
     data class Loaded(val result: ExternalScrapeResult) : ExternalSitePanelState
 }
 
+private sealed interface KeepaPanelState {
+    data object Loading : KeepaPanelState
+    data class Loaded(val result: KeepaHistoryResult) : KeepaPanelState
+}
+
 @Composable
 internal fun ExternalPriceCompareCard(
     title: String,
@@ -279,6 +286,7 @@ internal fun ExternalPriceCompareCard(
     scraperOverride: ExternalSiteScraper? = null,
     initialSelectedSite: ExternalPriceSite? = null,
     initialResults: Map<ExternalPriceSite, ExternalScrapeResult> = emptyMap(),
+    initialKeepaResult: KeepaHistoryResult? = null,
 ) {
     val sanitizedQuery = remember(title, fallbackTitle) {
         sanitizeSearchQuery(title, fallbackTitle)
@@ -301,8 +309,33 @@ internal fun ExternalPriceCompareCard(
             initialResults.forEach { (site, res) -> put(site, ExternalSitePanelState.Loaded(res)) }
         }
     }
-    var selectedKeepaAsin by remember(sanitizedQuery) { mutableStateOf<String?>(null) }
+    var selectedKeepaAsin by remember(sanitizedQuery) {
+        val initialAsin = (initialResults[ExternalPriceSite.AMAZON_IT] as? ExternalScrapeResult.Success)
+            ?.items?.firstNotNullOfOrNull { it.asin }
+        mutableStateOf(initialAsin)
+    }
     var keepaRange by remember(sanitizedQuery) { mutableStateOf(KeepaRange.DAYS_90) }
+    val keepaStates = remember(sanitizedQuery) {
+        mutableStateMapOf<Pair<String, KeepaRange>, KeepaPanelState>().apply {
+            val initialAsin = (initialResults[ExternalPriceSite.AMAZON_IT] as? ExternalScrapeResult.Success)
+                ?.items?.firstNotNullOfOrNull { it.asin }
+            if (initialAsin != null && initialKeepaResult != null) {
+                put(initialAsin to KeepaRange.DAYS_90, KeepaPanelState.Loaded(initialKeepaResult))
+            }
+        }
+    }
+
+    fun fetchKeepa(asin: String, range: KeepaRange, force: Boolean = false) {
+        val key = asin to range
+        if (!force && keepaStates[key] is KeepaPanelState.Loaded) return
+        if (keepaStates[key] is KeepaPanelState.Loading) return
+
+        keepaStates[key] = KeepaPanelState.Loading
+        scope.launch {
+            val res = scraper.scrapeKeepaHistory(asin, range)
+            keepaStates[key] = KeepaPanelState.Loaded(res)
+        }
+    }
 
     fun fetchSite(site: ExternalPriceSite, force: Boolean = false) {
         val searchUrl = links.firstOrNull { it.site == site }?.url ?: return
@@ -311,12 +344,13 @@ internal fun ExternalPriceCompareCard(
 
         panelStates[site] = ExternalSitePanelState.Loading
         scope.launch {
-            val result = scraper.scrape(site, searchUrl)
+            val result = scraper.scrape(site, searchUrl, sanitizedQuery)
             panelStates[site] = ExternalSitePanelState.Loaded(result)
             if (site == ExternalPriceSite.AMAZON_IT && result is ExternalScrapeResult.Success) {
                 val firstAsin = result.items.firstNotNullOfOrNull { it.asin }
                 if (firstAsin != null && (force || selectedKeepaAsin == null)) {
                     selectedKeepaAsin = firstAsin
+                    fetchKeepa(firstAsin, keepaRange, force = force)
                 }
             }
         }
@@ -403,6 +437,9 @@ internal fun ExternalPriceCompareCard(
                 val activeSite = selectedSite ?: return@AnimatedVisibility
                 val activeSearchUrl = links.firstOrNull { it.site == activeSite }?.url.orEmpty()
                 val activeState = panelStates[activeSite] ?: ExternalSitePanelState.Loading
+                val activeKeepaState = selectedKeepaAsin?.let { asin ->
+                    keepaStates[asin to keepaRange] ?: KeepaPanelState.Loading
+                } ?: KeepaPanelState.Loading
 
                 ExternalSiteResultsPanel(
                     site = activeSite,
@@ -410,8 +447,18 @@ internal fun ExternalPriceCompareCard(
                     isDark = isDark,
                     selectedKeepaAsin = selectedKeepaAsin,
                     keepaRange = keepaRange,
-                    onSelectKeepaAsin = { selectedKeepaAsin = it },
-                    onSelectKeepaRange = { keepaRange = it },
+                    keepaState = activeKeepaState,
+                    onSelectKeepaAsin = { asin ->
+                        selectedKeepaAsin = asin
+                        fetchKeepa(asin, keepaRange, force = false)
+                    },
+                    onSelectKeepaRange = { range ->
+                        keepaRange = range
+                        selectedKeepaAsin?.let { asin -> fetchKeepa(asin, range, force = false) }
+                    },
+                    onRetryKeepa = {
+                        selectedKeepaAsin?.let { asin -> fetchKeepa(asin, keepaRange, force = true) }
+                    },
                     onRetry = { fetchSite(activeSite, force = true) },
                     onOpenSearch = { onOpenUrl(activeSearchUrl) },
                     onOpenUrl = onOpenUrl,
@@ -428,8 +475,10 @@ private fun ExternalSiteResultsPanel(
     isDark: Boolean,
     selectedKeepaAsin: String?,
     keepaRange: KeepaRange,
+    keepaState: KeepaPanelState,
     onSelectKeepaAsin: (String) -> Unit,
     onSelectKeepaRange: (KeepaRange) -> Unit,
+    onRetryKeepa: () -> Unit,
     onRetry: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenUrl: (String) -> Unit,
@@ -541,8 +590,11 @@ private fun ExternalSiteResultsPanel(
                                 KeepaInlineChartSection(
                                     asin = activeAsin,
                                     range = keepaRange,
+                                    keepaState = keepaState,
                                     onRangeChange = onSelectKeepaRange,
+                                    onRetry = onRetryKeepa,
                                     onOpenKeepa = { onOpenUrl(buildKeepaProductUrl(activeAsin)) },
+                                    onOpenCamel = { onOpenUrl(buildCamelProductUrl(activeAsin)) },
                                 )
                             }
                         }
@@ -631,20 +683,6 @@ private fun ScrapedOfferRow(
                         textDecoration = TextDecoration.LineThrough,
                     )
                 }
-                if (item.isPrime) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = primeBg,
-                    ) {
-                        Text(
-                            text = "prime",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = primeFg,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
-                }
                 if (showKeepaSelector) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -682,14 +720,36 @@ private fun ScrapedOfferRow(
 
             val detailLine = listOfNotNull(item.sellerOrMeta, item.deliveryOrAvailability)
                 .joinToString(" · ")
-            if (detailLine.isNotBlank()) {
-                Text(
-                    text = detailLine,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (item.isPrime || detailLine.isNotBlank()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (item.isPrime) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = primeBg,
+                        ) {
+                            Text(
+                                text = "Prime",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = primeFg,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                    if (detailLine.isNotBlank()) {
+                        Text(
+                            text = if (item.isPrime) "· $detailLine" else detailLine,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
 
@@ -706,13 +766,12 @@ private fun ScrapedOfferRow(
 private fun KeepaInlineChartSection(
     asin: String,
     range: KeepaRange,
+    keepaState: KeepaPanelState,
     onRangeChange: (KeepaRange) -> Unit,
+    onRetry: () -> Unit,
     onOpenKeepa: () -> Unit,
+    onOpenCamel: () -> Unit,
 ) {
-    val chartUrl = remember(asin, range) { buildKeepaChartUrl(asin, range) }
-    var isLoadingChart by remember(chartUrl) { mutableStateOf(true) }
-    var chartFailed by remember(chartUrl) { mutableStateOf(false) }
-
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -771,52 +830,127 @@ private fun KeepaInlineChartSection(
             }
         }
 
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = Color.White,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(640f / 300f),
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                AsyncImage(
-                    model = chartUrl,
-                    contentDescription = "Grafico storico prezzi Keepa per $asin",
-                    contentScale = ContentScale.Fit,
-                    onLoading = {
-                        isLoadingChart = true
-                        chartFailed = false
-                    },
-                    onSuccess = {
-                        isLoadingChart = false
-                        chartFailed = false
-                    },
-                    onError = {
-                        isLoadingChart = false
-                        chartFailed = true
-                    },
+        when (keepaState) {
+            KeepaPanelState.Loading -> {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(4.dp),
-                )
+                        .fillMaxWidth()
+                        .height(110.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "Caricamento grafico Keepa…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
 
-                if (isLoadingChart) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else if (chartFailed) {
-                    Text(
-                        text = "Grafico Keepa non disponibile al momento",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF475569),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(12.dp),
-                    )
+            is KeepaPanelState.Loaded -> {
+                when (val result = keepaState.result) {
+                    is KeepaHistoryResult.Success -> {
+                        val chartBitmap = remember(result.chartPngBytes) {
+                            result.chartPngBytes?.let { bytes ->
+                                runCatching {
+                                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                                }.getOrNull()
+                            }
+                        }
+
+                        if (chartBitmap != null) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(
+                                        (chartBitmap.width.toFloat() / chartBitmap.height.coerceAtLeast(1).toFloat())
+                                            .coerceIn(1.4f, 2.5f),
+                                    ),
+                            ) {
+                                Image(
+                                    bitmap = chartBitmap,
+                                    contentDescription = "Grafico storico prezzi Keepa per $asin",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(4.dp),
+                                )
+                            }
+                        }
+
+                        val stats = listOfNotNull(
+                            result.lowestPrice?.let { "Min" to it },
+                            result.averagePrice?.let { "Medio" to it },
+                            result.highestPrice?.let { "Max" to it },
+                        )
+                        if (stats.isNotEmpty()) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                stats.forEach { (label, value) ->
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    ) {
+                                        Text(
+                                            text = "$label: $value",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    is KeepaHistoryResult.Unavailable -> {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = result.reason,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    onClick = onRetry,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                ) {
+                                    Text("Riprova", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -833,14 +967,25 @@ private fun KeepaInlineChartSection(
                 KeepaLegendDot(color = Color(0xFFFF9900), label = "Amazon")
                 KeepaLegendDot(color = Color(0xFF3B82F6), label = "Nuovo")
             }
-            TextButton(
-                onClick = onOpenKeepa,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = "Apri su Keepa",
-                    style = MaterialTheme.typography.labelMedium,
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                TextButton(
+                    onClick = onOpenKeepa,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = "Keepa",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                TextButton(
+                    onClick = onOpenCamel,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = "Camel",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
             }
         }
     }
@@ -1308,31 +1453,29 @@ private fun OfferRowAndHistoryPreview() {
                     onOpen = {},
                 )
                 ExternalPriceCompareCard(
-                    title = "7 Wonders Duel (Edizione Italiana)",
+                    title = "7 Wonders: Dice",
                     onOpenUrl = {},
                     initialSelectedSite = ExternalPriceSite.AMAZON_IT,
                     initialResults = mapOf(
                         ExternalPriceSite.AMAZON_IT to ExternalScrapeResult.Success(
                             listOf(
                                 ScrapedOfferItem(
-                                    title = "7 Wonders Duel - Edizione Italiana",
-                                    price = "24,90 €",
-                                    originalPrice = "29,90 €",
-                                    url = "https://www.amazon.it/dp/B014DMSTXK",
-                                    asin = "B014DMSTXK",
+                                    title = "7 Wonders: Dice",
+                                    price = "19,99 €",
+                                    originalPrice = "29,99 €",
+                                    url = "https://www.amazon.it/dp/B0FSKP6GL4",
+                                    asin = "B0FSKP6GL4",
                                     isPrime = true,
-                                    deliveryOrAvailability = "Consegna domani",
-                                ),
-                                ScrapedOfferItem(
-                                    title = "7 Wonders Duel: Agora (Espansione)",
-                                    price = "21,50 €",
-                                    url = "https://www.amazon.it/dp/B08J4J5F3Z",
-                                    asin = "B08J4J5F3Z",
-                                    isPrime = true,
-                                    deliveryOrAvailability = "Disponibilità immediata",
+                                    deliveryOrAvailability = "domani 23 nov",
                                 ),
                             ),
                         ),
+                    ),
+                    initialKeepaResult = KeepaHistoryResult.Success(
+                        chartPngBytes = null,
+                        lowestPrice = "19,99 €",
+                        averagePrice = "24,50 €",
+                        highestPrice = "29,99 €",
                     ),
                 )
                 PriceHistoryCard(
