@@ -32,7 +32,7 @@ class ExternalPriceSearchTest {
     }
 
     @Test
-    fun `buildExternalPriceSearchLinks genera i 3 siti affiancati con codifica corretta`() {
+    fun `buildExternalPriceSearchLinks genera tutti i 4 siti affiancati con codifica corretta`() {
         val links = buildExternalPriceSearchLinks("7 Wonders Duel (Edizione Italiana)")
 
         assertEquals(
@@ -40,6 +40,7 @@ class ExternalPriceSearchTest {
                 ExternalPriceSite.AMAZON_IT,
                 ExternalPriceSite.TROVAPREZZI,
                 ExternalPriceSite.IDEALO,
+                ExternalPriceSite.DUNGEONDICE,
             ),
             links.map { it.site },
         )
@@ -56,6 +57,10 @@ class ExternalPriceSearchTest {
         assertEquals(
             "https://www.idealo.it/risultati.html?q=7+Wonders+Duel",
             bySite[ExternalPriceSite.IDEALO],
+        )
+        assertEquals(
+            "https://www.dungeondice.it/ricerca?controller=search&s=7+Wonders+Duel",
+            bySite[ExternalPriceSite.DUNGEONDICE],
         )
     }
 

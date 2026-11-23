@@ -12,6 +12,7 @@ import java.text.Normalizer
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
+import kotlin.math.min
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +82,7 @@ internal interface ExternalSiteScraper {
         site: ExternalPriceSite,
         searchUrl: String,
         searchQuery: String,
+        fallbackSearchQuery: String? = null,
     ): ExternalScrapeResult
 
     suspend fun scrapeKeepaHistory(
@@ -100,12 +102,12 @@ internal object ScrapedOfferNormalizer {
     private val nonAlnumRegex = Regex("""[^a-z0-9]+""")
 
     private val leadingBrandRegex = Regex(
-        pattern = """^(?:asmod[eé]e|cranio\s+creations|cranio|giochi\s+uniti|dv\s+games|dv\s+giochi|ghenos\s+games|ghenos|ms\s+edizioni|pendragon\s+game\s+studio|pendragon|ravensburger|hasbro\s+gaming|hasbro|mattel\s+games|mattel|clementoni|spin\s+master|kosmos|czech\s+games\s+edition|cge|stonemaier\s+games|fantasy\s+flight\s+games|z-man\s+games|days\s+of\s+wonder|repos\s+production|devir|studio\s+supernova|need\s+games|gateongames|little\s+rocket\s+games|oliphante|tesla\s+games|mancalamaro|lucky\s+duck\s+games|cmon|horrible\s+guild|red\s+glove|ergo\s+ludo|creosamente|djeco|smartgames|tactic|dal\s+negro|editrice\s+giochi|yas!\s*games|exploding\s+kittens|board\s*&\s*dice|lookout\s+games|pegasus\s+spiele|iello|libellud|space\s+cowboys|next\s+move\s+games|plan\s+b\s+games|portal\s+games|awaken\s+realms|cephalofair|leder\s+games|capstone\s+games|hans\s+im\s+gl[uü]ck|rio\s+grande\s+games|queen\s+games|amigo|schmidt|haba|uplay\.it)\b(?:\s*[-–—:|,]\s*|\s+)""",
+        pattern = """^(?:asmod[eé]e(?:\s+italia)?|cranio\s+creations|cranio|giochi\s+uniti|dv\s+games|dv\s+giochi|ghenos\s+games|ghenos|ms\s+edizioni|pendragon\s+game\s+studio|pendragon|ravensburger|hasbro\s+gaming|hasbro|mattel\s+games|mattel|clementoni|spin\s+master|kosmos|czech\s+games\s+edition|cge|stonemaier\s+games|fantasy\s+flight\s+games|ffg|z-man\s+games|days\s+of\s+wonder|repos\s+production|devir|studio\s+supernova|need\s+games|gateongames|little\s+rocket\s+games|oliphante|tesla\s+games|mancalamaro|lucky\s+duck\s+games|cmon|horrible\s+guild|red\s+glove|ergo\s+ludo|creosamente|djeco|smartgames|tactic|dal\s+negro|editrice\s+giochi|yas!\s*games|exploding\s+kittens|board\s*&\s*dice|lookout\s+games|pegasus\s+spiele|iello|libellud|space\s+cowboys|next\s+move\s+games|plan\s+b\s+games|portal\s+games|awaken\s+realms|cephalofair|leder\s+games|capstone\s+games|hans\s+im\s+gl[uü]ck|rio\s+grande\s+games|queen\s+games|amigo|schmidt|haba|uplay\.it)\b(?:\s*[-–—:|,]\s*|\s+)""",
         option = RegexOption.IGNORE_CASE,
     )
 
     private val trailingBrandRegex = Regex(
-        pattern = """\s*[-–—|,]\s*(?:by\s+)?(?:asmod[eé]e|cranio\s+creations|giochi\s+uniti|dv\s+games|ghenos\s+games|ms\s+edizioni|pendragon|ravensburger|hasbro|mattel|clementoni|devir|studio\s+supernova|mancalamaro|lucky\s+duck\s+games|repos\s+production)\s*$""",
+        pattern = """\s*[-–—|,]\s*(?:by\s+)?(?:asmod[eé]e(?:\s+italia)?|cranio\s+creations|giochi\s+uniti|dv\s+games|ghenos\s+games|ms\s+edizioni|pendragon|ravensburger|hasbro|mattel|clementoni|devir|studio\s+supernova|mancalamaro|lucky\s+duck\s+games|repos\s+production|fantasy\s+flight\s+games|ffg|dungeondice(?:\.it)?)\s*$""",
         option = RegexOption.IGNORE_CASE,
     )
 
@@ -114,15 +116,25 @@ internal object ScrapedOfferNormalizer {
         option = RegexOption.IGNORE_CASE,
     )
 
-    private val segmentSplitRegex = Regex("""\s+[-–—|]\s+""")
+    private val segmentSplitRegex = Regex("""\s+[-–—]\s+""")
+
+    private val editionTagInTailRegex = Regex(
+        pattern = """\b(edizione\s+(?:italiana|inglese|francese|tedesca|spagnola|in\s+italiano)|nuova\s+edizione|tedesco|spagnolo|francese|inglese)\b""",
+        option = RegexOption.IGNORE_CASE,
+    )
 
     private val marketingSegmentRegex = Regex(
-        pattern = """^(?:gioc[oi]\s+(?:da\s+tavolo|di\s+carte|di\s+societ[àa]|di\s+strategia|di\s+dadi|di\s+ruolo|di\s+abilit[àa]|cooperativo|investigativo|educativo|per\s+famiglie|per\s+bambini|per\s+adulti|in\s+scatola)|party\s+game|board\s*game|card\s+game|roll\s*(?:&|and)\s*write|flip\s*(?:&|and)\s*write|deck\s*building|per\s+\d+(?:\s*[-–]\s*\d+)?\s*giocatori|\d+(?:\s*[-–]\s*\d+)?\s*giocatori|da\s+\d+\s*anni|\d+\+\s*anni|\d+\s*[-–]?\s*\d*\s*min(?:uti)?|idea\s+regalo|regalo\s+per|et[àa]\s*\d+|cod\.?\s*[a-z0-9]+|[a-z]{2,5}\d{3,}[a-z0-9]*)(?:\b.*)?$""",
+        pattern = """^(?:gioc[oi]\s+(?:da\s+tavolo|di\s+carte|di\s+societ[àa]|di\s+strategia|di\s+dadi|di\s+ruolo|di\s+abilit[àa]|cooperativo|investigativo|educativo|per\s+famiglie|per\s+bambini|per\s+adulti|in\s+scatola)|espansione\s+(?:gioc[oi]|del\s+pacchetto|pacchetto|fazione)|pack\s+fazione|faction\s+pack|modalit[àa]\s+testa|party\s+game|board\s*game|card\s+game|roll\s*(?:&|and)\s*write|flip\s*(?:&|and)\s*write|deck\s*building|per\s+\d+(?:\s*[-–]\s*\d+)?\s*giocatori|\d+(?:\s*[-–]\s*\d+)?\s*giocatori|da\s+\d+\s*anni|\d+\+\s*anni|\d+\s*[-–]?\s*\d*\s*min(?:uti)?|idea\s+regalo|regalo\s+per|et[àa]\s*\d+|ffg|cod\.?\s*[a-z0-9]+|[a-z]{2,5}\d{3,}[a-z0-9]*)(?:\b.*)?$""",
         option = RegexOption.IGNORE_CASE,
     )
 
     private val marketingInlinePrefixRegex = Regex(
-        pattern = """(?:,\s*|\s+)(?:gioc[oi]\s+(?:da\s+tavolo|di\s+carte|di\s+societ[àa]|di\s+strategia|di\s+dadi|cooperativo|per\s+famiglie)|party\s+game|board\s*game|card\s+game|roll\s*(?:&|and)\s*write|per\s+\d+(?:\s*[-–]\s*\d+)?\s*giocatori|da\s+\d+\s*anni|\d+\+\s*anni).*$""",
+        pattern = """(?:,\s*|\s+)(?:espansione\s+(?:del\s+pacchetto|gioc[oi])|pack\s+fazione\b|gioc[oi]\s+(?:da\s+tavolo|di\s+carte|di\s+societ[àa]|di\s+strategia|di\s+dadi|cooperativo|per\s+famiglie)|party\s+game|board\s*game|card\s+game|roll\s*(?:&|and)\s*write|per\s+\d+(?:\s*[-–]\s*\d+)?\s*giocatori|\d+\s*[-–]\s*\d+\s*giocatori|da\s+\d+\s*anni|\d+\+\s*anni|\d+\s*minuti|ffg\b).*$""",
+        option = RegexOption.IGNORE_CASE,
+    )
+
+    private val leadingExpansionPrefixRegex = Regex(
+        pattern = """^espansione\s+""",
         option = RegexOption.IGNORE_CASE,
     )
 
@@ -135,16 +147,38 @@ internal object ScrapedOfferNormalizer {
 
     private val editionNeutralTokens = setOf(
         "edizione", "edition", "ed", "italiana", "italiano", "ita", "it",
-        "inglese", "english", "eng", "en", "nuova", "new", "seconda", "terza",
+        "inglese", "english", "eng", "en", "tedesco", "tedesca", "german", "deutsch", "de",
+        "spagnolo", "spagnola", "spanish", "espanol", "es",
+        "francese", "french", "francais", "fr",
+        "nuova", "new", "seconda", "terza",
         "2a", "3a", "2nd", "3rd", "revised", "rev", "riveduta", "aggiornata",
         "base", "gioco", "versione", "version", "scatola", "standard", "retail",
         "classic", "classico", "original", "originale", "special", "speciale",
         "deluxe", "collector", "collectors", "anniversary", "anniversario",
-        "preorder", "preordine", "lingua",
+        "preorder", "preordine", "lingua", "ffg",
+    )
+
+    private val expansionDescriptiveTokens = setOf(
+        "espansione", "espansioni", "expansion", "exp",
+        "pack", "pacchetto", "fazione", "faction", "frazionario",
+        "set", "starter", "box", "modalita", "testa",
+        "carte", "card", "cards", "tavolo", "strategia", "partita",
+        "giocatori", "minuti", "anni",
+    )
+
+    private val foreignLanguageTokens = setOf(
+        "tedesco", "tedesca", "german", "deutsch",
+        "spagnolo", "spagnola", "spanish", "espanol",
+        "francese", "french", "francais",
+    )
+
+    private val italianLanguageTokens = setOf(
+        "italiana", "italiano", "ita",
     )
 
     private val yearTokenRegex = Regex("""^(?:199\d|20[0-3]\d)$""")
     private val skuCodeRegex = Regex("""^[a-z]{2,5}\d{3,}[a-z0-9]*$""")
+    private val subtitleSeparatorRegex = Regex("""[:\-–—]""")
 
     private val releaseDateRegex = Regex(
         pattern = """(?:in\s+uscita(?:\s+il)?|disponibile\s+dal|data\s+di\s+uscita:?)\s+([a-z0-9 ,]{3,28}?)(?=\s*(?:·|\.|oppure|consegna|prenota|$))""",
@@ -171,9 +205,28 @@ internal object ScrapedOfferNormalizer {
         val original = rawTitle.replace(whitespaceRegex, " ").trim()
         if (original.isBlank()) return ""
 
-        val text = original
-            .replace(leadingBrandRegex, "")
-            .replace(trailingBrandRegex, "")
+        // Su Amazon e Trovaprezzi il separatore '|' introduce quasi sempre copy promozionale;
+        // preserviamo però l'eventuale indicazione di edizione/lingua presente nella coda.
+        val pipeIndex = original.indexOf('|')
+        val preservedTailEdition: String?
+        val headText = if (pipeIndex > 0) {
+            val tail = original.substring(pipeIndex + 1)
+            preservedTailEdition = editionTagInTailRegex.find(tail)?.value?.let(::normalizeEditionTag)
+            original.substring(0, pipeIndex).trim()
+        } else {
+            preservedTailEdition = null
+            original
+        }
+
+        // Gestisce eventuali elenchi comma-separated dove la marca è seguita da virgola (es. "Asmodee, Star Wars...")
+        var text = headText
+        repeat(2) {
+            text = text
+                .replace(leadingBrandRegex, "")
+                .replace(trailingBrandRegex, "")
+                .trim()
+        }
+        text = text
             .replace(parentheticalNoiseRegex, " ")
             .replace(whitespaceRegex, " ")
             .trim()
@@ -186,39 +239,159 @@ internal object ScrapedOfferNormalizer {
             if (keptSegments.isNotEmpty() && marketingSegmentRegex.matches(seg)) {
                 continue
             }
+            seg = seg.replace(marketingInlinePrefixRegex, "").trim().trimEnd(',', ';')
             if (keptSegments.isNotEmpty()) {
-                seg = seg.replace(marketingInlinePrefixRegex, "").trim().trimEnd(',', ';')
-            } else {
-                seg = seg.replace(marketingInlinePrefixRegex, "").trim().trimEnd(',', ';')
+                val withoutExpPrefix = seg.replace(leadingExpansionPrefixRegex, "").trim()
+                if (withoutExpPrefix.isNotEmpty()) {
+                    seg = withoutExpPrefix
+                }
             }
             if (seg.isNotEmpty() && !(keptSegments.isNotEmpty() && marketingSegmentRegex.matches(seg))) {
                 keptSegments += seg
             }
         }
 
-        val joined = keptSegments.joinToString(" – ").replace(whitespaceRegex, " ").trim()
-        return joined.ifBlank { original }
+        var joined = keptSegments.joinToString(" – ").replace(whitespaceRegex, " ").trim()
+        if (joined.isBlank()) {
+            joined = headText.ifBlank { original }
+        }
+        if (preservedTailEdition != null && !joined.contains(preservedTailEdition, ignoreCase = true)) {
+            joined = "$joined ($preservedTailEdition)"
+        }
+        return joined
     }
 
-    fun matchesSearchedGameTitle(searchQuery: String, cleanedCandidateTitle: String): Boolean {
+    fun matchesSearchedGameTitle(
+        searchQuery: String,
+        cleanedCandidateTitle: String,
+        fallbackQuery: String? = null,
+    ): Boolean {
+        if (matchesSingleQuery(searchQuery, cleanedCandidateTitle)) return true
+        val alt = fallbackQuery?.trim().orEmpty()
+        if (alt.isNotEmpty() && !alt.equals(searchQuery.trim(), ignoreCase = true)) {
+            return matchesSingleQuery(alt, cleanedCandidateTitle)
+        }
+        return false
+    }
+
+    fun matchRelevanceScore(
+        searchQuery: String,
+        rawTitle: String,
+        cleanedTitle: String,
+        hasPrice: Boolean,
+        fallbackQuery: String? = null,
+    ): Int {
+        val rawTokens = significantTokens(rawTitle).toSet()
+        val candidateTokens = significantTokens(cleanedTitle)
         val queryTokens = significantTokens(searchQuery)
+        val extraCount = candidateTokens.count { c ->
+            !queryTokens.any { q -> tokensEquivalent(q, c) } &&
+                c !in editionNeutralTokens &&
+                c !in expansionDescriptiveTokens
+        }
+        var score = extraCount * 10
+        if (!hasPrice) score += 25
+        if (rawTokens.any { it in foreignLanguageTokens }) score += 50
+        if (rawTokens.any { it in italianLanguageTokens }) score -= 15
+        if (!matchesSingleQuery(searchQuery, cleanedTitle) && !fallbackQuery.isNullOrBlank()) {
+            score += 5
+        }
+        return score
+    }
+
+    private fun matchesSingleQuery(query: String, cleanedCandidateTitle: String): Boolean {
+        val queryTokens = significantTokens(query)
         if (queryTokens.isEmpty()) return true
         val candidateTokens = significantTokens(cleanedCandidateTitle)
         if (candidateTokens.isEmpty()) return false
 
-        val candidateSet = candidateTokens.toSet()
-        if (!queryTokens.all { it in candidateSet }) {
+        val matchedCandidateIndices = mutableSetOf<Int>()
+        var qIdx = 0
+        while (qIdx < queryTokens.size) {
+            val qToken = queryTokens[qIdx]
+            val directIndex = candidateTokens.indexOfFirst { cToken -> tokensEquivalent(qToken, cToken) }
+            if (directIndex >= 0) {
+                matchedCandidateIndices += directIndex
+                qIdx++
+                continue
+            }
+
+            // Controlla parola composta nel query rispetto a 2 token adiacenti nel candidato (es. "deckbuilding" vs "deck building")
+            val splitCandidateIndex = findCompoundPairIndex(qToken, candidateTokens)
+            if (splitCandidateIndex >= 0) {
+                matchedCandidateIndices += splitCandidateIndex
+                matchedCandidateIndices += splitCandidateIndex + 1
+                qIdx++
+                continue
+            }
+
+            // Controlla 2 token adiacenti nella query rispetto a 1 parola composta nel candidato (es. "deck building" vs "deckbuilding")
+            if (qIdx + 1 < queryTokens.size) {
+                val mergedQuery = qToken + queryTokens[qIdx + 1]
+                val mergedIndex = candidateTokens.indexOfFirst { cToken -> tokensEquivalent(mergedQuery, cToken) }
+                if (mergedIndex >= 0) {
+                    matchedCandidateIndices += mergedIndex
+                    qIdx += 2
+                    continue
+                }
+            }
+
             return false
         }
 
-        val querySet = queryTokens.toSet()
-        val extraMeaningfulTokens = candidateTokens.filter { token ->
-            token !in querySet &&
-                token !in editionNeutralTokens &&
-                !yearTokenRegex.matches(token) &&
-                !skuCodeRegex.matches(token)
+        val queryHasSubtitleOrSpecific = queryTokens.size >= 4 || subtitleSeparatorRegex.containsMatchIn(query)
+        val allowDescriptiveWords = queryHasSubtitleOrSpecific ||
+            queryTokens.any { it in expansionDescriptiveTokens }
+
+        val extraMeaningfulTokens = candidateTokens.filterIndexed { index, token ->
+            if (index in matchedCandidateIndices) return@filterIndexed false
+            if (queryTokens.any { q -> tokensEquivalent(q, token) }) return@filterIndexed false
+            if (token in editionNeutralTokens) return@filterIndexed false
+            if (allowDescriptiveWords && token in expansionDescriptiveTokens) return@filterIndexed false
+            if (yearTokenRegex.matches(token) || skuCodeRegex.matches(token)) return@filterIndexed false
+            true
         }
+
         return extraMeaningfulTokens.isEmpty()
+    }
+
+    private fun findCompoundPairIndex(compoundToken: String, tokens: List<String>): Int {
+        if (compoundToken.length < 6) return -1
+        for (i in 0 until tokens.size - 1) {
+            val combined = tokens[i] + tokens[i + 1]
+            if (tokensEquivalent(compoundToken, combined)) {
+                return i
+            }
+        }
+        return -1
+    }
+
+    private fun tokensEquivalent(a: String, b: String): Boolean {
+        if (a == b) return true
+        // Plurale semplice -s (es. wonder / wonders)
+        if ((a.length >= 4 && b == "${a}s") || (b.length >= 4 && a == "${b}s")) return true
+        // Flessioni IT/EN con radice lunga comune (es. mandaloriani / mandalorian)
+        val minLen = min(a.length, b.length)
+        if (minLen >= 6) {
+            val commonPrefix = a.commonPrefixWith(b).length
+            if (commonPrefix >= 6 && commonPrefix >= minLen - 1 && kotlin.math.abs(a.length - b.length) <= 3) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun normalizeEditionTag(raw: String): String {
+        val lower = raw.trim().lowercase()
+        return when {
+            lower.contains("ital") -> "Edizione Italiana"
+            lower.contains("ingl") -> "Edizione Inglese"
+            lower.contains("tedesc") -> "Edizione Tedesca"
+            lower.contains("spagn") -> "Edizione Spagnola"
+            lower.contains("franc") -> "Edizione Francese"
+            lower.contains("nuova") -> "Nuova Edizione"
+            else -> raw.trim()
+        }
     }
 
     fun formatDeliverySummary(
@@ -328,6 +501,7 @@ internal object ScraperJsonParser {
         site: ExternalPriceSite,
         rawJsResult: String?,
         searchQuery: String = "",
+        fallbackSearchQuery: String? = null,
     ): ParsedScriptStatus {
         val root = unwrapJsonObject(rawJsResult) ?: return when {
             rawJsResult.isNullOrBlank() || rawJsResult == "null" || rawJsResult == "undefined" ->
@@ -347,14 +521,18 @@ internal object ScraperJsonParser {
             )
             "ok" -> {
                 val rawItems = root["items"]?.jsonArray.orEmpty()
-                val parsedItems = rawItems.mapNotNull { element ->
-                    val obj = element as? JsonObject ?: return@mapNotNull null
-                    val rawTitle = cleanText(obj.stringField("title")) ?: return@mapNotNull null
+                val scoredItems = rawItems.mapIndexedNotNull { originalIndex, element ->
+                    val obj = element as? JsonObject ?: return@mapIndexedNotNull null
+                    val rawTitle = cleanText(obj.stringField("title")) ?: return@mapIndexedNotNull null
                     val cleanedTitle = ScrapedOfferNormalizer.cleanScrapedGameTitle(rawTitle)
                     if (searchQuery.isNotBlank() &&
-                        !ScrapedOfferNormalizer.matchesSearchedGameTitle(searchQuery, cleanedTitle)
+                        !ScrapedOfferNormalizer.matchesSearchedGameTitle(
+                            searchQuery = searchQuery,
+                            cleanedCandidateTitle = cleanedTitle,
+                            fallbackQuery = fallbackSearchQuery,
+                        )
                     ) {
-                        return@mapNotNull null
+                        return@mapIndexedNotNull null
                     }
                     val rawUrl = obj.stringField("url").orEmpty().trim()
                     val asin = normalizeAsin(obj.stringField("asin"), rawUrl)
@@ -364,9 +542,10 @@ internal object ScraperJsonParser {
                         rawDelivery = obj.stringField("delivery"),
                         isPrime = obj.booleanField("isPrime"),
                     )
-                    ScrapedOfferItem(
+                    val price = cleanText(obj.stringField("price"))
+                    val item = ScrapedOfferItem(
                         title = cleanedTitle,
-                        price = cleanText(obj.stringField("price")),
+                        price = price,
                         originalPrice = cleanText(obj.stringField("originalPrice")),
                         url = resolvedUrl,
                         asin = asin,
@@ -374,7 +553,25 @@ internal object ScraperJsonParser {
                         deliveryOrAvailability = formattedDelivery.text,
                         sellerOrMeta = cleanText(obj.stringField("meta")),
                     )
-                }.take(4)
+                    val score = if (searchQuery.isNotBlank()) {
+                        ScrapedOfferNormalizer.matchRelevanceScore(
+                            searchQuery = searchQuery,
+                            rawTitle = rawTitle,
+                            cleanedTitle = cleanedTitle,
+                            hasPrice = price != null,
+                            fallbackQuery = fallbackSearchQuery,
+                        )
+                    } else {
+                        0
+                    }
+                    Triple(score, originalIndex, item)
+                }
+
+                val parsedItems = scoredItems
+                    .sortedWith(compareBy<Triple<Int, Int, ScrapedOfferItem>>({ it.first }, { it.second }))
+                    .map { it.third }
+                    .distinctBy { it.asin ?: it.url }
+                    .take(4)
 
                 if (parsedItems.isEmpty()) {
                     val emptyMsg = if (searchQuery.isNotBlank()) {
@@ -515,11 +712,12 @@ internal class WebViewExternalSiteScraper(context: Context) : ExternalSiteScrape
         site: ExternalPriceSite,
         searchUrl: String,
         searchQuery: String,
+        fallbackSearchQuery: String?,
     ): ExternalScrapeResult {
         return try {
             withTimeoutOrNull(SCRAPE_TIMEOUT) {
                 withContext(Dispatchers.Main) {
-                    runHeadlessWebView(site, searchUrl, searchQuery)
+                    runHeadlessWebView(site, searchUrl, searchQuery, fallbackSearchQuery)
                 }
             } ?: ExternalScrapeResult.Error("Timeout durante il caricamento di ${site.label}.")
         } catch (e: CancellationException) {
@@ -552,6 +750,7 @@ internal class WebViewExternalSiteScraper(context: Context) : ExternalSiteScrape
         site: ExternalPriceSite,
         searchUrl: String,
         searchQuery: String,
+        fallbackSearchQuery: String?,
     ): ExternalScrapeResult {
         val webView = WebView(appContext)
         val pageLoaded = AtomicBoolean(false)
@@ -602,7 +801,7 @@ internal class WebViewExternalSiteScraper(context: Context) : ExternalSiteScrape
                 }
 
                 val rawResult = evaluateJs(webView, script)
-                when (val parsed = ScraperJsonParser.parse(site, rawResult, searchQuery)) {
+                when (val parsed = ScraperJsonParser.parse(site, rawResult, searchQuery, fallbackSearchQuery)) {
                     ParsedScriptStatus.Loading -> Unit
                     is ParsedScriptStatus.Done -> {
                         val result = parsed.result
@@ -723,6 +922,7 @@ private fun extractionScriptFor(site: ExternalPriceSite): String = when (site) {
     ExternalPriceSite.AMAZON_IT -> AMAZON_EXTRACTION_JS
     ExternalPriceSite.TROVAPREZZI -> TROVAPREZZI_EXTRACTION_JS
     ExternalPriceSite.IDEALO -> IDEALO_EXTRACTION_JS
+    ExternalPriceSite.DUNGEONDICE -> DUNGEONDICE_EXTRACTION_JS
 }
 
 private fun keepaExtractionScript(rangeDays: Int): String = """
@@ -851,7 +1051,7 @@ private val AMAZON_EXTRACTION_JS = """
         });
         var list = organic.length ? organic : cards;
         var items = [];
-        for (var i = 0; i < list.length && items.length < 12; i++) {
+        for (var i = 0; i < list.length && items.length < 16; i++) {
           var c = list[i];
           var asin = (c.getAttribute('data-asin') || '').trim();
           if (!asin) continue;
@@ -916,16 +1116,16 @@ private val TROVAPREZZI_EXTRACTION_JS = """
           return JSON.stringify({ status: 'blocked', reason: 'Trovaprezzi richiede verifica Cloudflare.' });
         }
         var nodes = Array.prototype.slice.call(document.querySelectorAll(
-          'li.listing_item, .listing_item, li.item_product, .product_item, article.product, [data-offer-id]'
+          'li.listing_item, .listing_item, li.item_product, .product_item, article.product, [data-offer-id], .listing_item_wrapper'
         ));
         if (!nodes.length) {
           if (document.readyState !== 'complete') return JSON.stringify({ status: 'loading' });
           return JSON.stringify({ status: 'empty', reason: 'Nessuna offerta trovata su Trovaprezzi.' });
         }
         var items = [];
-        for (var i = 0; i < nodes.length && items.length < 12; i++) {
+        for (var i = 0; i < nodes.length && items.length < 16; i++) {
           var n = nodes[i];
-          var titleEl = n.querySelector('.item_title, .product_title, h2, h3, a.item_name, a[title]');
+          var titleEl = n.querySelector('.item_title, .product_title, a.item_name, h2 a, h3 a, h2, h3, a[title]');
           var title = titleEl ? (titleEl.innerText || titleEl.getAttribute('title') || '').trim() : '';
           if (!title) continue;
           var priceEl = n.querySelector('.item_basic_price, .item_total_price, .price, [class*="price"]');
@@ -934,7 +1134,7 @@ private val TROVAPREZZI_EXTRACTION_JS = """
           var ship = shipEl ? (shipEl.innerText || '').trim() : '';
           var shopEl = n.querySelector('.merchant_name, .shop_name, .merchant_logo img');
           var shop = shopEl ? (shopEl.innerText || shopEl.getAttribute('alt') || '').trim() : '';
-          var linkEl = n.querySelector('a[href]');
+          var linkEl = n.querySelector('a.item_name[href], .item_title a[href], a[href]');
           var url = linkEl ? (linkEl.getAttribute('href') || '') : '';
           items.push({
             title: title,
@@ -971,7 +1171,7 @@ private val IDEALO_EXTRACTION_JS = """
           return JSON.stringify({ status: 'empty', reason: 'Nessun risultato trovato su Idealo.' });
         }
         var items = [];
-        for (var i = 0; i < nodes.length && items.length < 12; i++) {
+        for (var i = 0; i < nodes.length && items.length < 16; i++) {
           var n = nodes[i];
           var titleEl = n.querySelector('[data-testid="productSummary__title"], .sr-productSummary__title, h2, h3, a[class*="title"]');
           var title = titleEl ? (titleEl.innerText || '').trim() : '';
@@ -991,6 +1191,63 @@ private val IDEALO_EXTRACTION_JS = """
             isPrime: false,
             delivery: null,
             meta: meta || null
+          });
+        }
+        return JSON.stringify({ status: items.length ? 'ok' : 'empty', items: items });
+      } catch (e) {
+        return JSON.stringify({ status: 'empty', reason: String(e) });
+      }
+    })();
+""".trimIndent()
+
+private val DUNGEONDICE_EXTRACTION_JS = """
+    (function() {
+      try {
+        var titleDoc = document.title || '';
+        var bodyText = (document.body && document.body.innerText) ? document.body.innerText : '';
+        if (document.querySelector('#challenge-running, #cf-challenge-running, .cf-browser-verification') ||
+            /just a moment|un momento|attention required|verify you are human|verifica che sei umano/i.test(titleDoc + ' ' + bodyText.slice(0, 600))) {
+          return JSON.stringify({ status: 'blocked', reason: 'DungeonDice richiede verifica Cloudflare.' });
+        }
+        var nodes = Array.prototype.slice.call(document.querySelectorAll(
+          'article.product-miniature, .product-miniature, .js-product-miniature, #js-product-list article, li.ajax_block_product'
+        ));
+        if (!nodes.length) {
+          if (document.readyState !== 'complete') return JSON.stringify({ status: 'loading' });
+          return JSON.stringify({ status: 'empty', reason: 'Nessun risultato trovato su DungeonDice.' });
+        }
+        var items = [];
+        for (var i = 0; i < nodes.length && items.length < 16; i++) {
+          var n = nodes[i];
+          var titleEl = n.querySelector('.product-title a, h2.product-title a, h3.product-title a, a.product-name, h2 a, h3 a, .product-title');
+          var title = titleEl ? (titleEl.innerText || titleEl.getAttribute('title') || '').trim() : '';
+          if (!title) continue;
+          var linkEl = n.querySelector('.product-title a[href], a.thumbnail[href], a.product-name[href], a[href*=".html"]');
+          var url = linkEl ? (linkEl.getAttribute('href') || '') : '';
+          var priceEl = n.querySelector('.product-price-and-shipping .price, span.price, .price');
+          var price = priceEl ? (priceEl.innerText || '').trim() : '';
+          var origEl = n.querySelector('.regular-price, .old-price');
+          var orig = origEl ? (origEl.innerText || '').trim() : '';
+          if (orig === price) orig = '';
+          var statusParts = [];
+          var statusNodes = n.querySelectorAll('.product-flags li, .product-flag, .product-availability, [class*="availability"], [class*="stock"], [class*="preorder"], .badge');
+          for (var s = 0; s < statusNodes.length && statusParts.length < 2; s++) {
+            var st = (statusNodes[s].innerText || '').replace(/\s+/g, ' ').trim();
+            if (!st || st.length > 40) continue;
+            if (/^-\d+%$|^\d+%$/.test(st)) continue;
+            if (/disponibil|preordin|in arrivo|esaurit|non disponibil|novit/i.test(st)) {
+              if (statusParts.indexOf(st) === -1) statusParts.push(st);
+            }
+          }
+          items.push({
+            title: title,
+            price: price || null,
+            originalPrice: orig || null,
+            url: url,
+            asin: null,
+            isPrime: false,
+            delivery: statusParts.join(' · ') || null,
+            meta: null
           });
         }
         return JSON.stringify({ status: items.length ? 'ok' : 'empty', items: items });

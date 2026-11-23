@@ -9,7 +9,7 @@ import org.junit.Test
 class ExternalSiteScraperParserTest {
 
     @Test
-    fun `cleanScrapedGameTitle rimuove marca e descrittori generici mantenendo sottotitolo ed edizione`() {
+    fun `cleanScrapedGameTitle rimuove marca, coda dopo pipe e descrittori generici mantenendo sottotitolo ed edizione`() {
         assertEquals(
             "7 Wonders: Dice",
             ScrapedOfferNormalizer.cleanScrapedGameTitle("Asmodee – 7 Wonders: Dice – Gioco da Tavolo Roll & Write"),
@@ -26,10 +26,16 @@ class ExternalSiteScraperParserTest {
             "Barrage – Edizione Italiana",
             ScrapedOfferNormalizer.cleanScrapedGameTitle("Cranio Creations - Barrage - Edizione Italiana - Gioco da Tavolo di Strategia, 1-4 Giocatori"),
         )
+        assertEquals(
+            "Star Wars: The Deckbuilding Game – Mandaloriani (Edizione Italiana)",
+            ScrapedOfferNormalizer.cleanScrapedGameTitle(
+                "Asmodee - Star Wars: The Deckbuilding Game - Espansione Mandaloriani | Pack Fazione per Modalità Testa a Testa Gioco da Tavolo Star Wars - 2-3 Giocatori - 12+ Anni - 30 Minuti - Edizione Italiana",
+            ),
+        )
     }
 
     @Test
-    fun `matchesSearchedGameTitle esclude giochi diversi o spin-off mantenendo edizioni dello stesso gioco`() {
+    fun `matchesSearchedGameTitle esclude giochi diversi o spin-off mantenendo edizioni e varianti dello stesso titolo`() {
         assertTrue(ScrapedOfferNormalizer.matchesSearchedGameTitle("7 Wonders Dice", "7 Wonders: Dice"))
         assertTrue(ScrapedOfferNormalizer.matchesSearchedGameTitle("7 Wonders: Dice", "7 Wonders: Dice, Edizione Italiana"))
         assertFalse(ScrapedOfferNormalizer.matchesSearchedGameTitle("7 Wonders Dice", "7 WONDERS DUEL"))
@@ -38,6 +44,75 @@ class ExternalSiteScraperParserTest {
         assertTrue(ScrapedOfferNormalizer.matchesSearchedGameTitle("7 Wonders", "7 Wonders: Nuova Edizione, Edizione Italiana"))
         assertFalse(ScrapedOfferNormalizer.matchesSearchedGameTitle("7 Wonders", "7 Wonders: Dice"))
         assertFalse(ScrapedOfferNormalizer.matchesSearchedGameTitle("7 Wonders", "7 Wonders Duel"))
+        assertFalse(ScrapedOfferNormalizer.matchesSearchedGameTitle("7 Wonders", "7 Wonders – Espansione"))
+
+        val cleanedMandaloriani = ScrapedOfferNormalizer.cleanScrapedGameTitle(
+            "Asmodee - Star Wars: The Deckbuilding Game - Espansione Mandaloriani | Pack Fazione per Modalità Testa a Testa Gioco da Tavolo Star Wars - 2-3 Giocatori - 12+ Anni - 30 Minuti - Edizione Italiana",
+        )
+        assertTrue(
+            ScrapedOfferNormalizer.matchesSearchedGameTitle(
+                "Star Wars Deckbuilding Game - Mandaloriani",
+                cleanedMandaloriani,
+            ),
+        )
+        assertTrue(
+            ScrapedOfferNormalizer.matchesSearchedGameTitle(
+                "Star Wars Deckbuilding Game - Mandaloriani",
+                "Star Wars: The Deckbuilding Game – The Mandalorian Faction Pack",
+            ),
+        )
+        assertFalse(
+            ScrapedOfferNormalizer.matchesSearchedGameTitle(
+                "Star Wars Deckbuilding Game - Mandaloriani",
+                "Star Wars: The Deckbuilding Game – Clone Wars",
+            ),
+        )
+    }
+
+    @Test
+    fun `parse trova Star Wars Mandaloriani su Amazon e privilegia Edizione Italiana su Tedesco`() {
+        val raw = """
+            {
+              "status": "ok",
+              "items": [
+                {
+                  "title": "Asmodee, Star Wars: The Deckbuilding Game - Mandalorian, Espansione del pacchetto frazionario, FFG, Gioco di carte, 2-3 giocatori, 12+ anni, 30 minuti, Tedesco",
+                  "price": "17,53 €",
+                  "url": "/dp/B0DE123456",
+                  "asin": "B0DE123456",
+                  "isPrime": false,
+                  "delivery": "Consegna GRATUITA ven, 27 nov"
+                },
+                {
+                  "title": "Asmodee - Star Wars: The Deckbuilding Game - Espansione Mandaloriani | Pack Fazione per Modalità Testa a Testa Gioco da Tavolo Star Wars - 2-3 Giocatori - 12+ Anni - 30 Minuti - Edizione Italiana",
+                  "price": "17,89 €",
+                  "url": "/dp/B0IT123456",
+                  "asin": "B0IT123456",
+                  "isPrime": true,
+                  "delivery": "Consegna GRATUITA domani, 23 nov"
+                },
+                {
+                  "title": "Asmodee - Star Wars: The Deckbuilding Game - Clone Wars Edition",
+                  "price": "34,90 €",
+                  "url": "/dp/B0CW123456",
+                  "asin": "B0CW123456",
+                  "isPrime": true
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = ScraperJsonParser.parse(
+            site = ExternalPriceSite.AMAZON_IT,
+            rawJsResult = raw,
+            searchQuery = "Star Wars Deckbuilding Game - Mandaloriani",
+        ) as ParsedScriptStatus.Done
+        val items = (parsed.result as ExternalScrapeResult.Success).items
+
+        assertEquals(2, items.size)
+        assertEquals("B0IT123456", items[0].asin)
+        assertEquals("Star Wars: The Deckbuilding Game – Mandaloriani (Edizione Italiana)", items[0].title)
+        assertEquals("B0DE123456", items[1].asin)
     }
 
     @Test
@@ -113,6 +188,54 @@ class ExternalSiteScraperParserTest {
         assertEquals("B0FSKP6GL4", item.asin)
         assertTrue(item.isPrime)
         assertEquals("domani 23 nov", item.deliveryOrAvailability)
+    }
+
+    @Test
+    fun `parse gestisce risultati DungeonDice e blocco Cloudflare`() {
+        val raw = """
+            {
+              "status": "ok",
+              "items": [
+                {
+                  "title": "Star Wars: The Deckbuilding Game - Mandaloriani - DungeonDice.it",
+                  "price": "17,99 €",
+                  "originalPrice": "19,99 €",
+                  "url": "/42991-star-wars-the-deckbuilding-game-mandaloriani.html",
+                  "delivery": "Disponibile"
+                },
+                {
+                  "title": "Star Wars: The Deckbuilding Game",
+                  "price": "34,99 €",
+                  "url": "/31000-star-wars-the-deckbuilding-game.html",
+                  "delivery": "Disponibile"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = ScraperJsonParser.parse(
+            site = ExternalPriceSite.DUNGEONDICE,
+            rawJsResult = raw,
+            searchQuery = "Star Wars Deckbuilding Game - Mandaloriani",
+        ) as ParsedScriptStatus.Done
+        val items = (parsed.result as ExternalScrapeResult.Success).items
+
+        assertEquals(1, items.size)
+        assertEquals("Star Wars: The Deckbuilding Game – Mandaloriani", items[0].title)
+        assertEquals("17,99 €", items[0].price)
+        assertEquals("19,99 €", items[0].originalPrice)
+        assertEquals("https://www.dungeondice.it/42991-star-wars-the-deckbuilding-game-mandaloriani.html", items[0].url)
+        assertEquals("Disponibile", items[0].deliveryOrAvailability)
+
+        val blocked = ScraperJsonParser.parse(
+            site = ExternalPriceSite.DUNGEONDICE,
+            rawJsResult = """{"status":"blocked","reason":"DungeonDice richiede verifica Cloudflare."}""",
+            searchQuery = "7 Wonders",
+        ) as ParsedScriptStatus.Done
+        assertEquals(
+            ExternalScrapeResult.Blocked("DungeonDice richiede verifica Cloudflare."),
+            blocked.result,
+        )
     }
 
     @Test

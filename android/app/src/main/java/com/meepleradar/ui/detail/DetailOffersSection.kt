@@ -291,6 +291,10 @@ internal fun ExternalPriceCompareCard(
     val sanitizedQuery = remember(title, fallbackTitle) {
         sanitizeSearchQuery(title, fallbackTitle)
     }
+    val alternateQuery = remember(title, fallbackTitle, sanitizedQuery) {
+        fallbackTitle?.let { sanitizeSearchQuery(it) }
+            ?.takeIf { it.isNotBlank() && !it.equals(sanitizedQuery, ignoreCase = true) }
+    }
     val links = remember(title, fallbackTitle) {
         buildExternalPriceSearchLinks(title, fallbackTitle)
     }
@@ -344,7 +348,7 @@ internal fun ExternalPriceCompareCard(
 
         panelStates[site] = ExternalSitePanelState.Loading
         scope.launch {
-            val result = scraper.scrape(site, searchUrl, sanitizedQuery)
+            val result = scraper.scrape(site, searchUrl, sanitizedQuery, alternateQuery)
             panelStates[site] = ExternalSitePanelState.Loaded(result)
             if (site == ExternalPriceSite.AMAZON_IT && result is ExternalScrapeResult.Success) {
                 val firstAsin = result.items.firstNotNullOfOrNull { it.asin }
@@ -371,7 +375,7 @@ internal fun ExternalPriceCompareCard(
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 text = "Confronta altrove",
@@ -382,13 +386,13 @@ internal fun ExternalPriceCompareCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 links.forEach { link ->
                     val isSelected = selectedSite == link.site
                     val accent = externalSiteAccentColor(link.site, isDark)
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(12.dp),
                         color = if (isSelected) {
                             accent.copy(alpha = if (isDark) 0.20f else 0.12f)
                         } else {
@@ -400,8 +404,8 @@ internal fun ExternalPriceCompareCard(
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
                             .semantics {
                                 contentDescription = "Cerca su ${link.site.label}"
                             }
@@ -1064,18 +1068,18 @@ private fun ExternalSiteBrandLogo(
             ) {
                 Text(
                     text = "a",
-                    fontSize = 22.sp,
-                    lineHeight = 20.sp,
+                    fontSize = 19.sp,
+                    lineHeight = 17.sp,
                     fontWeight = FontWeight.Black,
                     color = letterColor,
                 )
                 Canvas(
                     modifier = Modifier
-                        .width(28.dp)
-                        .height(10.dp),
+                        .width(24.dp)
+                        .height(8.dp),
                 ) {
                     val stroke = Stroke(
-                        width = 2.6.dp.toPx(),
+                        width = 2.2.dp.toPx(),
                         cap = StrokeCap.Round,
                         join = StrokeJoin.Round,
                     )
@@ -1104,7 +1108,7 @@ private fun ExternalSiteBrandLogo(
             val orange = Color(0xFFF97316)
             Box(
                 modifier = Modifier
-                    .size(34.dp)
+                    .size(29.dp)
                     .background(blue.copy(alpha = 0.14f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
@@ -1112,17 +1116,17 @@ private fun ExternalSiteBrandLogo(
                     drawCircle(
                         color = blue,
                         radius = size.minDimension * 0.42f,
-                        style = Stroke(width = 2.dp.toPx()),
+                        style = Stroke(width = 1.8.dp.toPx()),
                     )
                     drawCircle(
                         color = orange,
-                        radius = 3.2.dp.toPx(),
+                        radius = 2.8.dp.toPx(),
                         center = Offset(size.width * 0.78f, size.height * 0.24f),
                     )
                 }
                 Text(
                     text = "tp",
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = blue,
                 )
@@ -1134,23 +1138,57 @@ private fun ExternalSiteBrandLogo(
             val dotYellow = Color(0xFFFACC15)
             Box(
                 modifier = Modifier
-                    .size(34.dp)
-                    .background(badgeBg, RoundedCornerShape(10.dp)),
+                    .size(29.dp)
+                    .background(badgeBg, RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     drawCircle(
                         color = dotYellow,
-                        radius = 3.2.dp.toPx(),
+                        radius = 2.8.dp.toPx(),
                         center = Offset(size.width * 0.50f, size.height * 0.24f),
                     )
                 }
                 Text(
                     text = "ı",
-                    fontSize = 20.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Black,
                     color = Color.White,
-                    modifier = Modifier.padding(top = 6.dp),
+                    modifier = Modifier.padding(top = 5.dp),
+                )
+            }
+        }
+
+        ExternalPriceSite.DUNGEONDICE -> {
+            val diceRed = if (isDark) Color(0xFFEF4444) else Color(0xFFDC2626)
+            Box(
+                modifier = Modifier.size(30.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val hexPath = Path().apply {
+                        moveTo(w * 0.50f, h * 0.06f)
+                        lineTo(w * 0.90f, h * 0.28f)
+                        lineTo(w * 0.90f, h * 0.72f)
+                        lineTo(w * 0.50f, h * 0.94f)
+                        lineTo(w * 0.10f, h * 0.72f)
+                        lineTo(w * 0.10f, h * 0.28f)
+                        close()
+                    }
+                    drawPath(hexPath, color = diceRed.copy(alpha = 0.16f))
+                    drawPath(
+                        hexPath,
+                        color = diceRed,
+                        style = Stroke(width = 1.8.dp.toPx(), join = StrokeJoin.Round),
+                    )
+                }
+                Text(
+                    text = "DD",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    color = diceRed,
                 )
             }
         }
@@ -1161,6 +1199,7 @@ private fun externalSiteAccentColor(site: ExternalPriceSite, isDark: Boolean): C
     ExternalPriceSite.AMAZON_IT -> if (isDark) Color(0xFFFFB74D) else Color(0xFFD97706)
     ExternalPriceSite.TROVAPREZZI -> if (isDark) Color(0xFF60A5FA) else Color(0xFF1D63ED)
     ExternalPriceSite.IDEALO -> if (isDark) Color(0xFFFACC15) else Color(0xFF0A3761)
+    ExternalPriceSite.DUNGEONDICE -> if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
 }
 
 @Composable

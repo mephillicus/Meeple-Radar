@@ -7,6 +7,7 @@ enum class ExternalPriceSite(val label: String, val baseUrl: String) {
     AMAZON_IT("Amazon.it", "https://www.amazon.it"),
     TROVAPREZZI("Trovaprezzi", "https://www.trovaprezzi.it"),
     IDEALO("Idealo", "https://www.idealo.it"),
+    DUNGEONDICE("DungeonDice", "https://www.dungeondice.it"),
 }
 
 data class ExternalPriceSearchLink(
@@ -78,6 +79,10 @@ internal fun buildExternalPriceSearchLinks(
         ExternalPriceSearchLink(
             site = ExternalPriceSite.IDEALO,
             url = "https://www.idealo.it/risultati.html?q=$encodedQuery",
+        ),
+        ExternalPriceSearchLink(
+            site = ExternalPriceSite.DUNGEONDICE,
+            url = "https://www.dungeondice.it/ricerca?controller=search&s=$encodedQuery",
         ),
     )
 }
