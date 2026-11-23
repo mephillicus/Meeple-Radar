@@ -32,6 +32,14 @@ class ExternalPriceSearchTest {
     }
 
     @Test
+    fun `sanitizeSearchQuery normalizza apostrofi tipografici`() {
+        assertEquals(
+            "The Old King's Crown",
+            sanitizeSearchQuery("The Old King’s Crown"),
+        )
+    }
+
+    @Test
     fun `buildExternalPriceSearchLinks genera tutti i 4 siti affiancati con codifica corretta`() {
         val links = buildExternalPriceSearchLinks("7 Wonders Duel (Edizione Italiana)")
 
@@ -47,7 +55,7 @@ class ExternalPriceSearchTest {
 
         val bySite = links.associate { it.site to it.url }
         assertEquals(
-            "https://www.amazon.it/s?k=7+Wonders+Duel+gioco+da+tavolo",
+            "https://www.amazon.it/s?k=7+Wonders+Duel+gioco+da+tavolo&language=it_IT",
             bySite[ExternalPriceSite.AMAZON_IT],
         )
         assertEquals(
@@ -70,7 +78,7 @@ class ExternalPriceSearchTest {
         val amazonUrl = links.single { it.site == ExternalPriceSite.AMAZON_IT }.url
 
         assertEquals(
-            "https://www.amazon.it/s?k=Risiko+Gioco+da+Tavolo+Classico",
+            "https://www.amazon.it/s?k=Risiko+Gioco+da+Tavolo+Classico&language=it_IT",
             amazonUrl,
         )
         assertTrue(buildExternalPriceSearchLinks("   ").isEmpty())

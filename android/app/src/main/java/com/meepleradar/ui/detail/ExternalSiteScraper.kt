@@ -3,6 +3,7 @@ package com.meepleradar.ui.detail
 import android.annotation.SuppressLint
 import android.content.Context
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -101,13 +102,21 @@ internal object ScrapedOfferNormalizer {
     private val diacriticsRegex = Regex("""\p{Mn}+""")
     private val nonAlnumRegex = Regex("""[^a-z0-9]+""")
 
+    private const val BRAND_PATTERN =
+        """asmod[eé]e(?:\s+italia)?|cranio\s+creations|cranio|giochi\s+uniti|dv\s+games|dv\s+giochi|ghenos\s+games|ghenos|ms\s+edizioni|pendragon\s+game\s+studio|pendragon|ravensburger|hasbro\s+gaming|hasbro|mattel\s+games|mattel|clementoni|spin\s+master|kosmos|czech\s+games\s+edition|cge|stonemaier\s+games|fantasy\s+flight\s+games|ffg|z-man\s+games|days\s+of\s+wonder|repos\s+production|devir|studio\s+supernova|need\s+games|gateongames|little\s+rocket\s+games|oliphante|tesla\s+games|mancalamaro|lucky\s+duck\s+games|cmon|horrible\s+guild|red\s+glove|ergo\s+ludo|creosamente|djeco|smartgames|tactic|dal\s+negro|editrice\s+giochi|yas!\s*games|exploding\s+kittens|board\s*&\s*dice|lookout\s+games|pegasus\s+spiele|iello|libellud|space\s+cowboys|next\s+move\s+games|plan\s+b\s+games|portal\s+games|awaken\s+realms|cephalofair|leder\s+games|capstone\s+games|hans\s+im\s+gl[uü]ck|rio\s+grande\s+games|queen\s+games|amigo|schmidt|haba|eerie\s+idol\s+games|uplay\.it|dungeondice(?:\.it)?"""
+
     private val leadingBrandRegex = Regex(
-        pattern = """^(?:asmod[eé]e(?:\s+italia)?|cranio\s+creations|cranio|giochi\s+uniti|dv\s+games|dv\s+giochi|ghenos\s+games|ghenos|ms\s+edizioni|pendragon\s+game\s+studio|pendragon|ravensburger|hasbro\s+gaming|hasbro|mattel\s+games|mattel|clementoni|spin\s+master|kosmos|czech\s+games\s+edition|cge|stonemaier\s+games|fantasy\s+flight\s+games|ffg|z-man\s+games|days\s+of\s+wonder|repos\s+production|devir|studio\s+supernova|need\s+games|gateongames|little\s+rocket\s+games|oliphante|tesla\s+games|mancalamaro|lucky\s+duck\s+games|cmon|horrible\s+guild|red\s+glove|ergo\s+ludo|creosamente|djeco|smartgames|tactic|dal\s+negro|editrice\s+giochi|yas!\s*games|exploding\s+kittens|board\s*&\s*dice|lookout\s+games|pegasus\s+spiele|iello|libellud|space\s+cowboys|next\s+move\s+games|plan\s+b\s+games|portal\s+games|awaken\s+realms|cephalofair|leder\s+games|capstone\s+games|hans\s+im\s+gl[uü]ck|rio\s+grande\s+games|queen\s+games|amigo|schmidt|haba|uplay\.it)\b(?:\s*[-–—:|,]\s*|\s+)""",
+        pattern = """^(?:$BRAND_PATTERN)\b(?:\s*[-–—:|,]\s*|\s+)""",
         option = RegexOption.IGNORE_CASE,
     )
 
     private val trailingBrandRegex = Regex(
-        pattern = """\s*[-–—|,]\s*(?:by\s+)?(?:asmod[eé]e(?:\s+italia)?|cranio\s+creations|giochi\s+uniti|dv\s+games|ghenos\s+games|ms\s+edizioni|pendragon|ravensburger|hasbro|mattel|clementoni|devir|studio\s+supernova|mancalamaro|lucky\s+duck\s+games|repos\s+production|fantasy\s+flight\s+games|ffg|dungeondice(?:\.it)?)\s*$""",
+        pattern = """\s*[-–—|,]\s*(?:by\s+)?(?:$BRAND_PATTERN)\s*$""",
+        option = RegexOption.IGNORE_CASE,
+    )
+
+    private val brandSegmentRegex = Regex(
+        pattern = """^(?:by\s+)?(?:$BRAND_PATTERN)\s*$""",
         option = RegexOption.IGNORE_CASE,
     )
 
@@ -172,6 +181,10 @@ internal object ScrapedOfferNormalizer {
         "francese", "french", "francais",
     )
 
+    private val englishLanguageTokens = setOf(
+        "inglese", "english", "eng",
+    )
+
     private val italianLanguageTokens = setOf(
         "italiana", "italiano", "ita",
     )
@@ -181,19 +194,19 @@ internal object ScrapedOfferNormalizer {
     private val subtitleSeparatorRegex = Regex("""[:\-–—]""")
 
     private val releaseDateRegex = Regex(
-        pattern = """(?:in\s+uscita(?:\s+il)?|disponibile\s+dal|data\s+di\s+uscita:?)\s+([a-z0-9 ,]{3,28}?)(?=\s*(?:·|\.|oppure|consegna|prenota|$))""",
+        pattern = """(?:in\s+uscita(?:\s+il)?|disponibile\s+dal|data\s+di\s+uscita:?|esce\s+il|release\s+date:?|will\s+be\s+released\s+on)\s+([a-z0-9 ,/]{3,28}?)(?=\s*(?:·|\.|oppure|consegna|prenota|pre-?order|$))""",
         option = RegexOption.IGNORE_CASE,
     )
     private val fasterDeliveryRegex = Regex(
-        pattern = """consegna\s+pi[uù]\s+rapida\s+([a-z0-9 ,]{3,28}?)(?=\s*(?:·|\.|se\s+ordini|entro|con\b|sul\b|per\b|$))""",
+        pattern = """(?:consegna\s+pi[uù]\s+rapida|fastest\s+delivery)\s+([a-z0-9 ,]{3,28}?)(?=\s*(?:·|\.|se\s+ordini|entro|con\b|sul\b|per\b|order\s+within|$))""",
         option = RegexOption.IGNORE_CASE,
     )
     private val freeDeliveryRegex = Regex(
-        pattern = """consegna\s+gratuita\s+([a-z0-9 ,]{3,28}?)(?=\s*(?:·|\.|sul\s+tuo|per\s+ordini|se\s+ordini|oppure|entro|$))""",
+        pattern = """(?:consegna\s+gratuita|free\s+delivery)\s+([a-z0-9 ,]{3,28}?)(?=\s*(?:·|\.|sul\s+tuo|per\s+ordini|se\s+ordini|oppure|entro|on\s+your|or\s+fastest|$))""",
         option = RegexOption.IGNORE_CASE,
     )
     private val genericDeliveryRegex = Regex(
-        pattern = """consegna(?:\s+prevista)?\s+([a-z0-9 ,]{3,28}?)(?=\s*(?:·|\.|sul\s+tuo|per\s+ordini|se\s+ordini|oppure|entro|$))""",
+        pattern = """(?:consegna(?:\s+prevista)?|delivery)\s+([a-z0-9 ,]{3,28}?)(?=\s*(?:·|\.|sul\s+tuo|per\s+ordini|se\s+ordini|oppure|entro|on\s+your|or\s+fastest|$))""",
         option = RegexOption.IGNORE_CASE,
     )
     private val stockCountRegex = Regex(
@@ -234,19 +247,22 @@ internal object ScrapedOfferNormalizer {
         val segments = text.split(segmentSplitRegex)
         val keptSegments = mutableListOf<String>()
         for (rawSeg in segments) {
-            var seg = rawSeg.trim().trimEnd(',', ';', '-', '–', '—')
+            var seg = rawSeg.trim().trimEnd(',', ';', '-', '–', '—', '…')
+            if (seg.endsWith("...")) seg = seg.removeSuffix("...").trim()
             if (seg.isEmpty()) continue
-            if (keptSegments.isNotEmpty() && marketingSegmentRegex.matches(seg)) {
+            if (keptSegments.isNotEmpty() && (marketingSegmentRegex.matches(seg) || brandSegmentRegex.matches(seg))) {
                 continue
             }
-            seg = seg.replace(marketingInlinePrefixRegex, "").trim().trimEnd(',', ';')
+            seg = seg.replace(marketingInlinePrefixRegex, "").trim().trimEnd(',', ';', '…')
             if (keptSegments.isNotEmpty()) {
                 val withoutExpPrefix = seg.replace(leadingExpansionPrefixRegex, "").trim()
                 if (withoutExpPrefix.isNotEmpty()) {
                     seg = withoutExpPrefix
                 }
             }
-            if (seg.isNotEmpty() && !(keptSegments.isNotEmpty() && marketingSegmentRegex.matches(seg))) {
+            if (seg.isNotEmpty() &&
+                !(keptSegments.isNotEmpty() && (marketingSegmentRegex.matches(seg) || brandSegmentRegex.matches(seg)))
+            ) {
                 keptSegments += seg
             }
         }
@@ -292,6 +308,9 @@ internal object ScrapedOfferNormalizer {
         var score = extraCount * 10
         if (!hasPrice) score += 25
         if (rawTokens.any { it in foreignLanguageTokens }) score += 50
+        if (rawTokens.any { it in englishLanguageTokens } && rawTokens.none { it in italianLanguageTokens }) {
+            score += 15
+        }
         if (rawTokens.any { it in italianLanguageTokens }) score -= 15
         if (!matchesSingleQuery(searchQuery, cleanedTitle) && !fallbackQuery.isNullOrBlank()) {
             score += 5
@@ -410,6 +429,7 @@ internal object ScrapedOfferNormalizer {
         val hasFastOrPrimeHint = isPrime ||
             cleaned.contains("consegna più rapida", ignoreCase = true) ||
             cleaned.contains("consegna piu rapida", ignoreCase = true) ||
+            cleaned.contains("fastest delivery", ignoreCase = true) ||
             cleaned.contains("prime", ignoreCase = true)
 
         releaseDateRegex.find(cleaned)?.groupValues?.getOrNull(1)?.let { dateRaw ->
@@ -787,7 +807,15 @@ internal class WebViewExternalSiteScraper(context: Context) : ExternalSiteScrape
                 }
             }
 
-            webView.loadUrl(searchUrl)
+            if (site == ExternalPriceSite.AMAZON_IT) {
+                runCatching {
+                    val cm = CookieManager.getInstance()
+                    cm.setAcceptCookie(true)
+                    cm.setCookie(site.baseUrl, "lc-acbit=it_IT; path=/")
+                }
+            }
+
+            webView.loadUrl(searchUrl, mapOf("Accept-Language" to "it-IT,it;q=0.9"))
 
             val script = extractionScriptFor(site)
             var emptyPollsAfterLoad = 0
@@ -1072,18 +1100,42 @@ private val AMAZON_EXTRACTION_JS = """
           var origEl = c.querySelector('.a-price[data-a-strike="true"] .a-offscreen, .a-text-price .a-offscreen');
           var orig = origEl ? (origEl.innerText || origEl.textContent || '').trim() : '';
           if (orig === price) orig = '';
+          var releaseText = '';
+          var deliveryNodes = c.querySelectorAll('span, div');
+          for (var r = 0; r < deliveryNodes.length; r++) {
+            var dn = deliveryNodes[r];
+            if (dn.children && dn.children.length > 2) continue;
+            var rt = (dn.innerText || '').replace(/\s+/g, ' ').trim();
+            if (!rt || rt.length < 6 || rt.length > 120) continue;
+            if (/data\s+di\s+uscita|in\s+uscita|release\s+date|will\s+be\s+released|pre-?ordin/i.test(rt)) {
+              releaseText = rt;
+              break;
+            }
+          }
           var deliveryBlock = c.querySelector('[data-cy="delivery-recipe"]');
           var deliveryText = deliveryBlock ? (deliveryBlock.innerText || '').replace(/\s+/g, ' ').trim() : '';
           var isPrime = !!c.querySelector('i.a-icon-prime, svg[aria-label*="Prime"], [aria-label*="Prime"], .s-prime') ||
-            /consegna pi[uù] rapida/i.test(deliveryText);
+            /consegna pi[uù] rapida|fastest delivery/i.test(deliveryText);
+          if (releaseText && (!deliveryText || !/data\s+di\s+uscita|in\s+uscita|release\s+date/i.test(deliveryText))) {
+            deliveryText = releaseText;
+          }
           if (!deliveryText) {
             var deliveryParts = [];
-            var deliveryNodes = c.querySelectorAll('.a-color-base, .a-color-secondary, span[aria-label]');
-            for (var d = 0; d < deliveryNodes.length && deliveryParts.length < 2; d++) {
-              var t = (deliveryNodes[d].innerText || '').replace(/\s+/g, ' ').trim();
+            var fallbackNodes = c.querySelectorAll('.a-color-base, .a-color-secondary, span[aria-label]');
+            for (var d = 0; d < fallbackNodes.length && deliveryParts.length < 2; d++) {
+              var t = (fallbackNodes[d].innerText || '').replace(/\s+/g, ' ').trim();
               if (!t || t.length < 6 || t.length > 120) continue;
-              if (/consegna|in uscita|disponibil|preordin|spedito da amazon|solo \d+/i.test(t)) {
+              if (/consegna|free delivery|fastest delivery|spedito da amazon|solo \d+/i.test(t)) {
                 if (deliveryParts.indexOf(t) === -1) deliveryParts.push(t);
+              }
+            }
+            if (!deliveryParts.length) {
+              for (var d2 = 0; d2 < fallbackNodes.length && deliveryParts.length < 1; d2++) {
+                var t2 = (fallbackNodes[d2].innerText || '').replace(/\s+/g, ' ').trim();
+                if (!t2 || t2.length < 6 || t2.length > 120) continue;
+                if (/disponibil|in stock/i.test(t2)) {
+                  deliveryParts.push(t2);
+                }
               }
             }
             deliveryText = deliveryParts.join(' · ');
@@ -1210,33 +1262,72 @@ private val DUNGEONDICE_EXTRACTION_JS = """
           return JSON.stringify({ status: 'blocked', reason: 'DungeonDice richiede verifica Cloudflare.' });
         }
         var nodes = Array.prototype.slice.call(document.querySelectorAll(
-          'article.product-miniature, .product-miniature, .js-product-miniature, #js-product-list article, li.ajax_block_product'
+          'article.e-list-product, article.product-miniature, .js-product-miniature, .product-miniature, #js-product-list article, li.ajax_block_product'
         ));
         if (!nodes.length) {
           if (document.readyState !== 'complete') return JSON.stringify({ status: 'loading' });
           return JSON.stringify({ status: 'empty', reason: 'Nessun risultato trovato su DungeonDice.' });
         }
+        function cleanNodeText(el) {
+          if (!el) return '';
+          var clone = el.cloneNode(true);
+          var icons = clone.querySelectorAll('.material-icons-round, .material-icons, i, svg');
+          for (var k = 0; k < icons.length; k++) {
+            if (icons[k].parentNode) icons[k].parentNode.removeChild(icons[k]);
+          }
+          return (clone.innerText || clone.textContent || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+        }
         var items = [];
         for (var i = 0; i < nodes.length && items.length < 16; i++) {
           var n = nodes[i];
-          var titleEl = n.querySelector('.product-title a, h2.product-title a, h3.product-title a, a.product-name, h2 a, h3 a, .product-title');
-          var title = titleEl ? (titleEl.innerText || titleEl.getAttribute('title') || '').trim() : '';
+          var titleEl = n.querySelector('h3.e-list-product-title, .e-list-product-title, [itemprop="name"], .product-title a, h2.product-title a, h3.product-title a, a.product-name, h2 a, h3 a, .product-title');
+          var title = cleanNodeText(titleEl);
+          if (!title && titleEl) {
+            title = (titleEl.getAttribute('title') || '').replace(/^Acquista\s+/i, '').trim();
+          }
           if (!title) continue;
-          var linkEl = n.querySelector('.product-title a[href], a.thumbnail[href], a.product-name[href], a[href*=".html"]');
+          var langBadge = n.querySelector('.dd-mini-lingua');
+          var langTitle = langBadge ? (langBadge.getAttribute('title') || '').trim() : '';
+          if (langTitle && /inglese|english/i.test(langTitle) && !/inglese|english|\beng\b/i.test(title)) {
+            title = title + ' - Edizione Inglese';
+          }
+          var linkEl = n.querySelector('a[href*=".html"], a.product-thumbnail[href], .product-title a[href], a.thumbnail[href], a.product-name[href]');
           var url = linkEl ? (linkEl.getAttribute('href') || '') : '';
-          var priceEl = n.querySelector('.product-price-and-shipping .price, span.price, .price');
-          var price = priceEl ? (priceEl.innerText || '').trim() : '';
-          var origEl = n.querySelector('.regular-price, .old-price');
-          var orig = origEl ? (origEl.innerText || '').trim() : '';
+          var priceEl = n.querySelector('.e-list-product-price [itemprop="price"], [itemprop="price"], .product-price-and-shipping .price, span.price, .price');
+          var price = cleanNodeText(priceEl);
+          if (!price && priceEl && priceEl.getAttribute('content')) {
+            price = priceEl.getAttribute('content').replace('.', ',') + ' €';
+          }
+          var origEl = n.querySelector('.e-list-product-price .regular-price, .regular-price, .old-price');
+          var orig = cleanNodeText(origEl);
           if (orig === price) orig = '';
           var statusParts = [];
-          var statusNodes = n.querySelectorAll('.product-flags li, .product-flag, .product-availability, [class*="availability"], [class*="stock"], [class*="preorder"], .badge');
-          for (var s = 0; s < statusNodes.length && statusParts.length < 2; s++) {
-            var st = (statusNodes[s].innerText || '').replace(/\s+/g, ' ').trim();
-            if (!st || st.length > 40) continue;
-            if (/^-\d+%$|^\d+%$/.test(st)) continue;
-            if (/disponibil|preordin|in arrivo|esaurit|non disponibil|novit/i.test(st)) {
-              if (statusParts.indexOf(st) === -1) statusParts.push(st);
+          var releaseEl = n.querySelector('.e-list-product-release, [class*="release"]');
+          var releaseText = cleanNodeText(releaseEl);
+          var cartBtn = n.querySelector('button[data-button-action="add-to-cart"], .e-list-product-cart button, button[type="submit"]');
+          var cartText = cleanNodeText(cartBtn);
+          if (/preordin/i.test(cartText)) {
+            statusParts.push('Preordine');
+          }
+          if (releaseText && releaseText.length <= 45) {
+            if (statusParts.indexOf(releaseText) === -1) statusParts.push(releaseText);
+          }
+          if (!statusParts.length) {
+            if (/aggiungi|acquista/i.test(cartText)) {
+              statusParts.push('Disponibile');
+            } else if (/avvisami|esaurit|non disponibil/i.test(cartText)) {
+              statusParts.push('Non disponibile');
+            }
+          }
+          if (!statusParts.length) {
+            var statusNodes = n.querySelectorAll('.product-flags li, .product-flag, .product-availability, [class*="availability"], [class*="stock"], [class*="preorder"], .badge');
+            for (var s = 0; s < statusNodes.length && statusParts.length < 2; s++) {
+              var st = cleanNodeText(statusNodes[s]);
+              if (!st || st.length > 40) continue;
+              if (/^-\d+%$|^\d+%$/.test(st)) continue;
+              if (/disponibil|preordin|in arrivo|esce il|esaurit|non disponibil|novit/i.test(st)) {
+                if (statusParts.indexOf(st) === -1) statusParts.push(st);
+              }
             }
           }
           items.push({

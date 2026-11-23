@@ -1160,7 +1160,8 @@ private fun ExternalSiteBrandLogo(
         }
 
         ExternalPriceSite.DUNGEONDICE -> {
-            val diceRed = if (isDark) Color(0xFFEF4444) else Color(0xFFDC2626)
+            val ddGreen = if (isDark) Color(0xFF4ADE80) else Color(0xFF56A832)
+            val ddOrange = if (isDark) Color(0xFFFB923C) else Color(0xFFEA7A1E)
             Box(
                 modifier = Modifier.size(30.dp),
                 contentAlignment = Alignment.Center,
@@ -1168,28 +1169,60 @@ private fun ExternalSiteBrandLogo(
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
                     val h = size.height
-                    val hexPath = Path().apply {
+                    val leftHalf = Path().apply {
+                        moveTo(w * 0.50f, h * 0.06f)
+                        lineTo(w * 0.10f, h * 0.28f)
+                        lineTo(w * 0.10f, h * 0.72f)
+                        lineTo(w * 0.50f, h * 0.94f)
+                        close()
+                    }
+                    val rightHalf = Path().apply {
                         moveTo(w * 0.50f, h * 0.06f)
                         lineTo(w * 0.90f, h * 0.28f)
                         lineTo(w * 0.90f, h * 0.72f)
                         lineTo(w * 0.50f, h * 0.94f)
-                        lineTo(w * 0.10f, h * 0.72f)
-                        lineTo(w * 0.10f, h * 0.28f)
                         close()
                     }
-                    drawPath(hexPath, color = diceRed.copy(alpha = 0.16f))
-                    drawPath(
-                        hexPath,
-                        color = diceRed,
-                        style = Stroke(width = 1.8.dp.toPx(), join = StrokeJoin.Round),
+                    drawPath(leftHalf, color = ddGreen.copy(alpha = 0.16f))
+                    drawPath(rightHalf, color = ddOrange.copy(alpha = 0.16f))
+
+                    val leftOutline = Path().apply {
+                        moveTo(w * 0.50f, h * 0.06f)
+                        lineTo(w * 0.10f, h * 0.28f)
+                        lineTo(w * 0.10f, h * 0.72f)
+                        lineTo(w * 0.50f, h * 0.94f)
+                    }
+                    val rightOutline = Path().apply {
+                        moveTo(w * 0.50f, h * 0.06f)
+                        lineTo(w * 0.90f, h * 0.28f)
+                        lineTo(w * 0.90f, h * 0.72f)
+                        lineTo(w * 0.50f, h * 0.94f)
+                    }
+                    val stroke = Stroke(
+                        width = 1.8.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round,
+                    )
+                    drawPath(leftOutline, color = ddGreen, style = stroke)
+                    drawPath(rightOutline, color = ddOrange, style = stroke)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "D",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        color = ddGreen,
+                    )
+                    Text(
+                        text = "D",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        color = ddOrange,
                     )
                 }
-                Text(
-                    text = "DD",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                    color = diceRed,
-                )
             }
         }
     }
@@ -1199,7 +1232,7 @@ private fun externalSiteAccentColor(site: ExternalPriceSite, isDark: Boolean): C
     ExternalPriceSite.AMAZON_IT -> if (isDark) Color(0xFFFFB74D) else Color(0xFFD97706)
     ExternalPriceSite.TROVAPREZZI -> if (isDark) Color(0xFF60A5FA) else Color(0xFF1D63ED)
     ExternalPriceSite.IDEALO -> if (isDark) Color(0xFFFACC15) else Color(0xFF0A3761)
-    ExternalPriceSite.DUNGEONDICE -> if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
+    ExternalPriceSite.DUNGEONDICE -> if (isDark) Color(0xFF4ADE80) else Color(0xFF56A832)
 }
 
 @Composable

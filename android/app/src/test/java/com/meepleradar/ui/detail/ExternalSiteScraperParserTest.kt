@@ -239,6 +239,93 @@ class ExternalSiteScraperParserTest {
     }
 
     @Test
+    fun `parse Amazon rimuove editore nel segmento centrale e riconosce Data di uscita per preordini`() {
+        val raw = """
+            {
+              "status": "ok",
+              "items": [
+                {
+                  "title": "The Old King's Crown",
+                  "price": "71,99 €",
+                  "url": "/dp/B0H4QS7V58",
+                  "asin": "B0H4QS7V58",
+                  "isPrime": false,
+                  "delivery": "Disponibile"
+                },
+                {
+                  "title": "The Old King's Crown - Ghenos Games - Gioco da Tavolo - Edizione Italiana",
+                  "price": "84,90 €",
+                  "url": "/dp/B0IT999999",
+                  "asin": "B0IT999999",
+                  "isPrime": false,
+                  "delivery": "Data di uscita: 27 novembre 2026."
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = ScraperJsonParser.parse(
+            site = ExternalPriceSite.AMAZON_IT,
+            rawJsResult = raw,
+            searchQuery = "The Old King's Crown",
+        ) as ParsedScriptStatus.Done
+        val items = (parsed.result as ExternalScrapeResult.Success).items
+
+        assertEquals(2, items.size)
+        assertEquals("B0IT999999", items[0].asin)
+        assertEquals("The Old King's Crown – Edizione Italiana", items[0].title)
+        assertEquals("84,90 €", items[0].price)
+        assertEquals("In uscita · 27 novembre 2026", items[0].deliveryOrAvailability)
+        assertEquals("B0H4QS7V58", items[1].asin)
+
+        val enPreorder = ScrapedOfferNormalizer.formatDeliverySummary(
+            site = ExternalPriceSite.AMAZON_IT,
+            rawDelivery = "Release date: November 27, 2026.",
+            isPrime = false,
+        )
+        assertEquals("In uscita · November 27 2026", enPreorder.text)
+    }
+
+    @Test
+    fun `parse DungeonDice ordina preordine ITA sopra Edizione Inglese scontata`() {
+        val raw = """
+            {
+              "status": "ok",
+              "items": [
+                {
+                  "title": "The Old King's Crown - Edizione Inglese",
+                  "price": "59,49 €",
+                  "originalPrice": "84,99 €",
+                  "url": "https://www.dungeondice.it/39892-the-old-king-s-crown-edizione-inglese.html",
+                  "delivery": "Disponibile"
+                },
+                {
+                  "title": "The Old King's Crown",
+                  "price": "84,99 €",
+                  "url": "https://www.dungeondice.it/44825-the-old-king-s-crown.html",
+                  "delivery": "Preordine · Esce il 04/12/2026"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = ScraperJsonParser.parse(
+            site = ExternalPriceSite.DUNGEONDICE,
+            rawJsResult = raw,
+            searchQuery = "The Old King's Crown",
+        ) as ParsedScriptStatus.Done
+        val items = (parsed.result as ExternalScrapeResult.Success).items
+
+        assertEquals(2, items.size)
+        assertEquals("The Old King's Crown", items[0].title)
+        assertEquals("84,99 €", items[0].price)
+        assertEquals("Preordine · Esce il 04/12/2026", items[0].deliveryOrAvailability)
+        assertEquals("The Old King's Crown – Edizione Inglese", items[1].title)
+        assertEquals("59,49 €", items[1].price)
+        assertEquals("84,99 €", items[1].originalPrice)
+    }
+
+    @Test
     fun `parsa payload bloccato da anti-bot`() {
         val raw = """{"status":"blocked","reason":"Trovaprezzi richiede verifica Cloudflare."}"""
 

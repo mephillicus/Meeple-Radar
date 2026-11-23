@@ -35,6 +35,9 @@ private val MULTIPLE_SPACES_REGEX = Regex("""\s+""")
 
 internal fun sanitizeSearchQuery(rawTitle: String, fallbackTitle: String? = null): String {
     val base = rawTitle.trim().ifBlank { fallbackTitle?.trim().orEmpty() }
+        .replace('’', '\'')
+        .replace('‘', '\'')
+        .replace('`', '\'')
     if (base.isBlank()) return ""
 
     var cleaned = base
@@ -70,7 +73,7 @@ internal fun buildExternalPriceSearchLinks(
     return listOf(
         ExternalPriceSearchLink(
             site = ExternalPriceSite.AMAZON_IT,
-            url = "https://www.amazon.it/s?k=$encodedAmazonQuery",
+            url = "https://www.amazon.it/s?k=$encodedAmazonQuery&language=it_IT",
         ),
         ExternalPriceSearchLink(
             site = ExternalPriceSite.TROVAPREZZI,
