@@ -53,12 +53,12 @@ fun buildIncomingItems(
             }
         }
         .map { (key, groupListings) ->
-            val game = groupListings.firstNotNullOfOrNull { listing ->
-                listing.gameId?.let { games[it] }
-            }
             val product = groupListings.firstNotNullOfOrNull { listing ->
                 listing.productId?.let { products[it] }
             }
+            val game = groupListings.firstNotNullOfOrNull { listing ->
+                listing.gameId?.let { games[it] }
+            } ?: product?.gameId?.let { games[it] }
             val futureStoreReleaseDate = groupListings.mapNotNull { it.releaseDate }.filter { !it.isBefore(today) }.minOrNull()
             val releaseDate = futureStoreReleaseDate
                 ?: groupListings.mapNotNull { it.releaseDate }.minOrNull()
@@ -89,6 +89,9 @@ fun buildIncomingItems(
                     listing.productId?.let { add("product:$it") }
                     add("listing:${listing.id}")
                 }
+                product?.id?.takeIf { it > 0 }?.let { add("product:$it") }
+                product?.gameId?.takeIf { it > 0 }?.let { add("game:$it") }
+                game?.id?.takeIf { it > 0 }?.let { add("game:$it") }
                 game?.bggId?.takeIf { it > 0 }?.let { add("bgg:$it") }
             }.distinct()
             val preferredListing = groupListings.firstOrNull {

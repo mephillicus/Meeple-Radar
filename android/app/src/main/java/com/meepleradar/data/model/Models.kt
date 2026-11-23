@@ -102,14 +102,17 @@ data class UserAlert(
     val dedupeKey: String,
     val readAt: String? = null,
     val createdAt: String,
+    val bggId: Int? = null,
 ) {
     val isUnread: Boolean get() = readAt.isNullOrBlank()
 
-    fun itemKeyOrNull(): String? = when {
-        productId != null -> "product:$productId"
-        gameId != null -> "game:$gameId"
-        listingId != null -> "listing:$listingId"
-        else -> null
+    fun itemKeyOrNull(): String? = candidateItemKeys().firstOrNull()
+
+    fun candidateItemKeys(): List<String> = buildList {
+        productId?.takeIf { it > 0 }?.let { add("product:$it") }
+        gameId?.takeIf { it > 0 }?.let { add("game:$it") }
+        listingId?.takeIf { it > 0 }?.let { add("listing:$it") }
+        bggId?.takeIf { it > 0 }?.let { add("bgg:$it") }
     }
 }
 

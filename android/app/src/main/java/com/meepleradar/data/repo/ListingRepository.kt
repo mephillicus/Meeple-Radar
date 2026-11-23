@@ -160,6 +160,9 @@ class DefaultListingRepository(
     @Volatile
     private var cachedPriceDropsAtMs: Long = 0L
 
+    @Volatile
+    private var cachedUserAlerts: List<UserAlert> = emptyList()
+
     override fun unreadAlertCountFlow(): StateFlow<Int> = _unreadAlertCount.asStateFlow()
 
     override fun catalogRevisionFlow(): StateFlow<Long> = _catalogRevision.asStateFlow()
@@ -273,14 +276,43 @@ class DefaultListingRepository(
     }
 
     override suspend fun findItem(key: String, today: LocalDate): IncomingItem? {
+        val matchingAlert = cachedUserAlerts.firstOrNull { key in it.candidateItemKeys() }
+        val keysToTry = buildList {
+            add(key)
+            matchingAlert?.candidateItemKeys()?.forEach { add(it) }
+        }.distinct()
+
         val cached = withContext(Dispatchers.IO) { localCacheStore?.load() }
+        if (cached != null) {
+            resolveItemFromDatabase(cached, keysToTry, matchingAlert)?.let { return it }
+        }
+
+        val loaded = incoming(today, includeUndated = true, includePriceless = true, forceRefresh = false)
+        keysToTry.firstNotNullOfOrNull { candidateKey ->
+            loaded.firstOrNull { it.key == candidateKey }
+                ?: loaded.firstOrNull { candidateKey in it.bggSelectionKeys }
+        }?.let { return it }
+
+        val refreshedCached = withContext(Dispatchers.IO) { localCacheStore?.load() }
+        if (refreshedCached != null) {
+            resolveItemFromDatabase(refreshedCached, keysToTry, matchingAlert)?.let { return it }
+        }
+
+        return matchingAlert?.let { alert -> buildFallbackAlertItem(alert, key) }
+    }
+
+    private suspend fun resolveItemFromDatabase(
+        db: CachedDatabase,
+        keysToTry: List<String>,
+        matchingAlert: UserAlert?,
+    ): IncomingItem? {
         val allItems = withContext(Dispatchers.Default) {
-            val games = cached?.games?.associateBy { it.id } ?: emptyMap()
-            val sources = cached?.sources?.associateBy { it.id } ?: emptyMap()
-            val products = cached?.products?.associateBy { it.id } ?: emptyMap()
+            val games = db.games.associateBy { it.id }
+            val sources = db.sources.associateBy { it.id }
+            val products = db.products.associateBy { it.id }
 
             buildIncomingItems(
-                listings = cached?.listings.orEmpty(),
+                listings = db.listings,
                 games = games,
                 sources = sources,
                 ignoredKeys = emptySet(),
@@ -293,44 +325,157 @@ class DefaultListingRepository(
             )
         }
 
-        val directMatch = allItems.firstOrNull { it.key == key }
-        if (directMatch != null) return directMatch
+        for (candidateKey in keysToTry) {
+            val directMatch = allItems.firstOrNull { it.key == candidateKey }
+                ?: allItems.firstOrNull { candidateKey in it.bggSelectionKeys }
+            if (directMatch != null) return directMatch
 
-        if (key.startsWith("bgg:")) {
-            val bggId = key.removePrefix("bgg:").toIntOrNull()
-            if (bggId != null) {
-                val matchByBggId = allItems.firstOrNull { it.game?.bggId == bggId || it.bggSelectionKeys.contains(key) }
-                if (matchByBggId != null) return matchByBggId
+            if (candidateKey.startsWith("game:")) {
+                val gameId = candidateKey.removePrefix("game:").toLongOrNull()
+                if (gameId != null) {
+                    val matchByGame = allItems.firstOrNull { it.game?.id == gameId }
+                    if (matchByGame != null) return matchByGame
 
-                val savedGame = cached?.games?.firstOrNull { it.bggId == bggId }
-                val bggGame = bggCollectionStore?.load()?.games?.firstOrNull { it.bggId == bggId }
-                val name = savedGame?.name ?: bggGame?.name ?: "Gioco BGG #$bggId"
-                val imageUrl = savedGame?.imageUrl ?: bggGame?.imageUrl
-                val gameToUse = savedGame ?: Game(
-                    id = 0L,
-                    name = name,
-                    kind = bggGame?.kind ?: "base",
-                    bggId = bggId,
-                    bggRating = bggGame?.rating,
-                    bggRank = null,
-                    imageUrl = imageUrl,
-                )
-                val matchingProduct = savedGame?.let { g -> cached.products.firstOrNull { it.gameId == g.id } }
-                return IncomingItem(
-                    key = key,
-                    title = matchingProduct?.title ?: name,
-                    imageUrl = matchingProduct?.imageUrl ?: imageUrl,
-                    releaseDate = matchingProduct?.releaseDate,
-                    kind = if (matchingProduct?.releaseDate != null) com.meepleradar.data.model.ItemKind.UPCOMING else com.meepleradar.data.model.ItemKind.NEW_UNDATED,
-                    game = gameToUse,
-                    offers = emptyList(),
-                    customDescription = matchingProduct?.description ?: savedGame?.description,
-                )
+                    val savedGame = db.games.firstOrNull { it.id == gameId }
+                    if (savedGame != null) {
+                        val matchByBgg = savedGame.bggId?.takeIf { it > 0 }?.let { bggId ->
+                            allItems.firstOrNull { it.game?.bggId == bggId || "bgg:$bggId" in it.bggSelectionKeys }
+                        }
+                        if (matchByBgg != null) return matchByBgg
+
+                        val matchingProduct = db.products.firstOrNull { it.gameId == savedGame.id }
+                        val selectionKeys = listOfNotNull(
+                            candidateKey,
+                            matchingProduct?.id?.let { "product:$it" },
+                            savedGame.bggId?.takeIf { it > 0 }?.let { "bgg:$it" },
+                        ).distinct()
+                        val title = matchingProduct?.title?.takeIf(String::isNotBlank) ?: savedGame.name
+                        return IncomingItem(
+                            key = matchingProduct?.id?.let { "product:$it" } ?: candidateKey,
+                            title = title,
+                            imageUrl = savedGame.imageUrl ?: matchingProduct?.imageUrl,
+                            releaseDate = matchingProduct?.releaseDate,
+                            kind = if (matchingProduct?.releaseDate != null) com.meepleradar.data.model.ItemKind.UPCOMING else com.meepleradar.data.model.ItemKind.NEW_UNDATED,
+                            game = savedGame,
+                            offers = emptyList(),
+                            customDescription = matchingProduct?.description?.takeIf(String::isNotBlank) ?: savedGame.description,
+                            lookupTitle = title,
+                            bggSelectionKeys = selectionKeys,
+                        )
+                    }
+                }
+            }
+
+            if (candidateKey.startsWith("product:")) {
+                val productId = candidateKey.removePrefix("product:").toLongOrNull()
+                if (productId != null) {
+                    val savedProduct = db.products.firstOrNull { it.id == productId }
+                    if (savedProduct != null) {
+                        val savedGame = savedProduct.gameId?.let { gId -> db.games.firstOrNull { it.id == gId } }
+                        val matchByGame = savedGame?.let { g ->
+                            allItems.firstOrNull {
+                                it.game?.id == g.id ||
+                                    (g.bggId != null && g.bggId > 0 && (it.game?.bggId == g.bggId || "bgg:${g.bggId}" in it.bggSelectionKeys))
+                            }
+                        }
+                        if (matchByGame != null) return matchByGame
+
+                        val title = savedProduct.title?.takeIf(String::isNotBlank) ?: savedGame?.name ?: "Prodotto #$productId"
+                        val selectionKeys = listOfNotNull(
+                            candidateKey,
+                            savedGame?.id?.takeIf { it > 0 }?.let { "game:$it" },
+                            savedGame?.bggId?.takeIf { it > 0 }?.let { "bgg:$it" },
+                        ).distinct()
+                        return IncomingItem(
+                            key = candidateKey,
+                            title = title,
+                            imageUrl = savedGame?.imageUrl ?: savedProduct.imageUrl,
+                            releaseDate = savedProduct.releaseDate,
+                            kind = if (savedProduct.releaseDate != null) com.meepleradar.data.model.ItemKind.UPCOMING else com.meepleradar.data.model.ItemKind.NEW_UNDATED,
+                            game = savedGame,
+                            offers = emptyList(),
+                            customDescription = savedProduct.description?.takeIf(String::isNotBlank) ?: savedGame?.description,
+                            lookupTitle = title,
+                            bggSelectionKeys = selectionKeys,
+                        )
+                    }
+                }
+            }
+
+            if (candidateKey.startsWith("bgg:")) {
+                val bggId = candidateKey.removePrefix("bgg:").toIntOrNull()
+                if (bggId != null) {
+                    val matchByBggId = allItems.firstOrNull { it.game?.bggId == bggId || it.bggSelectionKeys.contains(candidateKey) }
+                    if (matchByBggId != null) return matchByBggId
+
+                    val savedGame = db.games.firstOrNull { it.bggId == bggId }
+                    val bggGame = bggCollectionStore?.load()?.games?.firstOrNull { it.bggId == bggId }
+                    val name = savedGame?.name ?: bggGame?.name ?: matchingAlert?.title ?: "Gioco BGG #$bggId"
+                    val imageUrl = savedGame?.imageUrl ?: bggGame?.imageUrl
+                    val gameToUse = savedGame ?: Game(
+                        id = 0L,
+                        name = name,
+                        kind = bggGame?.kind ?: "base",
+                        bggId = bggId,
+                        bggRating = bggGame?.rating,
+                        bggRank = null,
+                        imageUrl = imageUrl,
+                    )
+                    val matchingProduct = savedGame?.let { g -> db.products.firstOrNull { it.gameId == g.id } }
+                    return IncomingItem(
+                        key = candidateKey,
+                        title = matchingProduct?.title ?: name,
+                        imageUrl = matchingProduct?.imageUrl ?: imageUrl,
+                        releaseDate = matchingProduct?.releaseDate,
+                        kind = if (matchingProduct?.releaseDate != null) com.meepleradar.data.model.ItemKind.UPCOMING else com.meepleradar.data.model.ItemKind.NEW_UNDATED,
+                        game = gameToUse,
+                        offers = emptyList(),
+                        customDescription = matchingProduct?.description ?: savedGame?.description,
+                    )
+                }
             }
         }
 
-        return incoming(today, includeUndated = true, includePriceless = true, forceRefresh = false).firstOrNull { it.key == key }
+        if (matchingAlert != null) {
+            val alertTitleNorm = normalizeLookupTitle(matchingAlert.title)
+            if (alertTitleNorm.isNotEmpty()) {
+                val byTitle = allItems.firstOrNull {
+                    normalizeLookupTitle(it.title) == alertTitleNorm ||
+                        normalizeLookupTitle(it.game?.name.orEmpty()) == alertTitleNorm
+                }
+                if (byTitle != null) return byTitle
+            }
+        }
+
+        return null
     }
+
+    private fun buildFallbackAlertItem(alert: UserAlert, fallbackKey: String): IncomingItem {
+        val kind = if (alert.alertType == com.meepleradar.data.model.UserAlertType.NEW_EXPANSION) "expansion" else "base"
+        val game = Game(
+            id = alert.gameId ?: 0L,
+            name = alert.title,
+            kind = kind,
+            bggId = alert.bggId,
+            bggRating = null,
+            bggRank = null,
+            imageUrl = null,
+        )
+        return IncomingItem(
+            key = fallbackKey,
+            title = alert.title,
+            imageUrl = null,
+            releaseDate = null,
+            kind = com.meepleradar.data.model.ItemKind.NEW_UNDATED,
+            game = game,
+            offers = emptyList(),
+            lookupTitle = alert.title,
+            bggSelectionKeys = (listOf(fallbackKey) + alert.candidateItemKeys()).distinct(),
+        )
+    }
+
+    private fun normalizeLookupTitle(value: String): String =
+        value.lowercase(java.util.Locale.ROOT).replace(Regex("[^\\p{L}\\p{N}]+"), "")
 
     override suspend fun incoming(
         today: LocalDate,
@@ -420,7 +565,9 @@ class DefaultListingRepository(
                 "listing" -> UserActionRow(gameId = null, listingId = id, action = action)
                 "product" -> UserActionRow(gameId = null, listingId = null, action = action, productId = id)
                 "bgg" -> {
-                    val savedGame = localCacheStore?.load()?.games?.firstOrNull { it.bggId == id.toInt() }
+                    val savedGame = withContext(Dispatchers.IO) {
+                        localCacheStore?.load()?.games?.firstOrNull { it.bggId == id.toInt() }
+                    }
                     UserActionRow(gameId = savedGame?.id, listingId = null, action = action)
                 }
                 else -> throw IllegalArgumentException("chiave non valida: $key")
@@ -438,7 +585,8 @@ class DefaultListingRepository(
         }
 
         if (action == Action.IGNORED || action == Action.UNFAVORITED) {
-            localCacheStore?.load()?.let { cached ->
+            val cached = withContext(Dispatchers.IO) { localCacheStore?.load() }
+            if (cached != null) {
                 val actionsMap = latestActionsByKey(cachedUserActions.orEmpty())
                 val ignoredKeys = actionsMap.filterValues { it == Action.IGNORED }.keys
                 syncDerivedFlows(cached, ignoredKeys, LocalDate.now())
@@ -512,44 +660,48 @@ class DefaultListingRepository(
         if (gameId != null) {
             val title = details.primaryName ?: details.englishName ?: fallbackTitle
             val kind = if (details.expands.isNotEmpty()) "expansion" else "base"
-            val existing = localCacheStore?.load()?.games?.firstOrNull { it.id == gameId }
-            val linkedGame = Game(
-                id = gameId,
-                name = title,
-                kind = kind,
-                bggId = details.bggId,
-                bggRating = details.bggRating,
-                bggRank = details.bggRank,
-                imageUrl = details.imageUrl,
-                description = existing?.description ?: details.description,
-            )
-            val linkedProduct = productId?.let { pId ->
-                Product(
-                    id = pId,
-                    title = title,
+            val updatedDb = withContext(Dispatchers.IO) {
+                val existing = localCacheStore?.load()?.games?.firstOrNull { it.id == gameId }
+                val linkedGame = Game(
+                    id = gameId,
+                    name = title,
+                    kind = kind,
+                    bggId = details.bggId,
+                    bggRating = details.bggRating,
+                    bggRank = details.bggRank,
                     imageUrl = details.imageUrl,
-                    releaseDate = null,
-                    description = details.description,
-                    url = "https://boardgamegeek.com/boardgame/${details.bggId}",
-                    gameId = gameId,
+                    description = existing?.description ?: details.description,
                 )
-            }
-            val cachedDb = localCacheStore?.load()
-            val newProducts = if (linkedProduct != null && cachedDb != null) {
-                cachedDb.products.filterNot { it.id == productId } + linkedProduct
-            } else cachedDb?.products.orEmpty()
+                val linkedProduct = productId?.let { pId ->
+                    Product(
+                        id = pId,
+                        title = title,
+                        imageUrl = details.imageUrl,
+                        releaseDate = null,
+                        description = details.description,
+                        url = "https://boardgamegeek.com/boardgame/${details.bggId}",
+                        gameId = gameId,
+                    )
+                }
+                val cachedDb = localCacheStore?.load()
+                val newProducts = if (linkedProduct != null && cachedDb != null) {
+                    cachedDb.products.filterNot { it.id == productId } + linkedProduct
+                } else cachedDb?.products.orEmpty()
 
-            localCacheStore?.upsertGame(linkedGame, listingId.takeIf { it > 0 }, productId)
-            if (linkedProduct != null && cachedDb != null) {
-                val (updated, _) = localCacheStore.saveIfChanged(
-                    newListings = localCacheStore.load()?.listings.orEmpty(),
-                    newGames = localCacheStore.load()?.games.orEmpty(),
-                    newSources = cachedDb.sources,
-                    newProducts = newProducts,
-                )
-                syncDerivedFlows(updated, currentIgnoredKeys(), LocalDate.now())
-            } else {
-                localCacheStore?.load()?.let { syncDerivedFlows(it, currentIgnoredKeys(), LocalDate.now()) }
+                localCacheStore?.upsertGame(linkedGame, listingId.takeIf { it > 0 }, productId)
+                if (linkedProduct != null && cachedDb != null) {
+                    localCacheStore.saveIfChanged(
+                        newListings = localCacheStore.load()?.listings.orEmpty(),
+                        newGames = localCacheStore.load()?.games.orEmpty(),
+                        newSources = cachedDb.sources,
+                        newProducts = newProducts,
+                    ).first
+                } else {
+                    localCacheStore?.load()
+                }
+            }
+            if (updatedDb != null) {
+                syncDerivedFlows(updatedDb, currentIgnoredKeys(), LocalDate.now())
             }
             if (listingId <= 0) refreshListingsAfterBggWrite()
             notifyCatalogUpdated()
@@ -558,15 +710,18 @@ class DefaultListingRepository(
     }
 
     private suspend fun refreshListingsAfterBggWrite() {
-        val cached = localCacheStore?.load() ?: return
+        val store = localCacheStore ?: return
+        val cached = withContext(Dispatchers.IO) { store.load() } ?: return
         val refreshedListings = api.listings()
         val refreshedIds = refreshedListings.mapTo(mutableSetOf()) { it.id }
-        val (updated, _) = localCacheStore.saveIfChanged(
-            newListings = cached.listings.filterNot { it.id in refreshedIds } + refreshedListings,
-            newGames = cached.games,
-            newSources = cached.sources,
-            newProducts = cached.products,
-        )
+        val (updated, _) = withContext(Dispatchers.IO) {
+            store.saveIfChanged(
+                newListings = cached.listings.filterNot { it.id in refreshedIds } + refreshedListings,
+                newGames = cached.games,
+                newSources = cached.sources,
+                newProducts = cached.products,
+            )
+        }
         syncDerivedFlows(updated, currentIgnoredKeys(), LocalDate.now())
     }
 
@@ -577,18 +732,21 @@ class DefaultListingRepository(
         description: String?,
     ) {
         api.updateGameBggStats(bggId, bggRating, bggRank, description)
-        localCacheStore?.load()?.let { cached ->
-            cached.games.firstOrNull { it.bggId == bggId }?.let { game ->
-                localCacheStore.upsertGame(
-                    game.copy(
-                        bggRating = bggRating ?: game.bggRating,
-                        bggRank = bggRank ?: game.bggRank,
-                        description = description?.takeIf(String::isNotBlank) ?: game.description,
-                    ),
-                )
-                localCacheStore.load()?.let { syncDerivedFlows(it, currentIgnoredKeys(), LocalDate.now()) }
-                notifyCatalogUpdated()
-            }
+        val updatedDb = withContext(Dispatchers.IO) {
+            val cached = localCacheStore?.load() ?: return@withContext null
+            val game = cached.games.firstOrNull { it.bggId == bggId } ?: return@withContext null
+            localCacheStore.upsertGame(
+                game.copy(
+                    bggRating = bggRating ?: game.bggRating,
+                    bggRank = bggRank ?: game.bggRank,
+                    description = description?.takeIf(String::isNotBlank) ?: game.description,
+                ),
+            )
+            localCacheStore.load()
+        }
+        if (updatedDb != null) {
+            syncDerivedFlows(updatedDb, currentIgnoredKeys(), LocalDate.now())
+            notifyCatalogUpdated()
         }
     }
 
@@ -604,18 +762,22 @@ class DefaultListingRepository(
     ): Long? {
         val gameId = api.saveGameToDatabase(item, selectedListingIdsToLink)
         if (gameId != null && gameId > 0) {
-            val existing = localCacheStore?.load()?.games?.firstOrNull { it.id == gameId }
-            val linkedGame = Game(
-                id = gameId,
-                name = item.game?.name ?: item.title,
-                kind = item.game?.kind ?: "base",
-                bggId = item.game?.bggId,
-                bggRating = item.game?.bggRating,
-                bggRank = item.game?.bggRank,
-                imageUrl = item.game?.imageUrl ?: item.imageUrl,
-                description = existing?.description ?: item.game?.description,
-            )
-            localCacheStore?.upsertGame(linkedGame, item.key.removePrefix("listing:").toLongOrNull())
+            val listingId = item.key.removePrefix("listing:").toLongOrNull()
+                ?: item.bggSelectionKeys.firstNotNullOfOrNull { it.removePrefix("listing:").toLongOrNull() }
+            withContext(Dispatchers.IO) {
+                val existing = localCacheStore?.load()?.games?.firstOrNull { it.id == gameId }
+                val linkedGame = Game(
+                    id = gameId,
+                    name = item.game?.name ?: item.title,
+                    kind = item.game?.kind ?: "base",
+                    bggId = item.game?.bggId,
+                    bggRating = item.game?.bggRating,
+                    bggRank = item.game?.bggRank,
+                    imageUrl = item.game?.imageUrl ?: item.imageUrl,
+                    description = existing?.description ?: item.game?.description,
+                )
+                localCacheStore?.upsertGame(linkedGame, listingId)
+            }
             refreshListingsAfterBggWrite()
             notifyCatalogUpdated()
         }
@@ -647,6 +809,7 @@ class DefaultListingRepository(
 
     override suspend fun userAlerts(): List<UserAlert> {
         val alerts = runCatching { api.userAlerts() }.getOrDefault(emptyList())
+        cachedUserAlerts = alerts
         _unreadAlertCount.value = alerts.count { it.isUnread }
         return alerts
     }

@@ -775,4 +775,54 @@ class DefaultListingRepositoryTest {
         repository.setAction("game:5", Action.FAVORITE)
         assertEquals(3L, repository.catalogRevisionFlow().value)
     }
+
+    @Test
+    fun `findItem risolve chiavi secondarie game e listing raggruppate sotto product e alert espansioni senza listing`() = runTest {
+        val groupedListing = listing(id = 101, gameId = 50, title = "One Card Dungeon").copy(productId = 300L)
+        val product = Product(
+            id = 300L,
+            title = "One Card Dungeon",
+            imageUrl = null,
+            releaseDate = null,
+            gameId = 50L,
+        )
+        val baseGame = game(50, "One Card Dungeon").copy(bggId = 319263)
+        val expansionWithoutListings = game(51, "One Card Dungeon: M'Guf-yn Returns").copy(
+            kind = "expansion",
+            bggId = 370591,
+        )
+
+        val api = object : SupabaseApi {
+            override suspend fun listings(): List<Listing> = listOf(groupedListing)
+            override suspend fun games(): List<Game> = listOf(baseGame, expansionWithoutListings)
+            override suspend fun sources(): List<Source> = listOf(Source("s1", "Store Uno"))
+            override suspend fun products(): List<Product> = listOf(product)
+            override suspend fun userActions(): List<UserActionRow> = emptyList()
+            override suspend fun insertAction(row: UserActionRow) = Unit
+            override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? = null
+        }
+
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(groupedListing),
+                games = listOf(baseGame, expansionWithoutListings),
+                sources = listOf(Source("s1", "Store Uno")),
+                products = listOf(product),
+            ),
+        )
+        val repository = DefaultListingRepository(api, FakeFavoriteStore(), cache)
+
+        // L'item ha key primaria "product:300", ma un avviso può cercarlo con "game:50" o "listing:101"
+        val byGameKey = repository.findItem("game:50", today)
+        assertEquals("product:300", byGameKey?.key)
+        assertEquals("One Card Dungeon", byGameKey?.title)
+
+        val byListingKey = repository.findItem("listing:101", today)
+        assertEquals("product:300", byListingKey?.key)
+
+        // Espansione presente in tabella games ma senza listing nei negozi
+        val expansionItem = repository.findItem("game:51", today)
+        assertEquals("One Card Dungeon: M'Guf-yn Returns", expansionItem?.title)
+        assertEquals(370591, expansionItem?.game?.bggId)
+    }
 }

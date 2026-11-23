@@ -868,6 +868,8 @@ private data class UserAlertDto(
             "new_expansion" -> UserAlertType.NEW_EXPANSION
             else -> return null
         }
+        val bggId = payload?.get("bggId").asIntOrNull()
+            ?: payload?.get("bgg_id").asIntOrNull()
         return UserAlert(
             id = id,
             alertType = type,
@@ -879,6 +881,7 @@ private data class UserAlertDto(
             dedupeKey = dedupeKey,
             readAt = readAt,
             createdAt = createdAt,
+            bggId = bggId,
         )
     }
 }
@@ -888,13 +891,19 @@ private fun formatAlertDetail(type: UserAlertType, payload: JsonObject?): String
     val message = payload["message"].asStringOrNull()
     if (!message.isNullOrBlank()) return message
     val store = payload["source_name"].asStringOrNull()
+        ?: payload["sourceName"].asStringOrNull()
         ?: payload["store"].asStringOrNull()
         ?: payload["source_id"].asStringOrNull()
+        ?: payload["sourceId"].asStringOrNull()
     return when (type) {
         UserAlertType.PRICE_DROP -> {
             val prev = payload["previous_price"].asDoubleOrNull()
-            val curr = payload["current_price"].asDoubleOrNull() ?: payload["price"].asDoubleOrNull()
+                ?: payload["previousPrice"].asDoubleOrNull()
+            val curr = payload["current_price"].asDoubleOrNull()
+                ?: payload["currentPrice"].asDoubleOrNull()
+                ?: payload["price"].asDoubleOrNull()
             val pct = payload["price_drop_pct"].asDoubleOrNull()
+                ?: payload["dropPct"].asDoubleOrNull()
             buildString {
                 if (!store.isNullOrBlank()) append("$store: ")
                 if (prev != null && curr != null) {
@@ -912,6 +921,7 @@ private fun formatAlertDetail(type: UserAlertType, payload: JsonObject?): String
         }
         UserAlertType.NEW_EXPANSION -> {
             val baseName = payload["base_game_name"].asStringOrNull()
+                ?: payload["baseGameName"].asStringOrNull()
             when {
                 !baseName.isNullOrBlank() && !store.isNullOrBlank() -> "Espansione per $baseName su $store"
                 !baseName.isNullOrBlank() -> "Nuova espansione per $baseName"
@@ -925,5 +935,11 @@ private fun formatAlertDetail(type: UserAlertType, payload: JsonObject?): String
 private fun JsonElement?.asStringOrNull(): String? = when (this) {
     null, is JsonNull -> null
     is JsonPrimitive -> content.takeIf(String::isNotBlank)
+    else -> null
+}
+
+private fun JsonElement?.asIntOrNull(): Int? = when (this) {
+    null, is JsonNull -> null
+    is JsonPrimitive -> content.toIntOrNull()
     else -> null
 }
