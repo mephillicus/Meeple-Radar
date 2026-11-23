@@ -125,6 +125,15 @@ function resolveRoundupReleaseDate(dateRaw: string, datePublished: string): stri
   return iso
 }
 
+function extractArticleSlug(loc: string): string {
+  try {
+    const segments = new URL(loc).pathname.split('/').filter(Boolean)
+    return segments[segments.length - 1] ?? loc
+  } catch {
+    return loc
+  }
+}
+
 export async function fetchRoundupProducts(
   source: Source,
   gameFinder?: GameFinder,
@@ -136,27 +145,30 @@ export async function fetchRoundupProducts(
   const entries = await fetchSitemapEntries(`${source.baseUrl}/post-sitemap.xml`, fetchText)
   if (entries.length === 0) throw new Error('sitemap roundups non raggiungibile')
   const candidates = newestFirst(filterRoundupEntries(entries))
-  console.error(`[roundups] ${entries.length} voci sitemap, ${candidates.length} articoli candidati`)
+  console.error(
+    `[House of Games - articoli mensili] ${entries.length} voci sitemap, ${candidates.length} articoli mensili da leggere`,
+  )
 
   const products: RawProduct[] = []
   for (const [i, entry] of candidates.entries()) {
     // Pacing tra i fetch articolo: mai prima del primo candidato.
     if (i > 0) await sleep(ARTICLE_DELAY_MS)
+    const slug = extractArticleSlug(entry.loc)
     try {
       const html = await fetchText(entry.loc)
       if (html === null) {
-        console.error(`[roundups] ${entry.loc}: pagina non scaricata, articolo saltato`)
+        console.error(`[House of Games - articoli mensili] "${slug}": pagina non scaricata, articolo saltato`)
         continue
       }
       // Floor autorevole: anche un lastmod recente non salva un articolo vecchio.
       const datePublished = extractDatePublished(html)
       if (datePublished === null || datePublished < ROUNDUP_FLOOR_DATE) {
-        console.error(`[roundups] ${entry.loc}: datePublished assente o pre-floor, articolo saltato`)
+        console.error(`[House of Games - articoli mensili] "${slug}": data pubblicazione assente o pre-floor, articolo saltato`)
         continue
       }
       const games = parseRoundupArticle(html)
       if (games.length === 0) {
-        console.error(`[roundups] ${entry.loc}: nessun gioco nell'articolo, articolo saltato`)
+        console.error(`[House of Games - articoli mensili] "${slug}": nessun gioco trovato, articolo saltato`)
         continue
       }
       const mapped: RawProduct[] = []
@@ -186,16 +198,16 @@ export async function fetchRoundupProducts(
             }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
-            console.error(`[roundups] gameFinder: ${msg}`)
+            console.error(`[House of Games - articoli mensili] gameFinder: ${msg}`)
           }
         }
         mapped.push(product)
       }
       products.push(...mapped)
-      console.error(`[roundups] ${mapped.length} giochi dall'articolo`)
+      console.error(`[House of Games - articoli mensili] "${slug}": ${games.length} uscite estratte`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[roundups] ${entry.loc}: ${msg}, articolo saltato`)
+      console.error(`[House of Games - articoli mensili] "${slug}": ${msg}, articolo saltato`)
     }
   }
 
@@ -208,6 +220,6 @@ export async function fetchRoundupProducts(
     seen.add(key)
     return true
   })
-  console.error(`[roundups] ${deduped.length} prodotti`)
+  console.error(`[House of Games - articoli mensili] totale ${deduped.length} uscite estratte`)
   return deduped
 }

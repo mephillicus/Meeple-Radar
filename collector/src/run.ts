@@ -16,6 +16,13 @@ import { createCurlFetcher } from './adapters/headless/fetch.js'
 import { defaultFetch, USER_AGENT, type HttpClient } from './adapters/http.js'
 import { runHealthCheck, type HealthReport } from './health.js'
 import { runAlerts, type AlertsReport } from './alerts.js'
+import {
+  formatSourceProgressLine,
+  renderCollectSummaryMarkdown,
+  renderConsoleSummary,
+  sourceKindLabel,
+  writeGithubStepSummary,
+} from './report-ui.js'
 
 export type Adapter = (source: Source) => Promise<RawProduct[]>
 
@@ -109,6 +116,7 @@ export async function runCollector(args: {
   const zeroed: string[] = []
   const metrics: Record<string, SourceMetrics> = {}
   const startedAt = nowFn()
+  const runStartMs = Date.now()
   const cutoff = retentionCutoff(startedAt)
   let purged: RunReport['purged']
   try {
@@ -119,11 +127,19 @@ export async function runCollector(args: {
     failures['purgeStale'] = err instanceof Error ? err.message : String(err)
   }
 
+  const enabledSources = sources.filter((s) => s.enabled)
+  const workerCount = Math.min(Math.max(1, concurrency), enabledSources.length)
+  const inProgress = new Set<string>()
+  let completedCount = 0
+
+  console.error(`🎲 MEEPLE RADAR COLLECT — ${enabledSources.length} fonti (concorrenza: ${workerCount})`)
+
   const processSource = async (source: Source): Promise<void> => {
     const sourceStartMs = Date.now()
     let discoveredCount = 0
     let extractedCount = 0
-    console.error(`[collect] starting source ${source.id} (${source.kind})...`)
+    inProgress.add(source.id)
+    console.error(`▶️ Avvio: ${source.id} (${sourceKindLabel(source.kind)})`)
     try {
       const raw = await adapters[source.kind](source)
       discoveredCount = raw.length
@@ -136,6 +152,10 @@ export async function runCollector(args: {
         .filter((p) => !isNonBoardgameTitle(p.row.title))
         .filter((p) => p.row.releaseDate === null || p.row.releaseDate >= cutoff)
 
+      // extractedCount conta gli elementi validi estratti dopo i filtri, prima
+      // dell'eventuale skip DB di roundups che altrimenti lo azzererebbe ai re-run.
+      extractedCount = paired.length
+
       if (source.kind === 'roundups' && paired.length > 0) {
         const existingByTitle = await fetchListingsMap(
           store,
@@ -147,7 +167,6 @@ export async function runCollector(args: {
         })
       }
 
-      extractedCount = paired.length
       await store.upsertListings(paired.map((p) => p.row))
 
       if (paired.length > 0) {
@@ -294,19 +313,32 @@ export async function runCollector(args: {
       failures[source.id] = err instanceof Error ? err.message : String(err)
     } finally {
       const durationMs = Math.max(0, Date.now() - sourceStartMs)
+      const httpErrorsByStatus = getSourceHttpErrors ? { ...getSourceHttpErrors(source.id) } : {}
       metrics[source.id] = {
         discoveredCount,
         extractedCount,
         durationMs,
-        httpErrorsByStatus: getSourceHttpErrors ? { ...getSourceHttpErrors(source.id) } : {},
+        httpErrorsByStatus,
       }
-      console.error(`[collect] source ${source.id} done in ${durationMs}ms (${extractedCount} items)`)
+      inProgress.delete(source.id)
+      completedCount += 1
+      console.error(
+        formatSourceProgressLine({
+          index: completedCount,
+          total: enabledSources.length,
+          source,
+          discovered: discoveredCount,
+          extracted: extractedCount,
+          durationMs,
+          failed: failures[source.id],
+          httpErrors: httpErrorsByStatus,
+          inProgress: Array.from(inProgress),
+        }),
+      )
     }
   }
 
-  const enabledSources = sources.filter((s) => s.enabled)
   let nextIndex = 0
-  const workerCount = Math.min(Math.max(1, concurrency), enabledSources.length)
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
       while (nextIndex < enabledSources.length) {
@@ -421,6 +453,8 @@ export async function runCollector(args: {
 
   report.ok = Object.keys(failures).length === 0
   await store.logRun(report.ok, report, startedAt)
+  const totalDurationMs = Math.max(0, Date.now() - runStartMs)
+  console.error(renderConsoleSummary(report, sources, totalDurationMs))
   return report
 }
 
@@ -485,6 +519,7 @@ export async function main(): Promise<number> {
     })
   }
 
+  const mainStartMs = Date.now()
   const report = await runCollector({
     sources: SOURCES,
     adapters,
@@ -492,7 +527,15 @@ export async function main(): Promise<number> {
     getSourceHttpErrors: (sourceId) => httpErrorsBySource.get(sourceId) ?? {},
     enrich,
   })
-  console.log(JSON.stringify(report, null, 2))
+  const totalDurationMs = Math.max(0, Date.now() - mainStartMs)
+  writeGithubStepSummary(renderCollectSummaryMarkdown(report, SOURCES, totalDurationMs))
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    console.log('::group::Report JSON completo')
+    console.log(JSON.stringify(report, null, 2))
+    console.log('::endgroup::')
+  } else {
+    console.log(JSON.stringify(report, null, 2))
+  }
   return report.ok ? 0 : 1
 }
 

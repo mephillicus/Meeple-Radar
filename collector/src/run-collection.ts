@@ -6,6 +6,7 @@ import {
   runAutoFavorites,
   type CollectionItem,
 } from './bgg/collection.js'
+import { renderCollectionSyncSummaryMarkdown, writeGithubStepSummary } from './report-ui.js'
 
 export type CollectionSyncReport = {
   ok: boolean
@@ -67,6 +68,14 @@ export async function main(env: NodeJS.ProcessEnv = process.env): Promise<number
     token: env.BGG_API_TOKEN?.trim() || undefined,
     store,
   })
+  if (report.ok) {
+    console.error(
+      `🎲 Collection sync completata: ${report.synced} giochi sincronizzati (${report.owned} posseduti, ${report.wishlist} wishlist, ${report.autofavorite.inserted} preferiti aggiunti)`,
+    )
+  } else {
+    console.error(`❌ Collection sync fallita: ${report.error ?? 'errore sconosciuto'}`)
+  }
+  writeGithubStepSummary(renderCollectionSyncSummaryMarkdown(report))
   console.log(JSON.stringify(report, null, 2))
   return report.ok ? 0 : 1
 }

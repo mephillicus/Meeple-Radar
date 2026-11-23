@@ -28,6 +28,8 @@ test('re-run roundups: un gioco già raccolto dalla stessa fonte non viene più 
   expect(store.fillProductPublisher).not.toHaveBeenCalled()
   expect(store.markSourceScanned).toHaveBeenCalledWith('houseofgames')
   expect(report.perSource['houseofgames']).toBe(1)
+  expect(report.metrics?.['houseofgames']?.discoveredCount).toBe(1)
+  expect(report.metrics?.['houseofgames']?.extractedCount).toBe(1)
 })
 
 test('roundups: payload editoriale senza prezzo/data, fill publisher e release_date write-once', async () => {
