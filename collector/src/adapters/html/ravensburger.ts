@@ -9,7 +9,7 @@ const NON_BOARDGAME_RE = /(?:puzzle|gravitrax|brio|creart|tiptoi|treno|binari|fe
 // ravensburger.it è dietro Cloudflare: il fetch di Node riceve 403 ("Just a moment…"),
 // quindi la fonte è `headless` (fetchText fornito dal fetcher dedicato: curl → reader Jina AI).
 function isProductUrl(url: string): boolean {
-  if (!url.includes('/products/')) return false
+  if (!url.includes('/products/games/')) return false
   if (NON_BOARDGAME_RE.test(url)) return false
   const last = url.split('/').pop() ?? ''
   return /-\d+$/.test(last)

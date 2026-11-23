@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
   areTitlesNearDuplicate,
+  isNonBoardgameBrand,
   isNonBoardgameTitle,
   normalizeAvailability,
   toPrice,
@@ -400,5 +401,108 @@ test('isNonBoardgameTitle preserva organizer, upgrade/monete e tutti i giochi da
   for (const title of keptTitles) {
     expect(isNonBoardgameTitle(title), `expected kept boardgame/accessory: ${title}`).toBe(false)
     expect(isNonBoardgameProduct(title), `expected delegate false: ${title}`).toBe(false)
+  }
+})
+
+test('isNonBoardgameBrand filtra brand non-boardgame e gestisce eccezioni LEGO', () => {
+  const blockedBrands = [
+    'PANTASY',
+    '  pantasy  ',
+    'Lemax',
+    'Funko',
+    'Jakks Pacific',
+    'Ultimate Guard',
+    'Gamegenic',
+    'Dragon Shield',
+    'Ultra Pro',
+    'Chessex',
+    'Q-Workshop',
+    'WizKids',
+    'Vallejo',
+    'The Army Painter',
+    'Army Painter',
+    'Citadel',
+    'Paladone',
+    'ABYstyle',
+    'Banpresto',
+    'Noble Collection',
+    'Nemesis Now',
+    'NECA',
+  ]
+  for (const brand of blockedBrands) {
+    expect(isNonBoardgameBrand(brand, 'Prodotto Qualsiasi'), `expected blocked brand: ${brand}`).toBe(true)
+  }
+
+  // LEGO: bloccato di default, consentito per giochi da tavolo LEGO
+  expect(isNonBoardgameBrand('LEGO', 'LEGO Star Wars Millennium Falcon 75375')).toBe(true)
+  expect(isNonBoardgameBrand('LEGO®', undefined)).toBe(true)
+  expect(isNonBoardgameBrand('LEGO', 'Monkey Palace - Un Gioco da Tavolo LEGO®')).toBe(false)
+  expect(isNonBoardgameBrand('LEGO', "LEGO NINJAGO: Destiny's Bounty Adventures")).toBe(false)
+  expect(isNonBoardgameBrand('LEGO', 'LEGO Creationary Board Game')).toBe(false)
+
+  // Editori reali e valori vuoti/assenti
+  for (const publisher of ['Salt & Pepper Games', 'Asmodee', 'Cranio Creations', 'dV Giochi', 'Ravensburger', '', '   ', null, undefined]) {
+    expect(isNonBoardgameBrand(publisher, 'Un Gioco Da Tavolo'), `expected allowed brand: ${String(publisher)}`).toBe(false)
+  }
+})
+
+test('isNonBoardgameTitle filtra Pantasy, Lemax, LEGO, nuovi pattern puzzle/dadi preservando giochi protetti', () => {
+  const blockedTitles = [
+    // Pantasy / modular bricks
+    'PAN85001 Retro TV',
+    'PAN86228A Bakery',
+    'Pantasy Steampunk Clocktower',
+    'Edifici Modulari Piazza Centrale',
+    // Lemax
+    "Lemax Santa's Wonderland",
+    'Adattatore 4.5V 3 Uscite',
+    'Alimentatore 4.5V Nero',
+    // LEGO construction sets
+    'LEGO Star Wars Millennium Falcon 75375',
+    'LEGO Technic Porsche 911',
+    // Puzzles
+    '3D Puzzle Torre Eiffel',
+    'Puzzle Ball Mondo 540',
+    'Puzzle Ravensburger 1000',
+    'Maxi Puzzle Frozen',
+    '1000 Puzzle Mappa Antica',
+    'Puzzle 500p Venezia',
+    'GeoPuzzle Europa',
+    // Dice accessories
+    'Set 7D20 Trasparente',
+    '36d6 Chessex Blu',
+    'Dice Case Pelle',
+    'Dice Pack 10 Dadi',
+    'Dice Tube Nero',
+    'Dice Tin Metallo',
+    'Cofanetto With 12 Dice',
+    'Adventure Dice Pack',
+    'Set di Dadi Metallici',
+    'Set Dadi Blu',
+  ]
+  for (const title of blockedTitles) {
+    expect(isNonBoardgameTitle(title), `expected non-boardgame: ${title}`).toBe(true)
+  }
+
+  const protectedTitles = [
+    // LEGO board games
+    'Monkey Palace - Un Gioco da Tavolo LEGO®',
+    "LEGO NINJAGO: Destiny's Bounty Adventures",
+    'LEGO Creationary Board Game',
+    // Puzzle-named board games
+    'The Voynich Puzzle',
+    'My Puzzle Adventure',
+    // Dice-named board games
+    'Dadi & Affetta',
+    'Dice Forge',
+    'Dice Town',
+    'Dice Throne',
+    'Dicequest',
+    'Sushi Dice',
+    '7 Wonders Dice',
+    'Dice Scrapers',
+  ]
+  for (const title of protectedTitles) {
+    expect(isNonBoardgameTitle(title), `expected kept boardgame: ${title}`).toBe(false)
   }
 })

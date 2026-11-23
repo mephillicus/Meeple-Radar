@@ -158,3 +158,46 @@ test('strips common trailing site-name suffixes from og:title fallback', () => {
     expect(extractProduct(html, 'https://e.com/p')?.title).toBe(expected)
   }
 })
+
+test('filters non-boardgame JSON-LD brands without falling back to Open Graph', () => {
+  const pantasy = `<html><head><meta property="og:title" content="Retro Bakery" /></head><body>
+    <script type="application/ld+json">{"@type":"Product","name":"Retro Bakery PAN85001","brand":"PANTASY","offers":{"@type":"Offer","price":"59.90","priceCurrency":"EUR"}}</script>
+  </body></html>`
+  expect(extractProduct(pantasy, 'https://www.uplay.it/it/retro-bakery.html')).toBeNull()
+
+  const lemax = `<html><head><meta property="og:title" content="Christmas Village" /></head><body>
+    <script type="application/ld+json">{"@type":"Product","name":"Christmas Village","brand":{"@type":"Brand","name":"Lemax"},"offers":{"@type":"Offer","price":"39.90","priceCurrency":"EUR"}}</script>
+  </body></html>`
+  expect(extractProduct(lemax, 'https://www.uplay.it/it/christmas-village.html')).toBeNull()
+
+  const legoSet = `<html><head><meta property="og:title" content="LEGO Millennium Falcon" /></head><body>
+    <script type="application/ld+json">{"@type":"Product","name":"LEGO Star Wars Millennium Falcon 75375","brand":{"@type":"Brand","name":"LEGO"},"offers":{"@type":"Offer","price":"84.99","priceCurrency":"EUR"}}</script>
+  </body></html>`
+  expect(extractProduct(legoSet, 'https://www.uplay.it/it/lego-falcon.html')).toBeNull()
+})
+
+test('populates publisher from JSON-LD brand for real board games and allowed LEGO board games', () => {
+  const saltPepper = `<script type="application/ld+json">{"@type":"Product","name":"Conservas","brand":{"@type":"Brand","name":"  Salt & Pepper Games  "},"offers":{"@type":"Offer","price":"24.90","priceCurrency":"EUR"}}</script>`
+  expect(extractProduct(saltPepper, 'https://www.uplay.it/it/conservas.html')).toMatchObject({
+    title: 'Conservas',
+    publisher: 'Salt & Pepper Games',
+  })
+
+  const stringBrand = `<script type="application/ld+json">{"@type":"Product","name":"Barrage","brand":"Cranio Creations","offers":{"@type":"Offer","price":"74.90","priceCurrency":"EUR"}}</script>`
+  expect(extractProduct(stringBrand, 'https://www.uplay.it/it/barrage.html')).toMatchObject({
+    title: 'Barrage',
+    publisher: 'Cranio Creations',
+  })
+
+  const monkeyPalace = `<script type="application/ld+json">{"@type":"Product","name":"Monkey Palace - Un Gioco da Tavolo LEGO®","brand":{"@type":"Brand","name":"LEGO"},"offers":{"@type":"Offer","price":"39.90","priceCurrency":"EUR"}}</script>`
+  expect(extractProduct(monkeyPalace, 'https://www.uplay.it/it/monkey-palace.html')).toMatchObject({
+    title: 'Monkey Palace - Un Gioco da Tavolo LEGO®',
+    publisher: 'LEGO',
+  })
+
+  const destinysBounty = `<script type="application/ld+json">{"@type":"Product","name":"LEGO NINJAGO: Destiny's Bounty Adventures","brand":"LEGO","offers":{"@type":"Offer","price":"34.90","priceCurrency":"EUR"}}</script>`
+  expect(extractProduct(destinysBounty, 'https://www.uplay.it/it/destinys-bounty.html')).toMatchObject({
+    title: "LEGO NINJAGO: Destiny's Bounty Adventures",
+    publisher: 'LEGO',
+  })
+})

@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio'
 import { RawProductSchema, type RawProduct } from '../../types.js'
+import { isNonBoardgameBrand } from '../../normalize.js'
 
 type JsonObject = Record<string, unknown>
 
@@ -73,6 +74,7 @@ export function buildProduct(fields: {
   image?: string
   description?: string
   releaseDate?: string
+  publisher?: string
 }): RawProduct | null {
   const title = fields.title?.trim()
   if (!title) return null
@@ -86,6 +88,7 @@ export function buildProduct(fields: {
     imageUrl: fields.image,
     descriptionRaw: fields.description,
     releaseDateRaw: fields.releaseDate,
+    publisher: fields.publisher,
   })
   return parsed.success ? parsed.data : null
 }
@@ -132,7 +135,25 @@ function offerFields(offers: unknown): {
   }
 }
 
-function fromJsonLd($: cheerio.CheerioAPI, pageUrl: string, canonical?: string): RawProduct | null {
+function extractBrandName(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const name = extractBrandName(item)
+      if (name) return name
+    }
+    return undefined
+  }
+  if (value && typeof value === 'object') return asString((value as JsonObject).name)
+  return undefined
+}
+
+type JsonLdResult =
+  | { status: 'product'; product: RawProduct }
+  | { status: 'rejected' }
+  | null
+
+function fromJsonLd($: cheerio.CheerioAPI, pageUrl: string, canonical?: string): JsonLdResult {
   for (const el of $('script[type="application/ld+json"]').toArray()) {
     let data: unknown
     try {
@@ -143,10 +164,13 @@ function fromJsonLd($: cheerio.CheerioAPI, pageUrl: string, canonical?: string):
     const nodes: JsonObject[] = []
     collectProductNodes(data, nodes)
     for (const node of nodes) {
+      const title = asString(node.name)
+      const brandName = extractBrandName(node.brand)
+      if (isNonBoardgameBrand(brandName, title)) return { status: 'rejected' }
       const offer = offerFields(node.offers)
       const url = validHttpUrl(canonical) ?? validHttpUrl(pageUrl) ?? validHttpUrl(offer.url) ?? pageUrl
       const product = buildProduct({
-        title: asString(node.name),
+        title,
         url,
         externalId: asString(node.sku) ?? asString(node.productID),
         price: offer.price,
@@ -155,8 +179,9 @@ function fromJsonLd($: cheerio.CheerioAPI, pageUrl: string, canonical?: string):
         image: pickImage(node.image),
         description: asString(node.description),
         releaseDate: asString(node.releaseDate) ?? offer.availabilityStarts,
+        publisher: brandName,
       })
-      if (product) return product
+      if (product) return { status: 'product', product }
     }
   }
   return null
@@ -184,7 +209,9 @@ function fromOpenGraph($: cheerio.CheerioAPI, pageUrl: string, canonical?: strin
 export function extractProduct(html: string, pageUrl: string): RawProduct | null {
   const $ = cheerio.load(html)
   const canonical = asString($('link[rel="canonical"]').attr('href'))
-  const product = fromJsonLd($, pageUrl, canonical) ?? fromOpenGraph($, pageUrl, canonical)
+  const jsonLd = fromJsonLd($, pageUrl, canonical)
+  if (jsonLd?.status === 'rejected') return null
+  const product = jsonLd?.product ?? fromOpenGraph($, pageUrl, canonical)
   if (!product) return null
   const descEl = $('div[itemprop="description"]').first().clone()
   descEl.find('script, style, noscript').remove()

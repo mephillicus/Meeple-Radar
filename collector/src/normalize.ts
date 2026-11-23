@@ -281,6 +281,42 @@ export function normalizeAvailability(
   return mapped
 }
 
+const LEGO_BOARDGAME_ALLOW_RE =
+  /gioco\s+da\s+tavolo|board\s+game|monkey\s+palace|destiny['’]?s\s+bounty/i
+
+const NON_BOARDGAME_BRAND_PATTERNS: readonly RegExp[] = [
+  /\bpantasy\b/i,
+  /\blemax\b/i,
+  /\bfunko\b/i,
+  /\bjakks\s+pacific\b/i,
+  /\bultimate\s+guard\b/i,
+  /\bgamegenic\b/i,
+  /\bdragon\s+shield\b/i,
+  /\bultra\s+pro\b/i,
+  /\bchessex\b/i,
+  /\bq-workshop\b/i,
+  /\bwizkids\b/i,
+  /\bvallejo\b/i,
+  /\b(?:the\s+)?army\s+painter\b/i,
+  /\bcitadel\b/i,
+  /\bpaladone\b/i,
+  /\babystyle\b/i,
+  /\bbanpresto\b/i,
+  /\bnoble\s+collection\b/i,
+  /\bnemesis\s+now\b/i,
+  /\bneca\b/i,
+]
+
+export function isNonBoardgameBrand(brand?: string | null, title?: string | null): boolean {
+  if (!brand) return false
+  const cleaned = brand.trim()
+  if (!cleaned) return false
+  if (/\blego\b/i.test(cleaned)) {
+    return !(title ? LEGO_BOARDGAME_ALLOW_RE.test(title) : false)
+  }
+  return NON_BOARDGAME_BRAND_PATTERNS.some((re) => re.test(cleaned))
+}
+
 const NON_BOARDGAME_PATTERNS: readonly RegExp[] = [
   // Merch & Gadget: abbigliamento e accessori
   /\bt-?shirt\b/i,
@@ -320,9 +356,21 @@ const NON_BOARDGAME_PATTERNS: readonly RegExp[] = [
   /\bplay\s*mat\b/i,
   /\bplaymat\b/i,
   /\btappetin[oi]\b/i,
-  // Puzzle & Giocattoli (BRIO / GraviTrax / CreArt / tiptoi)
+  // Puzzle & Giocattoli (BRIO / GraviTrax / CreArt / tiptoi / Pantasy / Lemax)
+  /\bpan\d{4,}[a-z]*\b/i,
+  /\bpantasy\b/i,
+  /\bedifici\s+modulari\b/i,
+  /\blemax\b/i,
+  /\b(?:adattatore|alimentatore)\s+4\.5v\b/i,
   /\bpuzzle\s+\d+\s*pezzi\b/i,
   /\bpuzzle\s+[23]d\b/i,
+  /\b3d\s+puzzle\b/i,
+  /\bpuzzle\s+ball\b/i,
+  /\bpuzzle\s+ravensburger\b/i,
+  /\bmaxi\s+puzzle\b/i,
+  /\b\d+\s+puzzle\b/i,
+  /\bpuzzle\s+\d+p\b/i,
+  /\bgeopuzzle\b/i,
   /\bpuzzle\s+da\s+viaggio\b/i,
   /\bboardgame\s+puzzle\b/i,
   /\bravensburger\s+puzzle\b/i,
@@ -366,11 +414,17 @@ const NON_BOARDGAME_PATTERNS: readonly RegExp[] = [
   /\bsacchetto\s+(?:porta)?dadi\b/i,
   /\bdice\s+set\b/i,
   /\bdice\s+block\b/i,
+  /\b\d+d\d+\b/i,
+  /\bdice\s+(?:case|pack|tube|tin)\b/i,
+  /\bwith\s+\d+\s+dice\b/i,
+  /\badventure\s+dice\b/i,
+  /\bset\s+(?:di\s+)?dadi\b/i,
   /\bset\s+\d+\s+dadi\b/i,
   /\bdadi\s+custom\b/i,
 ]
 
 export function isNonBoardgameTitle(title: string): boolean {
+  if (/\blego\b/i.test(title) && !LEGO_BOARDGAME_ALLOW_RE.test(title)) return true
   return NON_BOARDGAME_PATTERNS.some((re) => re.test(title))
 }
 
