@@ -326,6 +326,68 @@ class ExternalSiteScraperParserTest {
     }
 
     @Test
+    fun `parse Amazon riconosce Oil Rock rimuovendo tagline promozionale senza creare falsi positivi`() {
+        val raw = """
+            {
+              "status": "ok",
+              "items": [
+                {
+                  "title": "Cranio Creations - Oil Rock - Run an Oil Company! 2-4 Players - 90 Minutes - Game...",
+                  "price": "52,95 €",
+                  "originalPrice": "59,99 €",
+                  "url": "/dp/B0OILROCK1",
+                  "asin": "B0OILROCK1",
+                  "isPrime": false,
+                  "delivery": "FREE delivery Wed 2 Dec on your first order"
+                },
+                {
+                  "title": "Cranio Creations - Oil Rock - Gestisci una Compagnia Petrolifera! - 2-4 Giocatori - 90 Minuti - Gioco da Tavolo - Edizione Italiana",
+                  "price": "59,89 €",
+                  "url": "/dp/B0OILROCK2",
+                  "asin": "B0OILROCK2",
+                  "isPrime": true,
+                  "delivery": "Consegna GRATUITA ven 27 nov · oppure consegna più rapida domani, 24 nov"
+                },
+                {
+                  "title": "Cranio Creations - Escape Room: The Game, New Edition",
+                  "price": "21,01 €",
+                  "url": "/dp/B0ESCAPERM",
+                  "asin": "B0ESCAPERM",
+                  "isPrime": true
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val parsed = ScraperJsonParser.parse(
+            site = ExternalPriceSite.AMAZON_IT,
+            rawJsResult = raw,
+            searchQuery = "Oil Rock",
+        ) as ParsedScriptStatus.Done
+        val items = (parsed.result as ExternalScrapeResult.Success).items
+
+        assertEquals(2, items.size)
+        assertEquals("B0OILROCK2", items[0].asin)
+        assertEquals("Oil Rock – Edizione Italiana", items[0].title)
+        assertEquals("B0OILROCK1", items[1].asin)
+        assertEquals("Oil Rock", items[1].title)
+        assertEquals("52,95 €", items[1].price)
+        assertEquals("59,99 €", items[1].originalPrice)
+
+        // I sottotitoli reali (senza tagline promozionale) restano protetti
+        assertFalse(
+            ScrapedOfferNormalizer.matchesSearchedGameTitle(
+                "Catan",
+                ScrapedOfferNormalizer.cleanScrapedGameTitle("Giochi Uniti - Catan - Città e Cavalieri"),
+            ),
+        )
+        assertEquals(
+            "Bang!",
+            ScrapedOfferNormalizer.cleanScrapedGameTitle("dV Games - Bang! - Gioco di Carte"),
+        )
+    }
+
+    @Test
     fun `parsa payload bloccato da anti-bot`() {
         val raw = """{"status":"blocked","reason":"Trovaprezzi richiede verifica Cloudflare."}"""
 

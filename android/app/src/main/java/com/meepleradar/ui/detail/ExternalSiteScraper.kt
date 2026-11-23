@@ -133,12 +133,22 @@ internal object ScrapedOfferNormalizer {
     )
 
     private val marketingSegmentRegex = Regex(
-        pattern = """^(?:gioc[oi]\s+(?:da\s+tavolo|di\s+carte|di\s+societ[àa]|di\s+strategia|di\s+dadi|di\s+ruolo|di\s+abilit[àa]|cooperativo|investigativo|educativo|per\s+famiglie|per\s+bambini|per\s+adulti|in\s+scatola)|espansione\s+(?:gioc[oi]|del\s+pacchetto|pacchetto|fazione)|pack\s+fazione|faction\s+pack|modalit[àa]\s+testa|party\s+game|board\s*game|card\s+game|roll\s*(?:&|and)\s*write|flip\s*(?:&|and)\s*write|deck\s*building|per\s+\d+(?:\s*[-–]\s*\d+)?\s*giocatori|\d+(?:\s*[-–]\s*\d+)?\s*giocatori|da\s+\d+\s*anni|\d+\+\s*anni|\d+\s*[-–]?\s*\d*\s*min(?:uti)?|idea\s+regalo|regalo\s+per|et[àa]\s*\d+|ffg|cod\.?\s*[a-z0-9]+|[a-z]{2,5}\d{3,}[a-z0-9]*)(?:\b.*)?$""",
+        pattern = """^(?:gioc[oi]\s+(?:da\s+tavolo|di\s+carte|di\s+societ[àa]|di\s+strategia|di\s+dadi|di\s+ruolo|di\s+abilit[àa]|cooperativo|investigativo|educativo|per\s+famiglie|per\s+bambini|per\s+adulti|in\s+scatola)|espansione\s+(?:gioc[oi]|del\s+pacchetto|pacchetto|fazione)|pack\s+fazione|faction\s+pack|modalit[àa]\s+testa|party\s+game|board\s*game|card\s+game|tabletop\s+game|(?:strategy|family|cooperative|co-?op|bluff|deduction|management|economic|abstract|trivia|dice|word)(?:\s*(?:&|and)\s*\w+)?\s+game|game(?:\s+in\s+(?:italian|english))?$|roll\s*(?:&|and)\s*write|flip\s*(?:&|and)\s*write|deck\s*building|(?:per|for)\s+\d+(?:\s*[-–]\s*\d+)?\s*(?:giocatori|players?)|\d+(?:\s*[-–]\s*\d+)?\s*(?:giocatori|players?)|da\s+\d+\s*anni|\d+\+?\s*(?:anni|years?)|ages?\s*\d+\+?|\d+\s*[-–]?\s*\d*\s*min(?:uti|utes?)?|idea\s+regalo|regalo\s+per|gift\s+idea|et[àa]\s*\d+|ffg|cod\.?\s*[a-z0-9]+|[a-z]{2,5}\d{3,}[a-z0-9]*)(?:\b.*)?$""",
         option = RegexOption.IGNORE_CASE,
     )
 
     private val marketingInlinePrefixRegex = Regex(
-        pattern = """(?:,\s*|\s+)(?:espansione\s+(?:del\s+pacchetto|gioc[oi])|pack\s+fazione\b|gioc[oi]\s+(?:da\s+tavolo|di\s+carte|di\s+societ[àa]|di\s+strategia|di\s+dadi|cooperativo|per\s+famiglie)|party\s+game|board\s*game|card\s+game|roll\s*(?:&|and)\s*write|per\s+\d+(?:\s*[-–]\s*\d+)?\s*giocatori|\d+\s*[-–]\s*\d+\s*giocatori|da\s+\d+\s*anni|\d+\+\s*anni|\d+\s*minuti|ffg\b).*$""",
+        pattern = """(?:,\s*|\s+)(?:espansione\s+(?:del\s+pacchetto|gioc[oi])|pack\s+fazione\b|gioc[oi]\s+(?:da\s+tavolo|di\s+carte|di\s+societ[àa]|di\s+strategia|di\s+dadi|cooperativo|per\s+famiglie)|party\s+game|board\s*game|card\s+game|tabletop\s+game|strategy\s+game|family\s+game|roll\s*(?:&|and)\s*write|(?:per|for)\s+\d+(?:\s*[-–]\s*\d+)?\s*(?:giocatori|players?)|\d+\s*[-–]\s*\d+\s*(?:giocatori|players?)|da\s+\d+\s*anni|\d+\+\s*(?:anni|years?)|ages?\s*\d+\+?|\d+\s*min(?:uti|utes?)|ffg\b).*$""",
+        option = RegexOption.IGNORE_CASE,
+    )
+
+    private val nonTaglineGuardRegex = Regex(
+        pattern = """\b(?:espansion\w*|expansion\w*|pack|pacchetto|fazione|faction|booster|promo|bustin\w*|sleeves?|organizer|insert\w*|playmat|tappetin\w*|accessori\w*|miniatur\w*|monete|coins|edizione|edition)\b""",
+        option = RegexOption.IGNORE_CASE,
+    )
+
+    private val promotionalTaglineStartRegex = Regex(
+        pattern = """^(?:gestisci|dirigi|costruisci|crea|esplora|sfida|scopri|vivi|diventa|guida|conquista|difendi|colleziona|fonda|comanda|organizza|sopravvivi|ricostruisci|sviluppa|investi|gioca\s+a|il\s+pi[uù]\s+famoso|il\s+gioco\s+d[ie]|un\s+gioco\s+d[ie]|una\s+storia\s+d[ie]|run\s+an?|build\s+(?:a|an|your|the)|create\s+(?:a|an|your|the)|explore\s+(?:a|an|your|the)|manage\s+(?:a|an|your|the)|lead\s+(?:a|an|your|the)|discover\s+(?:a|an|your|the)|become\s+(?:a|an|the)|the\s+most\s+famous|a\s+game\s+of|the\s+ultimate|fun\s+tricks)\b""",
         option = RegexOption.IGNORE_CASE,
     )
 
@@ -250,7 +260,7 @@ internal object ScrapedOfferNormalizer {
             var seg = rawSeg.trim().trimEnd(',', ';', '-', '–', '—', '…')
             if (seg.endsWith("...")) seg = seg.removeSuffix("...").trim()
             if (seg.isEmpty()) continue
-            if (keptSegments.isNotEmpty() && (marketingSegmentRegex.matches(seg) || brandSegmentRegex.matches(seg))) {
+            if (keptSegments.isNotEmpty() && isNoiseSegment(seg)) {
                 continue
             }
             seg = seg.replace(marketingInlinePrefixRegex, "").trim().trimEnd(',', ';', '…')
@@ -260,9 +270,7 @@ internal object ScrapedOfferNormalizer {
                     seg = withoutExpPrefix
                 }
             }
-            if (seg.isNotEmpty() &&
-                !(keptSegments.isNotEmpty() && (marketingSegmentRegex.matches(seg) || brandSegmentRegex.matches(seg)))
-            ) {
+            if (seg.isNotEmpty() && !(keptSegments.isNotEmpty() && isNoiseSegment(seg))) {
                 keptSegments += seg
             }
         }
@@ -275,6 +283,16 @@ internal object ScrapedOfferNormalizer {
             joined = "$joined ($preservedTailEdition)"
         }
         return joined
+    }
+
+    private fun isNoiseSegment(segment: String): Boolean {
+        if (marketingSegmentRegex.matches(segment) || brandSegmentRegex.matches(segment)) {
+            return true
+        }
+        if (nonTaglineGuardRegex.containsMatchIn(segment)) {
+            return false
+        }
+        return segment.contains('!') || promotionalTaglineStartRegex.containsMatchIn(segment)
     }
 
     fun matchesSearchedGameTitle(
