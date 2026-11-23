@@ -103,6 +103,7 @@ data class UserAlert(
     val readAt: String? = null,
     val createdAt: String,
     val bggId: Int? = null,
+    val priceDropPct: Double? = null,
 ) {
     val isUnread: Boolean get() = readAt.isNullOrBlank()
 

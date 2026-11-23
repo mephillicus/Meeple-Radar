@@ -31,7 +31,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,12 +46,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,10 +70,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meepleradar.BuildConfig
 import com.meepleradar.data.local.AppThemeMode
 import com.meepleradar.data.local.NotificationPreferences
 import com.meepleradar.data.model.UserAlert
 import com.meepleradar.data.model.UserAlertType
+import com.meepleradar.data.repo.LocalCacheStats
 import com.meepleradar.notifications.NotificationHelper
 import com.meepleradar.notifications.PendingAlertNotification
 import com.meepleradar.ui.components.BlockVector
@@ -91,10 +100,15 @@ fun AlertsAndSettingsSheet(
     val alerts by vm.alerts.collectAsStateWithLifecycle()
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
     val preferences by vm.preferences.collectAsStateWithLifecycle()
+    val diagnostics by vm.diagnostics.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     var permissionDeniedBanner by remember {
         mutableStateOf(!NotificationHelper.canPostNotifications(context))
+    }
+
+    LaunchedEffect(Unit) {
+        vm.refreshDiagnostics()
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -112,6 +126,7 @@ fun AlertsAndSettingsSheet(
             alerts = alerts,
             isLoading = isLoading,
             preferences = preferences,
+            diagnostics = diagnostics,
             showPermissionWarning = preferences.backgroundSyncEnabled &&
                 (permissionDeniedBanner || !NotificationHelper.canPostNotifications(context)),
             onOpenSystemNotificationSettings = { openAppNotificationSettings(context) },
@@ -138,14 +153,31 @@ fun AlertsAndSettingsSheet(
             },
             onSelectSyncInterval = vm::setSyncIntervalHours,
             onToggleSyncWifiOnly = vm::setSyncWifiOnly,
+            onToggleQuietHours = vm::setQuietHoursEnabled,
             onSelectThemeMode = vm::setThemeMode,
             onToggleDynamicColors = vm::setDynamicColors,
             onToggleBackInStock = vm::setNotifyBackInStock,
             onTogglePriceDrop = vm::setNotifyPriceDrop,
+            onSelectMinPriceDropPct = vm::setMinPriceDropPct,
             onToggleNewExpansion = vm::setNotifyNewExpansion,
             onToggleNewsDigest = vm::setNotifyNewsDigest,
+            onForceFullResync = vm::forceFullResync,
+            onClearMediaCache = vm::clearMediaCache,
+            onExportFavorites = { vm.exportFavorites { text -> sharePlainText(context, text) } },
         )
     }
+}
+
+internal fun sharePlainText(context: Context, text: String) {
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "I miei preferiti su Meeple Radar")
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    val chooser = Intent.createChooser(sendIntent, "Condividi lista preferiti").apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(chooser) }
 }
 
 internal fun openAppNotificationSettings(context: Context) {
@@ -189,11 +221,17 @@ internal fun AlertsAndSettingsSheetContent(
     onToggleNewsDigest: (Boolean) -> Unit,
     onSelectSyncInterval: (Int) -> Unit = {},
     onToggleSyncWifiOnly: (Boolean) -> Unit = {},
+    onToggleQuietHours: (Boolean) -> Unit = {},
+    onSelectMinPriceDropPct: (Int) -> Unit = {},
     onSelectThemeMode: (AppThemeMode) -> Unit = {},
     onToggleDynamicColors: (Boolean) -> Unit = {},
     showPermissionWarning: Boolean = false,
     onOpenSystemNotificationSettings: () -> Unit = {},
     onSendTestNotification: () -> Unit = {},
+    diagnostics: SettingsDiagnostics = SettingsDiagnostics(),
+    onForceFullResync: () -> Unit = {},
+    onClearMediaCache: () -> Unit = {},
+    onExportFavorites: () -> Unit = {},
     initialTab: Int = 0,
     modifier: Modifier = Modifier,
 ) {
@@ -278,18 +316,24 @@ internal fun AlertsAndSettingsSheetContent(
         } else {
             SettingsPanelSection(
                 preferences = preferences,
+                diagnostics = diagnostics,
                 showPermissionWarning = showPermissionWarning,
                 onOpenSystemNotificationSettings = onOpenSystemNotificationSettings,
                 onSendTestNotification = onSendTestNotification,
                 onToggleBackgroundSync = onToggleBackgroundSync,
                 onSelectSyncInterval = onSelectSyncInterval,
                 onToggleSyncWifiOnly = onToggleSyncWifiOnly,
+                onToggleQuietHours = onToggleQuietHours,
                 onSelectThemeMode = onSelectThemeMode,
                 onToggleDynamicColors = onToggleDynamicColors,
                 onToggleBackInStock = onToggleBackInStock,
                 onTogglePriceDrop = onTogglePriceDrop,
+                onSelectMinPriceDropPct = onSelectMinPriceDropPct,
                 onToggleNewExpansion = onToggleNewExpansion,
                 onToggleNewsDigest = onToggleNewsDigest,
+                onForceFullResync = onForceFullResync,
+                onClearMediaCache = onClearMediaCache,
+                onExportFavorites = onExportFavorites,
                 modifier = Modifier
                     .heightIn(max = 460.dp)
                     .verticalScroll(rememberScrollState()),
@@ -633,11 +677,17 @@ internal fun SettingsPanelSection(
     onToggleNewsDigest: (Boolean) -> Unit,
     onSelectSyncInterval: (Int) -> Unit = {},
     onToggleSyncWifiOnly: (Boolean) -> Unit = {},
+    onToggleQuietHours: (Boolean) -> Unit = {},
+    onSelectMinPriceDropPct: (Int) -> Unit = {},
     onSelectThemeMode: (AppThemeMode) -> Unit = {},
     onToggleDynamicColors: (Boolean) -> Unit = {},
     showPermissionWarning: Boolean = false,
     onOpenSystemNotificationSettings: () -> Unit = {},
     onSendTestNotification: () -> Unit = {},
+    diagnostics: SettingsDiagnostics = SettingsDiagnostics(),
+    onForceFullResync: () -> Unit = {},
+    onClearMediaCache: () -> Unit = {},
+    onExportFavorites: () -> Unit = {},
     ignoredCount: Int = 0,
     onManageIgnored: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -784,6 +834,16 @@ internal fun SettingsPanelSection(
                         enabled = preferences.backgroundSyncEnabled,
                         onCheckedChange = onToggleSyncWifiOnly,
                     )
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                    SettingToggleRow(
+                        title = "Fascia silenziosa (22:00 – 08:00)",
+                        subtitle = "Rimanda le notifiche notturne al ciclo del mattino",
+                        checked = preferences.quietHoursEnabled,
+                        enabled = preferences.backgroundSyncEnabled,
+                        onCheckedChange = onToggleQuietHours,
+                    )
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -803,6 +863,72 @@ internal fun SettingsPanelSection(
                     enabled = preferences.backgroundSyncEnabled,
                     onCheckedChange = onTogglePriceDrop,
                 )
+
+                if (preferences.notifyPriceDrop) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Soglia minima calo prezzo",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = if (preferences.backgroundSyncEnabled) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                            },
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            listOf(
+                                0 to "Tutti",
+                                10 to "≥ 10%",
+                                20 to "≥ 20%",
+                                30 to "≥ 30%",
+                            ).forEach { (threshold, label) ->
+                                val selected = preferences.minPriceDropPct == threshold
+                                val enabled = preferences.backgroundSyncEnabled
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = when {
+                                        selected && enabled -> MaterialTheme.colorScheme.primaryContainer
+                                        selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                        else -> MaterialTheme.colorScheme.surface
+                                    },
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (selected) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.45f)
+                                        } else {
+                                            MaterialTheme.colorScheme.outlineVariant
+                                        },
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(30.dp)
+                                        .clickable(enabled = enabled) { onSelectMinPriceDropPct(threshold) },
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 10.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            color = when {
+                                                selected && enabled -> MaterialTheme.colorScheme.onPrimaryContainer
+                                                enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                            },
+                                            maxLines = 1,
+                                            softWrap = false,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                 SettingToggleRow(
                     title = "Nuove espansioni in arrivo",
@@ -846,50 +972,240 @@ internal fun SettingsPanelSection(
             }
         }
 
-        // 3. Sezione Catalogo e Ignorati (se disponibile nel contesto)
-        if (onManageIgnored != null) {
-            SettingsGroupCard(title = "Catalogo") {
+        // 3. Sezione Catalogo e Preferiti
+        SettingsGroupCard(title = "Catalogo e Preferiti") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onManageIgnored != null) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onManageIgnored),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                imageVector = BlockVector,
+                                contentDescription = null,
+                                tint = if (ignoredCount > 0) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                text = if (ignoredCount > 0) {
+                                    "Gestisci giochi ignorati ($ignoredCount)"
+                                } else {
+                                    "Gestisci giochi ignorati"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = "Apri ›",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onManageIgnored),
+                        .clickable(enabled = !diagnostics.isExportingFavorites, onClick = onExportFavorites),
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(
-                            imageVector = BlockVector,
-                            contentDescription = null,
-                            tint = if (ignoredCount > 0) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.size(16.dp),
-                        )
+                        if (diagnostics.isExportingFavorites) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.Share,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Esporta / Condividi Preferiti",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = "Invia titolo, miglior prezzo e link come testo",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Text(
-                            text = if (ignoredCount > 0) {
-                                "Gestisci giochi ignorati ($ignoredCount)"
-                            } else {
-                                "Gestisci giochi ignorati"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            text = "Apri ›",
+                            text = "Invia ›",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary,
                         )
                     }
+                }
+            }
+        }
+
+        // 4. Sezione Dati e Cache
+        SettingsGroupCard(title = "Dati e Cache") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val stats = diagnostics.cacheStats
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "${stats.listingsCount} offerte · ${stats.gamesCount} giochi · ${stats.sourcesCount} negozi",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Ultimo sync completo: ${formatEpochMillis(stats.lastFullSyncAt.takeIf { it > 0L } ?: stats.lastModifiedTimestamp)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "Cache immagini e HTTP: ${formatByteSize(diagnostics.mediaCacheSizeBytes)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = onClearMediaCache,
+                        enabled = !diagnostics.isClearingCache && !diagnostics.isResyncing,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    ) {
+                        if (diagnostics.isClearingCache) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "Svuota cache",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+
+                    Button(
+                        onClick = onForceFullResync,
+                        enabled = !diagnostics.isResyncing && !diagnostics.isClearingCache,
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    ) {
+                        if (diagnostics.isResyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = if (diagnostics.isResyncing) "Sync…" else "Sync completo",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                }
+
+                diagnostics.statusMessage?.let { msg ->
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = if (diagnostics.isStatusError) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
+            }
+        }
+
+        // 5. Info app (footer compatto)
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Meeple Radar v${BuildConfig.VERSION_NAME}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Aggiornato: ${formatEpochMillis(diagnostics.cacheStats.lastModifiedTimestamp)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val bggLabel = diagnostics.bggUsername?.takeIf(String::isNotBlank)?.let { user ->
+                        "BGG: $user (${diagnostics.bggGamesCount} giochi)"
+                    } ?: "Collezione BGG non collegata"
+                    Text(
+                        text = bggLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -975,6 +1291,18 @@ private fun formatAlertTimestamp(iso: String): String {
     return localDateTime.format(ALERT_TIME_FORMATTER)
 }
 
+private fun formatEpochMillis(epochMs: Long): String {
+    if (epochMs <= 0L) return "mai eseguito"
+    val localDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMs), ZoneId.systemDefault())
+    return localDateTime.format(ALERT_TIME_FORMATTER)
+}
+
+private fun formatByteSize(bytes: Long): String = when {
+    bytes <= 0L -> "0 KB"
+    bytes < 1024L * 1024L -> "${(bytes / 1024L).coerceAtLeast(1L)} KB"
+    else -> String.format(Locale.ITALY, "%.1f MB", bytes / (1024.0 * 1024.0))
+}
+
 @Preview(name = "Alerts Sheet — Light", showBackground = true)
 @Preview(
     name = "Alerts Sheet — Dark",
@@ -1042,7 +1370,23 @@ private fun SettingsSheetPreview() {
             AlertsAndSettingsSheetContent(
                 alerts = emptyList(),
                 isLoading = false,
-                preferences = NotificationPreferences(backgroundSyncEnabled = true),
+                preferences = NotificationPreferences(
+                    backgroundSyncEnabled = true,
+                    minPriceDropPct = 10,
+                    quietHoursEnabled = true,
+                ),
+                diagnostics = SettingsDiagnostics(
+                    cacheStats = LocalCacheStats(
+                        listingsCount = 1420,
+                        gamesCount = 612,
+                        sourcesCount = 14,
+                        lastModifiedTimestamp = 1_776_600_000_000L,
+                        lastFullSyncAt = 1_776_580_000_000L,
+                    ),
+                    mediaCacheSizeBytes = 6L * 1024L * 1024L,
+                    bggUsername = "zorak_it",
+                    bggGamesCount = 87,
+                ),
                 onMarkRead = {},
                 onMarkAllRead = {},
                 onOpenAlert = {},

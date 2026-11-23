@@ -94,6 +94,8 @@ fun MeepleRadarNav(
                     repository = container.repository,
                     preferencesStore = container.notificationPreferencesStore,
                     syncWorkScheduler = container.syncWorkScheduler,
+                    bggCollectionStore = container.bggCollectionStore,
+                    cacheMaintenance = container.cacheMaintenance,
                 )
             }
         },
@@ -103,6 +105,7 @@ fun MeepleRadarNav(
 
     LaunchedEffect(Unit) {
         alertsVm.refresh()
+        alertsVm.refreshDiagnostics()
     }
 
     LaunchedEffect(pendingDetailKey) {

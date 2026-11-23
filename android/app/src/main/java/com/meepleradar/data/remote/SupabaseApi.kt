@@ -870,6 +870,8 @@ private data class UserAlertDto(
         }
         val bggId = payload?.get("bggId").asIntOrNull()
             ?: payload?.get("bgg_id").asIntOrNull()
+        val priceDropPct = payload?.get("price_drop_pct").asDoubleOrNull()
+            ?: payload?.get("dropPct").asDoubleOrNull()
         return UserAlert(
             id = id,
             alertType = type,
@@ -882,6 +884,7 @@ private data class UserAlertDto(
             readAt = readAt,
             createdAt = createdAt,
             bggId = bggId,
+            priceDropPct = priceDropPct,
         )
     }
 }

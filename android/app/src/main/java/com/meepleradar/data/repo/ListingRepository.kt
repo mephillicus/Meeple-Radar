@@ -129,7 +129,19 @@ interface ListingRepository {
     fun unreadAlertCountFlow(): StateFlow<Int> = MutableStateFlow(0)
 
     fun catalogRevisionFlow(): StateFlow<Long> = MutableStateFlow(0L)
+
+    suspend fun localCacheStats(): LocalCacheStats = LocalCacheStats()
+
+    suspend fun forceFullResync(today: LocalDate = LocalDate.now()): LocalCacheStats = localCacheStats()
 }
+
+data class LocalCacheStats(
+    val listingsCount: Int = 0,
+    val gamesCount: Int = 0,
+    val sourcesCount: Int = 0,
+    val lastModifiedTimestamp: Long = 0L,
+    val lastFullSyncAt: Long = 0L,
+)
 
 class DefaultListingRepository(
     private val api: SupabaseApi,
@@ -827,6 +839,41 @@ class DefaultListingRepository(
         _unreadAlertCount.value = 0
     }
 
+    override suspend fun localCacheStats(): LocalCacheStats {
+        val cached = withContext(Dispatchers.IO) { localCacheStore?.load() }
+        return if (cached != null) {
+            LocalCacheStats(
+                listingsCount = cached.listings.size,
+                gamesCount = cached.games.size,
+                sourcesCount = cached.sources.size,
+                lastModifiedTimestamp = cached.lastModifiedTimestamp,
+                lastFullSyncAt = cached.lastFullSyncAt,
+            )
+        } else {
+            LocalCacheStats(
+                lastModifiedTimestamp = lastDbModifiedTimestamp(),
+            )
+        }
+    }
+
+    override suspend fun forceFullResync(today: LocalDate): LocalCacheStats {
+        cachedUserActionsAtMs = 0L
+        cachedPriceDropsAtMs = 0L
+        val userActions = getUserActions(forceRefresh = true)
+        val actionsMap = latestActionsByKey(userActions)
+        val ignoredKeys = actionsMap.filterValues { it == Action.IGNORED }.keys
+        val db = ensureDatabase(forceRefresh = true, forceFullSync = true)
+        syncDerivedFlows(db, ignoredKeys, today)
+        notifyCatalogUpdated()
+        return LocalCacheStats(
+            listingsCount = db.listings.size,
+            gamesCount = db.games.size,
+            sourcesCount = db.sources.size,
+            lastModifiedTimestamp = db.lastModifiedTimestamp,
+            lastFullSyncAt = db.lastFullSyncAt,
+        )
+    }
+
     private suspend fun refreshPriceDropsBestEffort(force: Boolean) {
         val now = clockMs()
         if (!force && cachedPriceDrops.isNotEmpty() && now - cachedPriceDropsAtMs < PRICE_DROPS_TTL_MS) {
@@ -869,6 +916,7 @@ class DefaultListingRepository(
 
     private suspend fun ensureDatabase(
         forceRefresh: Boolean,
+        forceFullSync: Boolean = false,
         onProgress: ((percent: Int, message: String) -> Unit)? = null,
     ): CachedDatabase {
         onProgress?.invoke(25, "Caricamento database locale…")
@@ -877,6 +925,7 @@ class DefaultListingRepository(
         val nowMs = clockMs()
         val incrementalSince = cached?.lastIncrementalSyncAt?.takeIf(String::isNotBlank)
         val canUseIncremental = forceRefresh &&
+            !forceFullSync &&
             localCacheStore != null &&
             cached != null &&
             cached.listings.isNotEmpty() &&

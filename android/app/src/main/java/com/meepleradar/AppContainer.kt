@@ -1,6 +1,8 @@
 package com.meepleradar
 
 import android.content.Context
+import com.meepleradar.data.local.AndroidCacheMaintenance
+import com.meepleradar.data.local.CacheMaintenance
 import com.meepleradar.data.local.NotificationPreferencesStore
 import com.meepleradar.data.local.RoomLocalCacheStore
 import com.meepleradar.data.local.SharedPreferencesBggCollectionStore
@@ -32,14 +34,21 @@ class AppContainer(context: Context) {
 
     private val appContext = context.applicationContext
     private val json = Json { ignoreUnknownKeys = true }
+    private val httpCacheDir = File(appContext.cacheDir, HTTP_CACHE_DIR)
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
-        .cache(Cache(File(appContext.cacheDir, HTTP_CACHE_DIR), HTTP_CACHE_SIZE_BYTES))
+        .cache(Cache(httpCacheDir, HTTP_CACHE_SIZE_BYTES))
         .build()
     private val transport = OkHttpTransport(okHttpClient)
+
+    val cacheMaintenance: CacheMaintenance = AndroidCacheMaintenance(
+        appContext = appContext,
+        okHttpClient = okHttpClient,
+        httpCacheDir = httpCacheDir,
+    )
 
     val geekGroupApi: GeekGroupApi = GeekGroupRestApi(transport, json)
 

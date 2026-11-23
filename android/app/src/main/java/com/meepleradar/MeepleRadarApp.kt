@@ -7,8 +7,13 @@ class MeepleRadarApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        if (container.notificationPreferencesStore.load().backgroundSyncEnabled) {
-            container.syncWorkScheduler.syncSchedule(true)
+        val prefs = container.notificationPreferencesStore.load()
+        if (prefs.backgroundSyncEnabled) {
+            container.syncWorkScheduler.syncSchedule(
+                enabled = true,
+                intervalHours = prefs.syncIntervalHours.toLong(),
+                wifiOnly = prefs.syncWifiOnly,
+            )
         }
     }
 }

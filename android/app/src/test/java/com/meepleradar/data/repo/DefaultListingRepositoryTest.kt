@@ -17,6 +17,7 @@ import com.meepleradar.data.remote.UserActionRow
 import java.time.LocalDate
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DefaultListingRepositoryTest {
@@ -824,5 +825,81 @@ class DefaultListingRepositoryTest {
         val expansionItem = repository.findItem("game:51", today)
         assertEquals("One Card Dungeon: M'Guf-yn Returns", expansionItem?.title)
         assertEquals(370591, expansionItem?.game?.bggId)
+    }
+
+    @Test
+    fun `forceFullResync bypassa il delta incrementale e aggiorna localCacheStats`() = runTest {
+        val baseTimeMs = 1_776_600_000_000L
+        var fullListingCalls = 0
+        var deltaListingCalls = 0
+
+        val oldListing = listing(id = 1, gameId = 10, title = "Vecchio Gioco")
+        val freshListing = listing(id = 2, gameId = 20, title = "Nuovo Gioco")
+
+        val api = object : SupabaseApi {
+            override suspend fun listings(): List<Listing> {
+                fullListingCalls++
+                return listOf(freshListing)
+            }
+            override suspend fun listingsUpdatedSince(sinceIso: String): List<Listing> {
+                deltaListingCalls++
+                return emptyList()
+            }
+            override suspend fun games(): List<Game> = listOf(game(20, "Nuovo Gioco"))
+            override suspend fun sources(): List<Source> = listOf(Source("s1", "Store Uno"))
+            override suspend fun products(): List<Product> = emptyList()
+            override suspend fun userActions(): List<UserActionRow> = emptyList()
+            override suspend fun insertAction(row: UserActionRow) = Unit
+            override suspend fun saveGameToDatabase(item: IncomingItem, selectedListingIdsToLink: List<Long>): Long? = null
+        }
+
+        val cache = FakeLocalCacheStore(
+            CachedDatabase(
+                listings = listOf(oldListing),
+                games = listOf(game(10, "Vecchio Gioco")),
+                sources = listOf(Source("s1", "Store Uno")),
+                lastIncrementalSyncAt = "2026-04-19T00:00:00Z",
+                lastFullSyncAt = baseTimeMs,
+            ),
+        )
+        val repository = DefaultListingRepository(
+            api = api,
+            favoriteStore = FakeFavoriteStore(),
+            localCacheStore = cache,
+            clockMs = { baseTimeMs + 60_000L },
+        )
+
+        val stats = repository.forceFullResync(today)
+        assertEquals(1, fullListingCalls)
+        assertEquals(0, deltaListingCalls)
+        assertEquals(1, stats.listingsCount)
+        assertEquals(1, stats.gamesCount)
+        assertEquals(1, stats.sourcesCount)
+
+        val shareText = com.meepleradar.ui.alerts.formatFavoritesShareText(
+            listOf(
+                IncomingItem(
+                    key = "game:20",
+                    title = "Brass: Birmingham",
+                    imageUrl = null,
+                    releaseDate = null,
+                    kind = com.meepleradar.data.model.ItemKind.NEW_UNDATED,
+                    game = game(20, "Brass: Birmingham"),
+                    offers = listOf(
+                        com.meepleradar.data.model.Offer(
+                            sourceId = "s1",
+                            sourceName = "DungeonDice",
+                            price = com.meepleradar.data.model.Price(59.9, "EUR"),
+                            url = "https://example.com/brass",
+                            availability = "available",
+                            releaseDate = null,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        assertTrue(shareText.contains("Brass: Birmingham"))
+        assertTrue(shareText.contains("DungeonDice"))
+        assertTrue(shareText.contains("https://example.com/brass"))
     }
 }

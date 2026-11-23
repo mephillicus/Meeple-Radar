@@ -65,6 +65,7 @@ import com.meepleradar.ui.alerts.SettingsPanelSection
 import com.meepleradar.ui.alerts.SheetTabButton
 import com.meepleradar.ui.alerts.openAppNotificationSettings
 import com.meepleradar.ui.alerts.sendTestNotification
+import com.meepleradar.ui.alerts.sharePlainText
 import com.meepleradar.ui.theme.MeepleRadarTheme
 
 @Composable
@@ -260,7 +261,10 @@ fun ListingFilterDrawerContent(
                 SheetTabButton(
                     label = "Impostazioni",
                     selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
+                    onClick = {
+                        selectedTab = 2
+                        alertsVm.refreshDiagnostics()
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -291,6 +295,7 @@ fun ListingFilterDrawerContent(
 
             alertsVm != null && selectedTab == 2 -> {
                 val preferences by alertsVm.preferences.collectAsStateWithLifecycle()
+                val diagnostics by alertsVm.diagnostics.collectAsStateWithLifecycle()
                 val context = LocalContext.current
                 var permissionDeniedBanner by remember {
                     mutableStateOf(!NotificationHelper.canPostNotifications(context))
@@ -304,6 +309,7 @@ fun ListingFilterDrawerContent(
 
                 SettingsPanelSection(
                     preferences = preferences,
+                    diagnostics = diagnostics,
                     showPermissionWarning = preferences.backgroundSyncEnabled &&
                         (permissionDeniedBanner || !NotificationHelper.canPostNotifications(context)),
                     onOpenSystemNotificationSettings = { openAppNotificationSettings(context) },
@@ -321,12 +327,17 @@ fun ListingFilterDrawerContent(
                     },
                     onSelectSyncInterval = alertsVm::setSyncIntervalHours,
                     onToggleSyncWifiOnly = alertsVm::setSyncWifiOnly,
+                    onToggleQuietHours = alertsVm::setQuietHoursEnabled,
                     onSelectThemeMode = alertsVm::setThemeMode,
                     onToggleDynamicColors = alertsVm::setDynamicColors,
                     onToggleBackInStock = alertsVm::setNotifyBackInStock,
                     onTogglePriceDrop = alertsVm::setNotifyPriceDrop,
+                    onSelectMinPriceDropPct = alertsVm::setMinPriceDropPct,
                     onToggleNewExpansion = alertsVm::setNotifyNewExpansion,
                     onToggleNewsDigest = alertsVm::setNotifyNewsDigest,
+                    onForceFullResync = alertsVm::forceFullResync,
+                    onClearMediaCache = alertsVm::clearMediaCache,
+                    onExportFavorites = { alertsVm.exportFavorites { text -> sharePlainText(context, text) } },
                     ignoredCount = ignoredCount,
                     onManageIgnored = onManageIgnored,
                     modifier = Modifier

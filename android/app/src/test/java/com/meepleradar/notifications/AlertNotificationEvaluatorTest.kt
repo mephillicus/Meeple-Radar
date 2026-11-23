@@ -103,4 +103,76 @@ class AlertNotificationEvaluatorTest {
         )
         assertNull(duplicate.newsDigest)
     }
+
+    @Test
+    fun `rispetta la fascia silenziosa 22-08 sospendendo avvisi e riepilogo`() {
+        val prefs = NotificationPreferences(
+            backgroundSyncEnabled = true,
+            notifyPriceDrop = true,
+            notifyNewsDigest = true,
+            quietHoursEnabled = true,
+        )
+
+        val lateNight = AlertNotificationEvaluator.evaluate(
+            alerts = listOf(alert(1L, UserAlertType.PRICE_DROP)),
+            prefs = prefs,
+            alreadyNotifiedIds = emptySet(),
+            newlyAddedCount = 2,
+            lastModifiedTimestamp = 2_000L,
+            lastNotifiedNewsTimestamp = 0L,
+            currentHour = 23,
+        )
+        assertTrue(lateNight.alertNotifications.isEmpty())
+        assertNull(lateNight.newsDigest)
+
+        val earlyMorning = AlertNotificationEvaluator.evaluate(
+            alerts = listOf(alert(1L, UserAlertType.PRICE_DROP)),
+            prefs = prefs,
+            alreadyNotifiedIds = emptySet(),
+            newlyAddedCount = 2,
+            lastModifiedTimestamp = 2_000L,
+            lastNotifiedNewsTimestamp = 0L,
+            currentHour = 7,
+        )
+        assertTrue(earlyMorning.alertNotifications.isEmpty())
+        assertNull(earlyMorning.newsDigest)
+
+        val daytime = AlertNotificationEvaluator.evaluate(
+            alerts = listOf(alert(1L, UserAlertType.PRICE_DROP)),
+            prefs = prefs,
+            alreadyNotifiedIds = emptySet(),
+            newlyAddedCount = 2,
+            lastModifiedTimestamp = 2_000L,
+            lastNotifiedNewsTimestamp = 0L,
+            currentHour = 8,
+        )
+        assertEquals(1, daytime.alertNotifications.size)
+        assertEquals(2, daytime.newsDigest?.newlyAddedCount)
+    }
+
+    @Test
+    fun `filtra i cali di prezzo sotto la soglia minima configurata`() {
+        val alerts = listOf(
+            alert(1L, UserAlertType.PRICE_DROP, title = "Sconto Piccolo", detail = "Store: €50 → €45 (-10%)")
+                .copy(priceDropPct = 10.0),
+            alert(2L, UserAlertType.PRICE_DROP, title = "Sconto Grande", detail = "Store: €50 → €37 (-26%)")
+                .copy(priceDropPct = 26.0),
+            alert(3L, UserAlertType.PRICE_DROP, title = "Solo testo 22%", detail = "Store: €50 → €39 (-22%)"),
+            alert(4L, UserAlertType.BACK_IN_STOCK, title = "Tornato disponibile"),
+        )
+
+        val result = AlertNotificationEvaluator.evaluate(
+            alerts = alerts,
+            prefs = NotificationPreferences(
+                backgroundSyncEnabled = true,
+                notifyPriceDrop = true,
+                notifyBackInStock = true,
+                minPriceDropPct = 20,
+            ),
+            alreadyNotifiedIds = emptySet(),
+            currentHour = 14,
+        )
+
+        assertEquals(listOf(2L, 3L, 4L), result.alertNotifications.map { it.alertId })
+    }
 }

@@ -3,6 +3,7 @@ package com.meepleradar.notifications
 import com.meepleradar.data.local.NotificationPreferences
 import com.meepleradar.data.model.UserAlert
 import com.meepleradar.data.model.UserAlertType
+import java.time.LocalTime
 
 data class PendingAlertNotification(
     val alertId: Long,
@@ -29,6 +30,13 @@ data class NotificationEvaluationResult(
  */
 object AlertNotificationEvaluator {
 
+    const val QUIET_HOURS_START = 22
+    const val QUIET_HOURS_END = 8
+
+    private val DETAIL_DROP_PCT_REGEX = Regex("\\(-(\\d+(?:[.,]\\d+)?)%\\)")
+
+    fun isQuietHour(hour: Int): Boolean = hour >= QUIET_HOURS_START || hour < QUIET_HOURS_END
+
     fun evaluate(
         alerts: List<UserAlert>,
         prefs: NotificationPreferences,
@@ -36,8 +44,12 @@ object AlertNotificationEvaluator {
         newlyAddedCount: Int = 0,
         lastModifiedTimestamp: Long = 0L,
         lastNotifiedNewsTimestamp: Long = 0L,
+        currentHour: Int = LocalTime.now().hour,
     ): NotificationEvaluationResult {
         if (!prefs.backgroundSyncEnabled) {
+            return NotificationEvaluationResult(emptyList(), null)
+        }
+        if (prefs.quietHoursEnabled && isQuietHour(currentHour)) {
             return NotificationEvaluationResult(emptyList(), null)
         }
 
@@ -46,7 +58,16 @@ object AlertNotificationEvaluator {
             .filter { alert ->
                 when (alert.alertType) {
                     UserAlertType.BACK_IN_STOCK -> prefs.notifyBackInStock
-                    UserAlertType.PRICE_DROP -> prefs.notifyPriceDrop
+                    UserAlertType.PRICE_DROP -> {
+                        if (!prefs.notifyPriceDrop) {
+                            false
+                        } else if (prefs.minPriceDropPct <= 0) {
+                            true
+                        } else {
+                            val pct = alert.priceDropPct ?: extractDropPctFromDetail(alert.detailText)
+                            pct == null || pct >= prefs.minPriceDropPct
+                        }
+                    }
                     UserAlertType.NEW_EXPANSION -> prefs.notifyNewExpansion
                 }
             }
@@ -93,5 +114,11 @@ object AlertNotificationEvaluator {
             alertNotifications = pendingAlerts,
             newsDigest = digest,
         )
+    }
+
+    internal fun extractDropPctFromDetail(detailText: String?): Double? {
+        if (detailText.isNullOrBlank()) return null
+        val match = DETAIL_DROP_PCT_REGEX.find(detailText) ?: return null
+        return match.groupValues[1].replace(',', '.').toDoubleOrNull()
     }
 }
