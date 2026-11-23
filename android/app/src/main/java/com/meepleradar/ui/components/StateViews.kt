@@ -590,9 +590,11 @@ fun HideFilterChipsSection(
     hideUndated: Boolean,
     hidePriceless: Boolean,
     hideSeen: Boolean,
+    onlyDiscounted: Boolean = false,
     onToggleUndated: () -> Unit,
     onTogglePriceless: () -> Unit,
     onToggleSeen: () -> Unit,
+    onToggleDiscounted: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -600,7 +602,7 @@ fun HideFilterChipsSection(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = "Nascondi",
+            text = "Filtri rapidi e Nascondi",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -610,6 +612,22 @@ fun HideFilterChipsSection(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+            if (onToggleDiscounted != null) {
+                FilterChip(
+                    selected = onlyDiscounted,
+                    onClick = onToggleDiscounted,
+                    label = {
+                        Text(
+                            text = "In sconto",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    },
+                )
+            }
+
             FilterChip(
                 selected = hideUndated,
                 onClick = onToggleUndated,

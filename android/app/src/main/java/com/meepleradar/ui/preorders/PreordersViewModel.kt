@@ -52,6 +52,9 @@ class PreordersViewModel(
     private val _hideSeen = MutableStateFlow(false)
     val hideSeen: StateFlow<Boolean> = _hideSeen.asStateFlow()
 
+    private val _onlyDiscounted = MutableStateFlow(false)
+    val onlyDiscounted: StateFlow<Boolean> = _onlyDiscounted.asStateFlow()
+
     private val _selectedAvailability = MutableStateFlow(AvailabilityStatus.entries.toSet())
     val selectedAvailability: StateFlow<Set<AvailabilityStatus>> = _selectedAvailability.asStateFlow()
 
@@ -240,11 +243,13 @@ class PreordersViewModel(
         hideSeen: Boolean = false,
         availability: Set<AvailabilityStatus> = AvailabilityStatus.entries.toSet(),
         sortOption: ListingSortOption = _sortOption.value,
+        onlyDiscounted: Boolean = false,
     ) {
         _selectedSources.value = sourceIds
         _hideUndated.value = hideUndated
         _hidePriceless.value = hidePriceless
         _hideSeen.value = hideSeen
+        _onlyDiscounted.value = onlyDiscounted
         _selectedAvailability.value = availability
         _sortOption.value = sortOption
         updateFilteredState()
@@ -255,6 +260,7 @@ class PreordersViewModel(
         _hideUndated.value = false
         _hidePriceless.value = false
         _hideSeen.value = false
+        _onlyDiscounted.value = false
         _selectedAvailability.value = AvailabilityStatus.entries.toSet()
         _sortOption.value = ListingSortOption.DEFAULT
         _searchQuery.value = ""
@@ -309,6 +315,7 @@ class PreordersViewModel(
                 hideUndated = _hideUndated.value,
                 hidePriceless = _hidePriceless.value,
                 hideSeen = _hideSeen.value,
+                onlyDiscounted = _onlyDiscounted.value,
                 selectedAvailability = _selectedAvailability.value,
                 searchQuery = _searchQuery.value,
                 showOnlyNewlyAdded = _showOnlyNewlyAdded.value,

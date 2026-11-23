@@ -11,6 +11,8 @@ enum class ListingSortOption(val label: String) {
     DEFAULT("Predefinito"),
     TITLE_ASC("A-Z"),
     PRICE_ASC("Prezzo ↑"),
+    PRICE_DESC("Prezzo ↓"),
+    DISCOUNT_DESC("Sconto % ↓"),
     RELEASE_DATE_ASC("Data ↑"),
     RELEASE_DATE_DESC("Data ↓"),
     BGG_RATING_DESC("Voto BGG ↓"),
@@ -24,6 +26,7 @@ data class ListingFilterState(
     val hideUndated: Boolean = false,
     val hidePriceless: Boolean = false,
     val hideSeen: Boolean = false,
+    val onlyDiscounted: Boolean = false,
     val selectedAvailability: Set<AvailabilityStatus> = AvailabilityStatus.entries.toSet(),
     val searchQuery: String = "",
     val showOnlyNewlyAdded: Boolean = false,
@@ -31,6 +34,9 @@ data class ListingFilterState(
 )
 
 private val ALL_AVAILABILITY_STATUSES: Set<AvailabilityStatus> = AvailabilityStatus.entries.toSet()
+
+fun maxDiscountPct(item: IncomingItem): Double? =
+    item.offers.mapNotNull { it.priceDropPct }.filter { it >= 5.0 }.maxOrNull()
 
 fun filterAndSortListings(
     items: List<IncomingItem>,
@@ -52,6 +58,7 @@ fun filterAndSortListings(
         val dateMatch = !state.hideUndated || item.releaseDate != null
         val priceMatch = !state.hidePriceless || item.offers.any { it.price != null }
         val seenMatch = !state.hideSeen || !item.isSeen
+        val discountMatch = !state.onlyDiscounted || maxDiscountPct(item) != null
         val availabilityMatch = if (allAvailabilitySelected) {
             true
         } else {
@@ -69,7 +76,8 @@ fun filterAndSortListings(
         }
         val newlyAddedMatch = !state.showOnlyNewlyAdded || item.isNewlyAdded
 
-        sourceMatch && dateMatch && priceMatch && seenMatch && availabilityMatch && searchMatch && newlyAddedMatch
+        sourceMatch && dateMatch && priceMatch && seenMatch && discountMatch &&
+            availabilityMatch && searchMatch && newlyAddedMatch
     }
 
     return sortListings(filtered, state.sortOption)
@@ -87,6 +95,17 @@ fun sortListings(
             { bestEurPrice(it.offers)?.amount ?: Double.MAX_VALUE },
             { it.title.lowercase(Locale.ROOT) },
         ),
+    )
+    ListingSortOption.PRICE_DESC -> items.sortedWith(
+        compareBy<IncomingItem> { bestEurPrice(it.offers)?.amount == null }
+            .thenByDescending { bestEurPrice(it.offers)?.amount ?: Double.NEGATIVE_INFINITY }
+            .thenBy { it.title.lowercase(Locale.ROOT) },
+    )
+    ListingSortOption.DISCOUNT_DESC -> items.sortedWith(
+        compareBy<IncomingItem> { maxDiscountPct(it) == null }
+            .thenByDescending { maxDiscountPct(it) ?: Double.NEGATIVE_INFINITY }
+            .thenBy { bestEurPrice(it.offers)?.amount ?: Double.MAX_VALUE }
+            .thenBy { it.title.lowercase(Locale.ROOT) },
     )
     ListingSortOption.RELEASE_DATE_ASC -> items.sortedWith(
         compareBy<IncomingItem>(

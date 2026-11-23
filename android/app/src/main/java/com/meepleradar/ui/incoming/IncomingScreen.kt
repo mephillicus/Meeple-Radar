@@ -46,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.remote.BoardGameImageLookup
+import com.meepleradar.ui.alerts.AlertsViewModel
 import com.meepleradar.ui.components.AlphabetFastScroller
 import com.meepleradar.ui.components.CompactSearchBar
 import com.meepleradar.ui.components.EmptyView
@@ -72,6 +73,8 @@ fun IncomingScreen(
     modifier: Modifier = Modifier,
     unreadAlertCount: Int = 0,
     onOpenAlerts: (() -> Unit)? = null,
+    alertsVm: AlertsViewModel? = null,
+    onOpenAlertItem: ((String) -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val isRefreshing by vm.isRefreshing.collectAsStateWithLifecycle()
@@ -80,6 +83,7 @@ fun IncomingScreen(
     val hideUndated by vm.hideUndated.collectAsStateWithLifecycle()
     val hidePriceless by vm.hidePriceless.collectAsStateWithLifecycle()
     val hideSeen by vm.hideSeen.collectAsStateWithLifecycle()
+    val onlyDiscounted by vm.onlyDiscounted.collectAsStateWithLifecycle()
     val selectedAvailability by vm.selectedAvailability.collectAsStateWithLifecycle()
     val sortOption by vm.sortOption.collectAsStateWithLifecycle()
     val syncProgress by vm.syncProgress.collectAsStateWithLifecycle()
@@ -102,7 +106,7 @@ fun IncomingScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             val selSources = selectedSources
-            val hasActiveFilters = hideUndated || hidePriceless || hideSeen ||
+            val hasActiveFilters = hideUndated || hidePriceless || hideSeen || onlyDiscounted ||
                 sortOption != ListingSortOption.DEFAULT ||
                 (selSources != null && selSources.size < sources.size) ||
                 selectedAvailability.size < AvailabilityStatus.entries.size
@@ -279,6 +283,7 @@ fun IncomingScreen(
             hideUndated = hideUndated,
             hidePriceless = hidePriceless,
             hideSeen = hideSeen,
+            onlyDiscounted = onlyDiscounted,
             selectedAvailability = selectedAvailability,
             sortOption = sortOption,
             onSortOptionChange = vm::setSortOption,
@@ -295,14 +300,17 @@ fun IncomingScreen(
                     open()
                 }
             },
-            onApply = { newSelectedSources, newHideUndated, newHidePriceless, newHideSeen, newAvailability, newSort ->
+            alertsVm = alertsVm,
+            onOpenAlertItem = onOpenAlertItem,
+            onApply = { newSelectedSources, newHideUndated, newHidePriceless, newHideSeen, newOnlyDiscounted, newAvailability, newSort ->
                 vm.applyFilters(
-                    newSelectedSources,
-                    newHideUndated,
-                    newHidePriceless,
-                    newHideSeen,
-                    newAvailability,
-                    newSort,
+                    sourceIds = newSelectedSources,
+                    hideUndated = newHideUndated,
+                    hidePriceless = newHidePriceless,
+                    hideSeen = newHideSeen,
+                    availability = newAvailability,
+                    sortOption = newSort,
+                    onlyDiscounted = newOnlyDiscounted,
                 )
                 isFilterDrawerOpen = false
             },

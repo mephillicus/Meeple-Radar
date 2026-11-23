@@ -8,9 +8,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meepleradar.data.local.AppThemeMode
 import com.meepleradar.notifications.EXTRA_OPEN_DETAIL_KEY
 import com.meepleradar.ui.nav.MeepleRadarNav
 import com.meepleradar.ui.theme.MeepleRadarTheme
@@ -33,7 +36,28 @@ class MainActivity : ComponentActivity() {
         val container = (application as MeepleRadarApp).container
         setContent {
             val detailKey by pendingDetailKey.collectAsStateWithLifecycle()
-            MeepleRadarTheme {
+            val prefs by container.notificationPreferencesStore.preferencesFlow.collectAsStateWithLifecycle()
+            val systemDark = isSystemInDarkTheme()
+            val isDark = when (prefs.themeMode) {
+                AppThemeMode.SYSTEM -> systemDark
+                AppThemeMode.LIGHT -> false
+                AppThemeMode.DARK -> true
+            }
+            SideEffect {
+                val barStyle = if (isDark) {
+                    SystemBarStyle.dark(Color.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                }
+                enableEdgeToEdge(
+                    statusBarStyle = barStyle,
+                    navigationBarStyle = barStyle,
+                )
+            }
+            MeepleRadarTheme(
+                darkTheme = isDark,
+                dynamicColor = prefs.dynamicColors,
+            ) {
                 MeepleRadarNav(
                     container = container,
                     pendingDetailKey = detailKey,

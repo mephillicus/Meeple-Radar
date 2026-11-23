@@ -5,12 +5,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+enum class AppThemeMode(val label: String) {
+    SYSTEM("Sistema"),
+    LIGHT("Chiaro"),
+    DARK("Scuro"),
+}
+
 data class NotificationPreferences(
     val backgroundSyncEnabled: Boolean = false,
     val notifyBackInStock: Boolean = true,
     val notifyPriceDrop: Boolean = true,
     val notifyNewExpansion: Boolean = true,
     val notifyNewsDigest: Boolean = false,
+    val themeMode: AppThemeMode = AppThemeMode.DARK,
+    val dynamicColors: Boolean = false,
+    val syncIntervalHours: Int = 12,
+    val syncWifiOnly: Boolean = false,
 )
 
 interface NotificationPreferencesStore {
@@ -47,6 +57,10 @@ class SharedPreferencesNotificationPreferencesStore(
             .putBoolean(KEY_PRICE_DROP, next.notifyPriceDrop)
             .putBoolean(KEY_NEW_EXPANSION, next.notifyNewExpansion)
             .putBoolean(KEY_NEWS_DIGEST, next.notifyNewsDigest)
+            .putString(KEY_THEME_MODE, next.themeMode.name)
+            .putBoolean(KEY_DYNAMIC_COLORS, next.dynamicColors)
+            .putInt(KEY_SYNC_INTERVAL_HOURS, next.syncIntervalHours)
+            .putBoolean(KEY_SYNC_WIFI_ONLY, next.syncWifiOnly)
             .apply()
         _preferencesFlow.value = next
         return next
@@ -77,13 +91,22 @@ class SharedPreferencesNotificationPreferencesStore(
             .apply()
     }
 
-    private fun readFromPrefs() = NotificationPreferences(
-        backgroundSyncEnabled = prefs.getBoolean(KEY_BG_SYNC, false),
-        notifyBackInStock = prefs.getBoolean(KEY_BACK_IN_STOCK, true),
-        notifyPriceDrop = prefs.getBoolean(KEY_PRICE_DROP, true),
-        notifyNewExpansion = prefs.getBoolean(KEY_NEW_EXPANSION, true),
-        notifyNewsDigest = prefs.getBoolean(KEY_NEWS_DIGEST, false),
-    )
+    private fun readFromPrefs(): NotificationPreferences {
+        val rawTheme = prefs.getString(KEY_THEME_MODE, AppThemeMode.DARK.name)
+        val themeMode = AppThemeMode.entries.firstOrNull { it.name == rawTheme } ?: AppThemeMode.DARK
+        val interval = prefs.getInt(KEY_SYNC_INTERVAL_HOURS, 12).takeIf { it in VALID_SYNC_INTERVALS } ?: 12
+        return NotificationPreferences(
+            backgroundSyncEnabled = prefs.getBoolean(KEY_BG_SYNC, false),
+            notifyBackInStock = prefs.getBoolean(KEY_BACK_IN_STOCK, true),
+            notifyPriceDrop = prefs.getBoolean(KEY_PRICE_DROP, true),
+            notifyNewExpansion = prefs.getBoolean(KEY_NEW_EXPANSION, true),
+            notifyNewsDigest = prefs.getBoolean(KEY_NEWS_DIGEST, false),
+            themeMode = themeMode,
+            dynamicColors = prefs.getBoolean(KEY_DYNAMIC_COLORS, false),
+            syncIntervalHours = interval,
+            syncWifiOnly = prefs.getBoolean(KEY_SYNC_WIFI_ONLY, false),
+        )
+    }
 
     private companion object {
         const val PREF_NAME = "meeple_radar_notifications"
@@ -92,8 +115,13 @@ class SharedPreferencesNotificationPreferencesStore(
         const val KEY_PRICE_DROP = "notify_price_drop"
         const val KEY_NEW_EXPANSION = "notify_new_expansion"
         const val KEY_NEWS_DIGEST = "notify_news_digest"
+        const val KEY_THEME_MODE = "app_theme_mode"
+        const val KEY_DYNAMIC_COLORS = "app_dynamic_colors"
+        const val KEY_SYNC_INTERVAL_HOURS = "sync_interval_hours"
+        const val KEY_SYNC_WIFI_ONLY = "sync_wifi_only"
         const val KEY_NOTIFIED_IDS = "notified_alert_ids"
         const val KEY_LAST_NEWS_TS = "last_notified_news_ts"
         const val MAX_TRACKED_IDS = 200
+        val VALID_SYNC_INTERVALS = setOf(6, 12, 24)
     }
 }

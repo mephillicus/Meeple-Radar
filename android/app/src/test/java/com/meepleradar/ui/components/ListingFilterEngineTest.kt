@@ -156,4 +156,47 @@ class ListingFilterEngineTest {
 
         assertEquals(listOf("1"), filtered.map { it.key })
     }
+
+    @Test
+    fun `ordinamento PRICE_DESC e DISCOUNT_DESC e filtro onlyDiscounted funzionano correttamente`() {
+        val noDiscount = item("no", "No Sconto", priceEur = 60.0)
+        val smallDrop = item("small", "Piccolo", priceEur = 40.0).copy(
+            offers = listOf(
+                Offer(
+                    sourceId = "s1",
+                    sourceName = "s1",
+                    price = Price(40.0, "EUR"),
+                    url = "https://example.com/small",
+                    availability = "InStock",
+                    priceDropPct = 10.0,
+                ),
+            ),
+        )
+        val bigDrop = item("big", "Grande", priceEur = 50.0).copy(
+            offers = listOf(
+                Offer(
+                    sourceId = "s1",
+                    sourceName = "s1",
+                    price = Price(50.0, "EUR"),
+                    url = "https://example.com/big",
+                    availability = "InStock",
+                    priceDropPct = 25.0,
+                ),
+            ),
+        )
+        val priceless = item("null", "Senza Prezzo", priceEur = null)
+
+        val byPriceDesc = sortListings(listOf(smallDrop, priceless, noDiscount, bigDrop), ListingSortOption.PRICE_DESC)
+        assertEquals(listOf("no", "big", "small", "null"), byPriceDesc.map { it.key })
+
+        val byDiscountDesc = sortListings(listOf(noDiscount, smallDrop, bigDrop), ListingSortOption.DISCOUNT_DESC)
+        assertEquals(listOf("big", "small", "no"), byDiscountDesc.map { it.key })
+
+        val discountedOnly = filterAndSortListings(
+            items = listOf(noDiscount, smallDrop, bigDrop),
+            state = ListingFilterState(onlyDiscounted = true, sortOption = ListingSortOption.DISCOUNT_DESC),
+            today = today,
+        )
+        assertEquals(listOf("big", "small"), discountedOnly.map { it.key })
+    }
 }

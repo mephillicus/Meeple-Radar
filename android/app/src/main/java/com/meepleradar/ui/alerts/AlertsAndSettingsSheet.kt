@@ -1,12 +1,16 @@
 package com.meepleradar.ui.alerts
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,14 +26,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +49,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,10 +63,13 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meepleradar.data.local.AppThemeMode
 import com.meepleradar.data.local.NotificationPreferences
 import com.meepleradar.data.model.UserAlert
 import com.meepleradar.data.model.UserAlertType
 import com.meepleradar.notifications.NotificationHelper
+import com.meepleradar.notifications.PendingAlertNotification
+import com.meepleradar.ui.components.BlockVector
 import com.meepleradar.ui.theme.MeepleRadarTheme
 import java.time.Instant
 import java.time.LocalDateTime
@@ -81,10 +93,14 @@ fun AlertsAndSettingsSheet(
     val preferences by vm.preferences.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
+    var permissionDeniedBanner by remember {
+        mutableStateOf(!NotificationHelper.canPostNotifications(context))
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-    ) { _ ->
+    ) { granted ->
+        permissionDeniedBanner = !granted
         vm.setBackgroundSyncEnabled(true)
     }
 
@@ -96,6 +112,10 @@ fun AlertsAndSettingsSheet(
             alerts = alerts,
             isLoading = isLoading,
             preferences = preferences,
+            showPermissionWarning = preferences.backgroundSyncEnabled &&
+                (permissionDeniedBanner || !NotificationHelper.canPostNotifications(context)),
+            onOpenSystemNotificationSettings = { openAppNotificationSettings(context) },
+            onSendTestNotification = { sendTestNotification(context) },
             onMarkRead = vm::markRead,
             onMarkAllRead = vm::markAllRead,
             onOpenAlert = { alert ->
@@ -112,14 +132,45 @@ fun AlertsAndSettingsSheet(
                 ) {
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 } else {
+                    permissionDeniedBanner = !NotificationHelper.canPostNotifications(context)
                     vm.setBackgroundSyncEnabled(enabled)
                 }
             },
+            onSelectSyncInterval = vm::setSyncIntervalHours,
+            onToggleSyncWifiOnly = vm::setSyncWifiOnly,
+            onSelectThemeMode = vm::setThemeMode,
+            onToggleDynamicColors = vm::setDynamicColors,
             onToggleBackInStock = vm::setNotifyBackInStock,
             onTogglePriceDrop = vm::setNotifyPriceDrop,
             onToggleNewExpansion = vm::setNotifyNewExpansion,
             onToggleNewsDigest = vm::setNotifyNewsDigest,
         )
+    }
+}
+
+internal fun openAppNotificationSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(intent) }
+}
+
+internal fun sendTestNotification(context: Context) {
+    NotificationHelper.ensureChannel(context)
+    if (NotificationHelper.canPostNotifications(context)) {
+        NotificationHelper.postAlert(
+            context = context,
+            alert = PendingAlertNotification(
+                alertId = 999_999L,
+                title = "Notifica di prova — Meeple Radar",
+                body = "Le notifiche sugli avvisi di prezzo, stock ed espansioni sono attive!",
+                itemKey = null,
+                alertType = UserAlertType.PRICE_DROP,
+            ),
+        )
+    } else {
+        openAppNotificationSettings(context)
     }
 }
 
@@ -136,6 +187,13 @@ internal fun AlertsAndSettingsSheetContent(
     onTogglePriceDrop: (Boolean) -> Unit,
     onToggleNewExpansion: (Boolean) -> Unit,
     onToggleNewsDigest: (Boolean) -> Unit,
+    onSelectSyncInterval: (Int) -> Unit = {},
+    onToggleSyncWifiOnly: (Boolean) -> Unit = {},
+    onSelectThemeMode: (AppThemeMode) -> Unit = {},
+    onToggleDynamicColors: (Boolean) -> Unit = {},
+    showPermissionWarning: Boolean = false,
+    onOpenSystemNotificationSettings: () -> Unit = {},
+    onSendTestNotification: () -> Unit = {},
     initialTab: Int = 0,
     modifier: Modifier = Modifier,
 ) {
@@ -166,7 +224,7 @@ internal fun AlertsAndSettingsSheetContent(
                     modifier = Modifier.size(20.dp),
                 )
                 Text(
-                    text = "Avvisi e Notifiche",
+                    text = "Avvisi e Impostazioni",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -208,27 +266,40 @@ internal fun AlertsAndSettingsSheetContent(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
 
         if (selectedTab == 0) {
-            AlertsTabContent(
+            AlertsPanelSection(
                 alerts = alerts,
                 isLoading = isLoading,
                 onMarkRead = onMarkRead,
+                onMarkAllRead = onMarkAllRead,
                 onOpenAlert = onOpenAlert,
+                showMarkAllButton = false,
+                modifier = Modifier.heightIn(max = 420.dp),
             )
         } else {
-            SettingsTabContent(
+            SettingsPanelSection(
                 preferences = preferences,
+                showPermissionWarning = showPermissionWarning,
+                onOpenSystemNotificationSettings = onOpenSystemNotificationSettings,
+                onSendTestNotification = onSendTestNotification,
                 onToggleBackgroundSync = onToggleBackgroundSync,
+                onSelectSyncInterval = onSelectSyncInterval,
+                onToggleSyncWifiOnly = onToggleSyncWifiOnly,
+                onSelectThemeMode = onSelectThemeMode,
+                onToggleDynamicColors = onToggleDynamicColors,
                 onToggleBackInStock = onToggleBackInStock,
                 onTogglePriceDrop = onTogglePriceDrop,
                 onToggleNewExpansion = onToggleNewExpansion,
                 onToggleNewsDigest = onToggleNewsDigest,
+                modifier = Modifier
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
             )
         }
     }
 }
 
 @Composable
-private fun SheetTabButton(
+internal fun SheetTabButton(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -246,13 +317,14 @@ private fun SheetTabButton(
             if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
         ),
         modifier = modifier
-            .height(38.dp)
+            .height(36.dp)
             .clickable(onClick = onClick),
     ) {
-        Box(contentAlignment = Alignment.Center) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp)) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
+                fontSize = 12.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 color = if (selected) {
                     MaterialTheme.colorScheme.onPrimaryContainer
@@ -260,6 +332,7 @@ private fun SheetTabButton(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 softWrap = false,
             )
         }
@@ -267,64 +340,155 @@ private fun SheetTabButton(
 }
 
 @Composable
-private fun AlertsTabContent(
+internal fun AlertsPanelSection(
     alerts: List<UserAlert>,
     isLoading: Boolean,
     onMarkRead: (UserAlert) -> Unit,
+    onMarkAllRead: () -> Unit,
     onOpenAlert: (UserAlert) -> Unit,
+    showMarkAllButton: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
-    when {
-        isLoading && alerts.isEmpty() -> {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(140.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
-            }
-        }
+    var selectedTypeFilter by rememberSaveable { mutableStateOf<UserAlertType?>(null) }
+    val filteredAlerts = remember(alerts, selectedTypeFilter) {
+        if (selectedTypeFilter == null) alerts else alerts.filter { it.alertType == selectedTypeFilter }
+    }
+    val unreadCount = alerts.count { it.isUnread }
 
-        alerts.isEmpty() -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (alerts.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(
-                    text = "Nessun avviso recente",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "Qui appariranno cali di prezzo, rientri a magazzino dei preferiti e nuove espansioni.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        else -> {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(alerts, key = { it.id }) { alert ->
-                    AlertRowCard(
-                        alert = alert,
-                        onClick = {
-                            if (alert.itemKeyOrNull() != null) {
-                                onOpenAlert(alert)
-                            } else {
-                                onMarkRead(alert)
-                            }
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    FilterChip(
+                        selected = selectedTypeFilter == null,
+                        onClick = { selectedTypeFilter = null },
+                        label = {
+                            Text(
+                                text = "Tutti (${alerts.size})",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 11.sp,
+                            )
                         },
-                        onOpen = { onOpenAlert(alert) },
                     )
+                    FilterChip(
+                        selected = selectedTypeFilter == UserAlertType.PRICE_DROP,
+                        onClick = {
+                            selectedTypeFilter = if (selectedTypeFilter == UserAlertType.PRICE_DROP) null else UserAlertType.PRICE_DROP
+                        },
+                        label = {
+                            Text(
+                                text = "Cali prezzo",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 11.sp,
+                            )
+                        },
+                    )
+                    FilterChip(
+                        selected = selectedTypeFilter == UserAlertType.BACK_IN_STOCK,
+                        onClick = {
+                            selectedTypeFilter = if (selectedTypeFilter == UserAlertType.BACK_IN_STOCK) null else UserAlertType.BACK_IN_STOCK
+                        },
+                        label = {
+                            Text(
+                                text = "Disponibili",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 11.sp,
+                            )
+                        },
+                    )
+                    FilterChip(
+                        selected = selectedTypeFilter == UserAlertType.NEW_EXPANSION,
+                        onClick = {
+                            selectedTypeFilter = if (selectedTypeFilter == UserAlertType.NEW_EXPANSION) null else UserAlertType.NEW_EXPANSION
+                        },
+                        label = {
+                            Text(
+                                text = "Espansioni",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 11.sp,
+                            )
+                        },
+                    )
+                }
+
+                if (showMarkAllButton && unreadCount > 0) {
+                    TextButton(
+                        onClick = onMarkAllRead,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "Segna letti",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+
+        when {
+            isLoading && alerts.isEmpty() -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                }
+            }
+
+            filteredAlerts.isEmpty() -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = if (alerts.isEmpty()) "Nessun avviso recente" else "Nessun avviso per questo filtro",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Qui appariranno cali di prezzo, rientri a magazzino dei preferiti e nuove espansioni.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(filteredAlerts, key = { it.id }) { alert ->
+                        AlertRowCard(
+                            alert = alert,
+                            onClick = {
+                                if (alert.itemKeyOrNull() != null) {
+                                    onOpenAlert(alert)
+                                } else {
+                                    onMarkRead(alert)
+                                }
+                            },
+                            onOpen = { onOpenAlert(alert) },
+                        )
+                    }
                 }
             }
         }
@@ -460,71 +624,301 @@ private fun AlertRowCard(
 }
 
 @Composable
-private fun SettingsTabContent(
+internal fun SettingsPanelSection(
     preferences: NotificationPreferences,
     onToggleBackgroundSync: (Boolean) -> Unit,
     onToggleBackInStock: (Boolean) -> Unit,
     onTogglePriceDrop: (Boolean) -> Unit,
     onToggleNewExpansion: (Boolean) -> Unit,
     onToggleNewsDigest: (Boolean) -> Unit,
+    onSelectSyncInterval: (Int) -> Unit = {},
+    onToggleSyncWifiOnly: (Boolean) -> Unit = {},
+    onSelectThemeMode: (AppThemeMode) -> Unit = {},
+    onToggleDynamicColors: (Boolean) -> Unit = {},
+    showPermissionWarning: Boolean = false,
+    onOpenSystemNotificationSettings: () -> Unit = {},
+    onSendTestNotification: () -> Unit = {},
+    ignoredCount: Int = 0,
+    onManageIgnored: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 1. Sezione Aspetto
+        SettingsGroupCard(title = "Aspetto") {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "Tema applicazione",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    AppThemeMode.entries.forEach { mode ->
+                        val selected = preferences.themeMode == mode
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(34.dp)
+                                .clickable { onSelectThemeMode(mode) },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = mode.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    SettingToggleRow(
+                        title = "Colori dinamici (Material You)",
+                        subtitle = "Adatta la palette ai colori dello sfondo di Android 12+",
+                        checked = preferences.dynamicColors,
+                        enabled = true,
+                        onCheckedChange = onToggleDynamicColors,
+                    )
+                }
+            }
+        }
+
+        // 2. Sezione Sincronizzazione e Notifiche
+        SettingsGroupCard(title = "Sincronizzazione e Notifiche") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (showPermissionWarning) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenSystemNotificationSettings),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = "Permesso notifiche disattivato su Android",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = "Attiva ›",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                    }
+                }
+
+                SettingToggleRow(
+                    title = "Sincronizzazione automatica",
+                    subtitle = "Aggiorna il catalogo in background e invia gli avvisi selezionati",
+                    checked = preferences.backgroundSyncEnabled,
+                    enabled = true,
+                    onCheckedChange = onToggleBackgroundSync,
+                )
+
+                if (preferences.backgroundSyncEnabled) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = "Frequenza sync",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(6, 12, 24).forEach { hours ->
+                                val selected = preferences.syncIntervalHours == hours
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onSelectSyncInterval(hours) },
+                                    label = {
+                                        Text(
+                                            text = "${hours}h",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontSize = 11.sp,
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    SettingToggleRow(
+                        title = "Solo sotto rete Wi-Fi",
+                        subtitle = "Evita il consumo dati mobili per il sync periodico",
+                        checked = preferences.syncWifiOnly,
+                        enabled = preferences.backgroundSyncEnabled,
+                        onCheckedChange = onToggleSyncWifiOnly,
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                SettingToggleRow(
+                    title = "Preferiti tornati disponibili",
+                    subtitle = "Avvisa quando un gioco nei preferiti torna in stock",
+                    checked = preferences.notifyBackInStock,
+                    enabled = preferences.backgroundSyncEnabled,
+                    onCheckedChange = onToggleBackInStock,
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                SettingToggleRow(
+                    title = "Cali di prezzo sui preferiti",
+                    subtitle = "Avvisa quando scende il prezzo o tocca un nuovo minimo",
+                    checked = preferences.notifyPriceDrop,
+                    enabled = preferences.backgroundSyncEnabled,
+                    onCheckedChange = onTogglePriceDrop,
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                SettingToggleRow(
+                    title = "Nuove espansioni in arrivo",
+                    subtitle = "Avvisa quando viene rilevata un'espansione dei tuoi giochi",
+                    checked = preferences.notifyNewExpansion,
+                    enabled = preferences.backgroundSyncEnabled,
+                    onCheckedChange = onToggleNewExpansion,
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                SettingToggleRow(
+                    title = "Riepilogo novità giornaliere",
+                    subtitle = "Notifica riassuntiva quando arrivano nuovi titoli nel catalogo",
+                    checked = preferences.notifyNewsDigest,
+                    enabled = preferences.backgroundSyncEnabled,
+                    onCheckedChange = onToggleNewsDigest,
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(
+                        onClick = onSendTestNotification,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Notifications,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Invia notifica di prova",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3. Sezione Catalogo e Ignorati (se disponibile nel contesto)
+        if (onManageIgnored != null) {
+            SettingsGroupCard(title = "Catalogo") {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onManageIgnored),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = BlockVector,
+                            contentDescription = null,
+                            tint = if (ignoredCount > 0) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = if (ignoredCount > 0) {
+                                "Gestisci giochi ignorati ($ignoredCount)"
+                            } else {
+                                "Gestisci giochi ignorati"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = "Apri ›",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroupCard(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
         Card(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
             ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-        ) {
-            SettingToggleRow(
-                title = "Sincronizzazione automatica (ogni 12h)",
-                subtitle = "Aggiorna il catalogo in background con rete attiva e invia gli avvisi selezionati.",
-                checked = preferences.backgroundSyncEnabled,
-                enabled = true,
-                onCheckedChange = onToggleBackgroundSync,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            )
-        }
-
-        Column(
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            SettingToggleRow(
-                title = "Preferiti tornati disponibili",
-                subtitle = "Avvisa quando un gioco nei preferiti torna in stock",
-                checked = preferences.notifyBackInStock,
-                enabled = preferences.backgroundSyncEnabled,
-                onCheckedChange = onToggleBackInStock,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            SettingToggleRow(
-                title = "Cali di prezzo sui preferiti",
-                subtitle = "Avvisa quando scende il prezzo o tocca un nuovo minimo",
-                checked = preferences.notifyPriceDrop,
-                enabled = preferences.backgroundSyncEnabled,
-                onCheckedChange = onTogglePriceDrop,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            SettingToggleRow(
-                title = "Nuove espansioni in arrivo",
-                subtitle = "Avvisa quando viene rilevata un'espansione dei tuoi giochi",
-                checked = preferences.notifyNewExpansion,
-                enabled = preferences.backgroundSyncEnabled,
-                onCheckedChange = onToggleNewExpansion,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            SettingToggleRow(
-                title = "Riepilogo novità giornaliere",
-                subtitle = "Notifica riassuntiva quando arrivano nuovi titoli nel catalogo",
-                checked = preferences.notifyNewsDigest,
-                enabled = preferences.backgroundSyncEnabled,
-                onCheckedChange = onToggleNewsDigest,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-            )
+            Box(modifier = Modifier.padding(12.dp)) {
+                content()
+            }
         }
     }
 }

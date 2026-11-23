@@ -86,22 +86,34 @@ class CatalogSyncWorker(
 
 class SyncWorkScheduler(private val context: Context) {
 
-    fun syncSchedule(enabled: Boolean) {
+    fun syncSchedule(
+        enabled: Boolean,
+        intervalHours: Long = DEFAULT_REPEAT_INTERVAL_HOURS,
+        wifiOnly: Boolean = false,
+        replaceExisting: Boolean = false,
+    ) {
         val workManager = WorkManager.getInstance(context.applicationContext)
         if (enabled) {
+            val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
             val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiredNetworkType(networkType)
                 .setRequiresBatteryNotLow(true)
                 .build()
+            val safeInterval = intervalHours.coerceIn(6L, 24L)
             val request = PeriodicWorkRequestBuilder<CatalogSyncWorker>(
-                REPEAT_INTERVAL_HOURS,
+                safeInterval,
                 TimeUnit.HOURS,
             )
                 .setConstraints(constraints)
                 .build()
+            val policy = if (replaceExisting) {
+                ExistingPeriodicWorkPolicy.UPDATE
+            } else {
+                ExistingPeriodicWorkPolicy.KEEP
+            }
             workManager.enqueueUniquePeriodicWork(
                 UNIQUE_WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                policy,
                 request,
             )
         } else {
@@ -111,7 +123,7 @@ class SyncWorkScheduler(private val context: Context) {
 
     private companion object {
         const val UNIQUE_WORK_NAME = "meeple_radar_catalog_sync"
-        const val REPEAT_INTERVAL_HOURS = 12L
+        const val DEFAULT_REPEAT_INTERVAL_HOURS = 12L
     }
 }
 

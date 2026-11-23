@@ -86,8 +86,44 @@ class AlertsViewModel(
     }
 
     fun setBackgroundSyncEnabled(enabled: Boolean) {
-        preferencesStore.update { it.copy(backgroundSyncEnabled = enabled) }
-        syncWorkScheduler.syncSchedule(enabled)
+        val next = preferencesStore.update { it.copy(backgroundSyncEnabled = enabled) }
+        syncWorkScheduler.syncSchedule(
+            enabled = next.backgroundSyncEnabled,
+            intervalHours = next.syncIntervalHours.toLong(),
+            wifiOnly = next.syncWifiOnly,
+        )
+    }
+
+    fun setSyncIntervalHours(hours: Int) {
+        val next = preferencesStore.update { it.copy(syncIntervalHours = hours) }
+        if (next.backgroundSyncEnabled) {
+            syncWorkScheduler.syncSchedule(
+                enabled = true,
+                intervalHours = next.syncIntervalHours.toLong(),
+                wifiOnly = next.syncWifiOnly,
+                replaceExisting = true,
+            )
+        }
+    }
+
+    fun setSyncWifiOnly(wifiOnly: Boolean) {
+        val next = preferencesStore.update { it.copy(syncWifiOnly = wifiOnly) }
+        if (next.backgroundSyncEnabled) {
+            syncWorkScheduler.syncSchedule(
+                enabled = true,
+                intervalHours = next.syncIntervalHours.toLong(),
+                wifiOnly = next.syncWifiOnly,
+                replaceExisting = true,
+            )
+        }
+    }
+
+    fun setThemeMode(mode: com.meepleradar.data.local.AppThemeMode) {
+        preferencesStore.update { it.copy(themeMode = mode) }
+    }
+
+    fun setDynamicColors(enabled: Boolean) {
+        preferencesStore.update { it.copy(dynamicColors = enabled) }
     }
 
     fun setNotifyBackInStock(enabled: Boolean) {

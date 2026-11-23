@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.remote.BoardGameImageLookup
+import com.meepleradar.ui.alerts.AlertsViewModel
 import com.meepleradar.ui.components.AlphabetFastScroller
 import com.meepleradar.ui.components.CompactSearchBar
 import com.meepleradar.ui.components.EmptyView
@@ -67,6 +68,8 @@ fun NewsScreen(
     onOpen: (IncomingItem) -> Unit,
     imageLookup: BoardGameImageLookup,
     modifier: Modifier = Modifier,
+    alertsVm: AlertsViewModel? = null,
+    onOpenAlertItem: ((String) -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val isRefreshing by vm.isRefreshing.collectAsStateWithLifecycle()
@@ -75,6 +78,7 @@ fun NewsScreen(
     val hideUndated by vm.hideUndated.collectAsStateWithLifecycle()
     val hidePriceless by vm.hidePriceless.collectAsStateWithLifecycle()
     val hideSeen by vm.hideSeen.collectAsStateWithLifecycle()
+    val onlyDiscounted by vm.onlyDiscounted.collectAsStateWithLifecycle()
     val selectedAvailability by vm.selectedAvailability.collectAsStateWithLifecycle()
     val sortOption by vm.sortOption.collectAsStateWithLifecycle()
     val searchQueryState by vm.searchQuery.collectAsStateWithLifecycle()
@@ -95,7 +99,7 @@ fun NewsScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             val selSources = selectedSources
-            val hasActiveFilters = hideUndated || hidePriceless || hideSeen ||
+            val hasActiveFilters = hideUndated || hidePriceless || hideSeen || onlyDiscounted ||
                 sortOption != ListingSortOption.DEFAULT ||
                 (selSources != null && selSources.size < sources.size) ||
                 selectedAvailability.size < AvailabilityStatus.entries.size
@@ -251,11 +255,22 @@ fun NewsScreen(
             hideUndated = hideUndated,
             hidePriceless = hidePriceless,
             hideSeen = hideSeen,
+            onlyDiscounted = onlyDiscounted,
             selectedAvailability = selectedAvailability,
             sortOption = sortOption,
             onSortOptionChange = vm::setSortOption,
-            onApply = { newSources, newHideUndated, newHidePriceless, newHideSeen, newAvail, newSort ->
-                vm.applyFilters(newSources, newHideUndated, newHidePriceless, newHideSeen, newAvail, newSort)
+            alertsVm = alertsVm,
+            onOpenAlertItem = onOpenAlertItem,
+            onApply = { newSources, newHideUndated, newHidePriceless, newHideSeen, newOnlyDiscounted, newAvail, newSort ->
+                vm.applyFilters(
+                    sourceIds = newSources,
+                    hideUndated = newHideUndated,
+                    hidePriceless = newHidePriceless,
+                    hideSeen = newHideSeen,
+                    availability = newAvail,
+                    sortOption = newSort,
+                    onlyDiscounted = newOnlyDiscounted,
+                )
                 isFilterDrawerOpen = false
             },
             onReset = {

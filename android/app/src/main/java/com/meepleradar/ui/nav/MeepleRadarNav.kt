@@ -248,6 +248,8 @@ fun MeepleRadarNav(
                         alertsVm.refresh()
                         showAlertsSheet = true
                     },
+                    alertsVm = alertsVm,
+                    onOpenAlertItem = { itemKey -> navController.navigate(detailRoute(itemKey)) },
                 )
             }
 
@@ -261,6 +263,8 @@ fun MeepleRadarNav(
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
                     imageLookup = container.boardGameImageLookup,
+                    alertsVm = alertsVm,
+                    onOpenAlertItem = { itemKey -> navController.navigate(detailRoute(itemKey)) },
                 )
             }
 
@@ -274,6 +278,8 @@ fun MeepleRadarNav(
                     vm = vm,
                     onOpen = { item -> navController.navigate(detailRoute(item.key)) },
                     imageLookup = container.boardGameImageLookup,
+                    alertsVm = alertsVm,
+                    onOpenAlertItem = { itemKey -> navController.navigate(detailRoute(itemKey)) },
                 )
             }
 
