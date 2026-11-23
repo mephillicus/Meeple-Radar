@@ -4,7 +4,7 @@ import { matchCsv } from './csv-ranks.js'
 import type { GeekItem } from './online.js'
 import { buildSearchQuery, parseGeekItem, parseSearchIds, resolveGate } from './online.js'
 import type { SkipStore } from './skipped.js'
-import { normalizeTitle } from '../normalize.js'
+import { isNonBoardgameTitle, normalizeTitle } from '../normalize.js'
 
 export type BggReport = {
   candidates: number
@@ -28,11 +28,8 @@ export const RETRY_DELAY_MS = 30000
 export const THING_BATCH_SIZE = 20
 export const HYDRATE_GAME_LIMIT = 200
 
-const NON_BOARDGAME_PRODUCT_RE =
-  /\b(?:puzzle\s+\d+\s*pezzi|puzzle\s+2d|puzzle\s+3d|booster\s+pack|prerelease\s+box|spotlight\s+deck|starter\s+deck|extra\s+booster|display\s+\d+\s*buste|dice\s+set|dice\s+block|set\s+cancelleria|action\s+figure|pista\s+di\s+biglie|bustine\s+protettive|card\s+sleeves|playmat)\b/i
-
 export function isNonBoardgameProduct(title: string): boolean {
-  return NON_BOARDGAME_PRODUCT_RE.test(title)
+  return isNonBoardgameTitle(title)
 }
 
 type HydratableStore = ListingStore & {

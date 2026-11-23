@@ -9,6 +9,7 @@ import {
   normalizeTitle,
 } from '../src/normalize.js'
 import { decodeHtml, htmlToText } from '../src/text.js'
+import { isNonBoardgameProduct } from '../src/bgg/enrich.js'
 
 test('normalizeTitle assimila il suffisso edizione ITA ma mantiene separata l\'edizione inglese', () => {
   expect(normalizeTitle('Black Flag! (ITA)')).toBe('black flag')
@@ -245,38 +246,159 @@ test('normalizeListing normalizza availability usando normalizeAvailability', ()
   expect(futurePreorder.availability).toBe('preorder')
 })
 
-test('isNonBoardgameTitle filtra accessori/puzzle/BRIO/TCG ma preserva i veri giochi da tavolo', () => {
-  // Non-boardgames -> true
-  expect(isNonBoardgameTitle('Ravensburger Puzzle 1000 Pezzi - Venezia')).toBe(true)
-  expect(isNonBoardgameTitle('Puzzle 3D Torre Eiffel')).toBe(true)
-  expect(isNonBoardgameTitle('GraviTrax Starter Set')).toBe(true)
-  expect(isNonBoardgameTitle('BRIO Treno Merci a Batteria')).toBe(true)
-  expect(isNonBoardgameTitle('Set Binari Curvi')).toBe(true)
-  expect(isNonBoardgameTitle('Pista di Biglie Deluxe')).toBe(true)
-  expect(isNonBoardgameTitle('CreArt Cavalli')).toBe(true)
-  expect(isNonBoardgameTitle('tiptoi Penna Interattiva')).toBe(true)
-  expect(isNonBoardgameTitle('Dragon Shield Bustine Protettive Matte')).toBe(true)
-  expect(isNonBoardgameTitle('Buste Protettive Standard 100pz')).toBe(true)
-  expect(isNonBoardgameTitle('Katana Sleeves Transparent')).toBe(true)
-  expect(isNonBoardgameTitle('Gamegenic Playmat Nero')).toBe(true)
-  expect(isNonBoardgameTitle('Tappetino da Gioco Lorcana')).toBe(true)
-  expect(isNonBoardgameTitle('Portamazzo Sidewinder')).toBe(true)
-  expect(isNonBoardgameTitle('Ultimate Guard Deck Box 100+')).toBe(true)
-  expect(isNonBoardgameTitle('Gift Card 50€')).toBe(true)
-  expect(isNonBoardgameTitle('Buono Regalo Digitale')).toBe(true)
-  expect(isNonBoardgameTitle('Star Wars Unlimited Booster Pack')).toBe(true)
-  expect(isNonBoardgameTitle('Magic Prerelease Box')).toBe(true)
-  expect(isNonBoardgameTitle('Display 24 Buste Pokémon')).toBe(true)
-  expect(isNonBoardgameTitle('Chessex Dice Set 7 dadi')).toBe(true)
-  expect(isNonBoardgameTitle('Set 12 Dadi 16mm')).toBe(true)
-  expect(isNonBoardgameTitle('Dadi Custom Fazione')).toBe(true)
+test('isNonBoardgameTitle filtra merch, sleeves, puzzle, TCG, RPG/GDR e accessori dadi', () => {
+  const nonBoardgames = [
+    // Merch & Gadget: abbigliamento e accessori
+    'T-Shirt Meeple Nera L',
+    'Tshirt Catan Limited',
+    'Maglietta Dungeons & Dragons',
+    'Magliette Ufficiali Lucca',
+    'Felpa con Cappuccio Meeple',
+    'Cappellino Pokémon Pikachu',
+    'Tazza Ceramica D20',
+    'Mug Star Wars Grogu',
+    'Shopper Cotone Boardgame',
+    'Portachiavi Metallo D20',
+    'Spilla Smaltata Meeple',
+    'Poster Mappa della Terra di Mezzo',
+    'Peluche Cthulhu 25cm',
+    'Plush Eevee Official',
+    'Funko Pop! Demogorgon',
+    'Lampada LED D20',
+    "Calendario dell'Avvento EXIT",
+    'Calendario dell’Avvento Pokémon',
+    // Merch & Gadget: sticker, biglietti, voucher e cancelleria
+    'Set Sticker Catan',
+    'Sticker Pack Meeple',
+    'Adesivo Vinile D20',
+    'Biglietto Auguri Compleanno Gamer',
+    'Gift Card 50€',
+    'Giftcard Digitale 25€',
+    'Buono Regalo Digitale',
+    'Set Cancelleria Harry Potter',
+    // Sleeves, Bustine, Binder, Playmat, Deck Box
+    'Dragon Shield Bustine Protettive Matte',
+    'Bustina Standard 63x88',
+    'Buste Protettive Standard 100pz',
+    'Box 24 Buste Magic',
+    'Blister 3 Buste Lorcana',
+    'Katana Sleeves Transparent',
+    'Sleeve Perfect Fit',
+    'Foderine Trasparenti Mini Euro',
+    'Ultimate Guard Zipfolio Binder 9-Pocket',
+    'Album Porta Carte Pokémon',
+    'Portamazzo Sidewinder',
+    'Portamazzi Doppio Nero',
+    'Ultimate Guard Deck Box 100+',
+    'Deckbox Boulder 80+',
+    'Gamegenic Playmat Nero',
+    'Play Mat Neoprene 60x35',
+    'Tappetino da Gioco Lorcana',
+    'Tappetini Neoprene Set',
+    // Puzzle & Giocattoli
+    'Ravensburger Puzzle 1000 Pezzi - Venezia',
+    'Puzzle 3D Torre Eiffel',
+    'Puzzle 2D Mappa Mondo',
+    'Puzzle da Viaggio 500',
+    'Boardgame Puzzle Catan',
+    'GraviTrax Starter Set',
+    'BRIO Treno Merci a Batteria',
+    'Treno ad Alta Velocità',
+    'Treno della Giungla',
+    'Set Binari Curvi',
+    'Pista di Biglie Deluxe',
+    'Action Figure Geralt of Rivia',
+    'CreArt Cavalli',
+    'tiptoi Penna Interattiva',
+    // TCG Packs / Displays / Starter Decks
+    'Star Wars Unlimited Booster Pack',
+    'One Piece Booster Box OP-09',
+    'Lorcana Booster Display',
+    'Pokémon Booster Set',
+    'One Piece Extra Booster EB-01',
+    'Magic Booster (36)',
+    'Magic Prerelease Box',
+    'Star Wars Unlimited Spotlight Deck',
+    'Lorcana Starter Deck',
+    'Yu-Gi-Oh Structure Deck',
+    'Pokémon Theme Deck',
+    'Display 24 Buste Pokémon',
+    'Pokémon Elite Trainer Box',
+    'Tin Box Collezionabile Pikachu',
+    // Painting Minis & RPG / GDR
+    "D&D Nolzur's Marvelous Minis: Beholder",
+    'Nolzurs Marvelous Minis Elf Wizard',
+    'WizKids Deep Cuts Minis: Treasure Chest',
+    'Fabula Ultima GDR',
+    'Brancalonia Gioco di Ruolo',
+    'Schermo del Master D&D 5e',
+    'Schermo del GM Cyberpunk',
+    'Schermo del Narratore Vampiri',
+    'Kit del Game Master Pathfinder',
+    'Manuale Base Fabula Ultima',
+    'Manuale del Giocatore 5e',
+    'Manuale GDR Blade Runner',
+    'Manuale RPG Alien',
+    'Modulo Avventura La Miniera Perduta',
+    'Avventura GDR Il Risveglio',
+    'Cthulhu RPG Corebook',
+    // Dice Towers, Dice Trays, Dice Bags & Dice Sets
+    'Torre Lancia Dadi in Legno',
+    'Torre Dadi Pieghevole',
+    'Dice Tower Castello Medievale',
+    'Gamegenic Dice Tray Esagonale',
+    'Vassoio Lancia Dadi Neoprene',
+    'Vassoio Porta Dadi Pelle',
+    'Vassoi Dadi Set',
+    'Dice Bag Velluto Nero',
+    'Dice Pouch Pelle',
+    'Sacchetto Portadadi Runico',
+    'Sacchetto Dadi Cotone',
+    'Chessex Dice Set 7 dadi',
+    'Chessex Dice Block 36 dadi',
+    'Set 12 Dadi 16mm',
+    'Dadi Custom Fazione',
+  ]
 
-  // Real board games -> false
-  expect(isNonBoardgameTitle('Ra: The Dice Game')).toBe(false)
-  expect(isNonBoardgameTitle('7 Wonders Dice')).toBe(false)
-  expect(isNonBoardgameTitle('Florenza – Dice Game')).toBe(false)
-  expect(isNonBoardgameTitle('Racket Dice')).toBe(false)
-  expect(isNonBoardgameTitle('Dune: Imperium – Rivolta')).toBe(false)
-  expect(isNonBoardgameTitle('Ticket to Ride: Europa')).toBe(false)
-  expect(isNonBoardgameTitle('Heat: Pedal to the Metal')).toBe(false)
+  for (const title of nonBoardgames) {
+    expect(isNonBoardgameTitle(title), `expected non-boardgame: ${title}`).toBe(true)
+    expect(isNonBoardgameProduct(title), `expected delegate match: ${title}`).toBe(true)
+  }
+})
+
+test('isNonBoardgameTitle preserva organizer, upgrade/monete e tutti i giochi da tavolo protetti', () => {
+  const keptTitles = [
+    // Organizer / Inserti (esplicitamente mantenuti)
+    'CASCADIA – Organizer',
+    'Ants - Bundle Organizer',
+    'SETI - Super Bundle Organizer',
+    // Upgrade Kit / Monete in Metallo / Risorse Deluxe (esplicitamente mantenuti)
+    'Kutnà Hora - Monete in Metallo',
+    'SETI - Upgrade Kit',
+    'Scythe – Metal Coins $2',
+    'Scythe – Risorse Realistiche',
+    'Tiny Turbo Cars – Wooden Tokens Upgrade Pack',
+    // Giochi da tavolo protetti contro falsi positivi
+    'Ticket to Ride - Europa',
+    'Carcassonne - Cacciatori e Raccoglitori',
+    'Calzini Spaiati',
+    'Astoria – La Ferrovia degli Animali',
+    'Horrified - Dungeons & Dragons - Ravenloft',
+    'Flock Together',
+    'Ra: The Dice Game',
+    '7 Wonders Dice',
+    'Florenza – Dice Game',
+    'Ratti di Wistar - The Dice Tower Invention Card',
+    // Ulteriori giochi reali & promo Dice Tower
+    'Racket Dice',
+    'Dune: Imperium – Rivolta',
+    'Heat: Pedal to the Metal',
+    'Wingspan - The Dice Tower Promo',
+    'Cascadia - Dice Tower Card',
+  ]
+
+  for (const title of keptTitles) {
+    expect(isNonBoardgameTitle(title), `expected kept boardgame/accessory: ${title}`).toBe(false)
+    expect(isNonBoardgameProduct(title), `expected delegate false: ${title}`).toBe(false)
+  }
 })
