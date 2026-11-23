@@ -7,15 +7,15 @@ import com.meepleradar.data.repo.bestEurPrice
 import java.time.LocalDate
 import java.util.Locale
 
-enum class ListingSortOption(val label: String) {
-    DEFAULT("Predefinito"),
-    TITLE_ASC("A-Z"),
-    PRICE_ASC("Prezzo ↑"),
-    PRICE_DESC("Prezzo ↓"),
-    DISCOUNT_DESC("Sconto % ↓"),
-    RELEASE_DATE_ASC("Data ↑"),
-    RELEASE_DATE_DESC("Data ↓"),
-    BGG_RATING_DESC("Voto BGG ↓"),
+enum class ListingSortOption(val label: String, val compactLabel: String = label) {
+    DEFAULT("Predefinito", "Auto"),
+    TITLE_ASC("A-Z", "A-Z"),
+    PRICE_ASC("Prezzo ↑", "€ ↑"),
+    PRICE_DESC("Prezzo ↓", "€ ↓"),
+    DISCOUNT_DESC("Sconto % ↓", "% ↓"),
+    RELEASE_DATE_ASC("Data ↑", "📅 ↑"),
+    RELEASE_DATE_DESC("Data ↓", "📅 ↓"),
+    BGG_RATING_DESC("Voto BGG ↓", "★ ↓"),
 }
 
 val ListingSortOption.isAlphabetical: Boolean

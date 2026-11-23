@@ -1,6 +1,7 @@
 package com.meepleradar.ui.components
 
 import android.Manifest
+import android.content.res.Configuration
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,8 +51,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,6 +65,7 @@ import com.meepleradar.ui.alerts.SettingsPanelSection
 import com.meepleradar.ui.alerts.SheetTabButton
 import com.meepleradar.ui.alerts.openAppNotificationSettings
 import com.meepleradar.ui.alerts.sendTestNotification
+import com.meepleradar.ui.theme.MeepleRadarTheme
 
 @Composable
 fun ListingFilterDrawerOverlay(
@@ -109,7 +109,7 @@ fun ListingFilterDrawerOverlay(
             ModalDrawerSheet(
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(340.dp)
+                    .width(348.dp)
                     .clickable(enabled = false) {},
             ) {
                 ListingFilterDrawerContent(
@@ -214,8 +214,8 @@ fun ListingFilterDrawerContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // Header
         Row(
@@ -228,7 +228,7 @@ fun ListingFilterDrawerContent(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
-            IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+            IconButton(onClick = onClose, modifier = Modifier.size(26.dp)) {
                 Icon(Icons.Filled.Close, contentDescription = "Chiudi", modifier = Modifier.size(16.dp))
             }
         }
@@ -336,38 +336,30 @@ fun ListingFilterDrawerContent(
             }
 
             else -> {
-                // TAB 0: FILTRI E ORDINAMENTO
-                // Sezione 1: Ordina per
+                // TAB 0: FILTRI E ORDINAMENTO ULTRA-COMPATTO
+                // Sezione 1: Ordina per (1 sola riga con simboli)
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "Ordina per",
+                        text = "Ordina per (${localSortOption.label})",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
-                    FlowRow(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         ListingSortOption.entries.forEach { option ->
-                            FilterChip(
+                            CompactTogglePill(
+                                label = option.compactLabel,
                                 selected = localSortOption == option,
                                 onClick = {
                                     localSortOption = option
                                     onSortOptionChange?.invoke(option)
                                 },
-                                label = {
-                                    Text(
-                                        text = option.label,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                    )
-                                },
+                                modifier = Modifier.weight(1f),
                             )
                         }
                     }
@@ -375,7 +367,7 @@ fun ListingFilterDrawerContent(
 
                 HorizontalDivider()
 
-                // Sezione 2: Filtri rapidi e Nascondi (non chiude il drawer al tocco!)
+                // Sezione 2: Filtri e Nascondi (1 sola riga da 4 colonne)
                 HideFilterChipsSection(
                     hideUndated = localHideUndated,
                     hidePriceless = localHidePriceless,
@@ -389,16 +381,16 @@ fun ListingFilterDrawerContent(
 
                 HorizontalDivider()
 
-                // Sezione 3: Disponibilità (header allineato come Negozi)
+                // Sezione 3: Disponibilità (2 righe da 3 colonne con pallino colorato)
                 val allAvailability = remember { AvailabilityStatus.entries.toSet() }
                 val availabilityOptions = remember {
                     listOf(
-                        AvailabilityStatus.AVAILABLE to "Disponibile",
-                        AvailabilityStatus.PREORDER to "Preordine",
-                        AvailabilityStatus.BACKORDER to "Su richiesta",
-                        AvailabilityStatus.UNAVAILABLE to "Non disponibile",
-                        AvailabilityStatus.DISCONTINUED to "Fuori produz.",
-                        AvailabilityStatus.UNKNOWN to "Da verificare",
+                        Triple(AvailabilityStatus.AVAILABLE, "Disp.", Color(0xFF22C55E)),
+                        Triple(AvailabilityStatus.PREORDER, "Preord.", Color(0xFF3B82F6)),
+                        Triple(AvailabilityStatus.BACKORDER, "Richiesta", Color(0xFFF59E0B)),
+                        Triple(AvailabilityStatus.UNAVAILABLE, "Non disp.", Color(0xFF94A3B8)),
+                        Triple(AvailabilityStatus.DISCONTINUED, "Fuori prod.", Color(0xFFEF4444)),
+                        Triple(AvailabilityStatus.UNKNOWN, "Da verif.", Color(0xFFA855F7)),
                     )
                 }
 
@@ -420,41 +412,23 @@ fun ListingFilterDrawerContent(
 
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    availabilityOptions.chunked(2).forEach { rowOptions ->
+                    availabilityOptions.chunked(3).forEach { rowOptions ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            rowOptions.forEach { (status, label) ->
+                            rowOptions.forEach { (status, label, dotColor) ->
                                 val isSelected = status in localAvailability
-                                FilterChip(
+                                CompactTogglePill(
+                                    label = label,
                                     selected = isSelected,
+                                    leadingDotColor = dotColor,
                                     onClick = {
                                         val next = localAvailability.toMutableSet()
                                         if (isSelected) next.remove(status) else next.add(status)
                                         localAvailability = next
-                                    },
-                                    label = {
-                                        Text(
-                                            text = label,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontSize = 11.sp,
-                                        )
-                                    },
-                                    leadingIcon = if (isSelected) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Filled.Check,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(12.dp),
-                                            )
-                                        }
-                                    } else {
-                                        null
                                     },
                                     modifier = Modifier.weight(1f),
                                 )
@@ -465,7 +439,7 @@ fun ListingFilterDrawerContent(
 
                 HorizontalDivider()
 
-                // Sezione 4: Negozi
+                // Sezione 4: Negozi (3 per riga, ampio spazio + scroll)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -484,45 +458,28 @@ fun ListingFilterDrawerContent(
 
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    items(sources.chunked(2), key = { row -> row.first().id }) { rowSources ->
+                    items(sources.chunked(3), key = { row -> row.first().id }) { rowSources ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             rowSources.forEach { source ->
                                 val isChecked = localSelectedSources.contains(source.id)
-                                FilterChip(
+                                CompactTogglePill(
+                                    label = compactStoreLabel(source.name),
                                     selected = isChecked,
+                                    showCheckWhenSelected = true,
                                     onClick = {
                                         val next = localSelectedSources.toMutableSet()
                                         if (isChecked) next.remove(source.id) else next.add(source.id)
                                         localSelectedSources = next
                                     },
-                                    label = {
-                                        Text(
-                                            text = source.name,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            style = MaterialTheme.typography.labelSmall,
-                                        )
-                                    },
-                                    leadingIcon = if (isChecked) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Filled.Check,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(12.dp),
-                                            )
-                                        }
-                                    } else {
-                                        null
-                                    },
                                     modifier = Modifier.weight(1f),
                                 )
                             }
-                            if (rowSources.size == 1) {
+                            repeat(3 - rowSources.size) {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
@@ -546,7 +503,7 @@ fun ListingFilterDrawerContent(
                             .clickable(onClick = onOpenAlerts),
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
@@ -558,7 +515,7 @@ fun ListingFilterDrawerContent(
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 },
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(15.dp),
                             )
                             Text(
                                 text = if (unreadAlertCount > 0) {
@@ -585,7 +542,7 @@ fun ListingFilterDrawerContent(
                             .clickable(onClick = onManageIgnored),
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
@@ -593,7 +550,7 @@ fun ListingFilterDrawerContent(
                                 imageVector = BlockVector,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(15.dp),
                             )
                             Text(
                                 text = if (ignoredCount > 0) {
@@ -647,6 +604,17 @@ fun ListingFilterDrawerContent(
     }
 }
 
+private fun compactStoreLabel(name: String): String =
+    name.trim()
+        .replace("Creations", "", ignoreCase = true)
+        .replace(Regex("(?<!of\\s)Games$", RegexOption.IGNORE_CASE), "")
+        .replace("Store", "", ignoreCase = true)
+        .replace("Edizioni", "Ed.", ignoreCase = true)
+        .replace("Merchant", "Merch.", ignoreCase = true)
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .ifBlank { name }
+
 @Composable
 private fun SelectToggleButtonsHorizontal(
     onSelectAll: () -> Unit,
@@ -685,7 +653,7 @@ private fun SelectToggleSquare(
         color = MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
         modifier = Modifier
-            .size(26.dp)
+            .size(24.dp)
             .clickable(onClick = onClick),
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -693,7 +661,54 @@ private fun SelectToggleSquare(
                 imageVector = icon,
                 contentDescription = contentDescription,
                 tint = tint,
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier.size(13.dp),
+            )
+        }
+    }
+}
+
+@Preview(name = "Filter Drawer — Light", showBackground = true, widthDp = 348, heightDp = 700)
+@Preview(
+    name = "Filter Drawer — Dark",
+    showBackground = true,
+    widthDp = 348,
+    heightDp = 700,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun ListingFilterDrawerPreview() {
+    val sampleSources = listOf(
+        Source("asmodee", "Asmodee"),
+        Source("boardhouse", "BoardHouse Store"),
+        Source("cranio", "Cranio Creations"),
+        Source("dungeondice", "DungeonDice"),
+        Source("dvgiochi", "dV Giochi"),
+        Source("fantasia", "Fantasia Store"),
+        Source("gateongames", "GateOnGames"),
+        Source("ghenos", "Ghenos Games"),
+        Source("giochiuniti", "Giochi Uniti"),
+        Source("hog", "House of Games"),
+        Source("magicmerchant", "Magic Merchant"),
+        Source("msedizioni", "MS Edizioni"),
+        Source("ravensburger", "Ravensburger"),
+        Source("uplay", "Uplay.it"),
+    )
+    MeepleRadarTheme {
+        Surface(color = MaterialTheme.colorScheme.surface) {
+            ListingFilterDrawerContent(
+                sources = sampleSources,
+                selectedSources = null,
+                hideUndated = false,
+                hidePriceless = true,
+                hideSeen = false,
+                onlyDiscounted = true,
+                selectedAvailability = AvailabilityStatus.entries.toSet(),
+                sortOption = ListingSortOption.PRICE_ASC,
+                ignoredCount = 3,
+                onManageIgnored = {},
+                onApply = { _, _, _, _, _, _, _ -> },
+                onReset = {},
+                onClose = {},
             )
         }
     }

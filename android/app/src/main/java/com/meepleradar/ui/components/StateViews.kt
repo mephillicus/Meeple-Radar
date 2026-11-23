@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -602,72 +601,98 @@ fun HideFilterChipsSection(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = "Filtri rapidi e Nascondi",
+            text = "Filtri e Nascondi",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
 
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
+        val options = buildList {
             if (onToggleDiscounted != null) {
-                FilterChip(
-                    selected = onlyDiscounted,
-                    onClick = onToggleDiscounted,
-                    label = {
-                        Text(
-                            text = "In sconto",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                    },
+                add(Triple("🏷️ Sconto", onlyDiscounted, onToggleDiscounted))
+            }
+            add(Triple("🚫📅 Data", hideUndated, onToggleUndated))
+            add(Triple("🚫€ Prezzo", hidePriceless, onTogglePriceless))
+            add(Triple("🚫👁 Visti", hideSeen, onToggleSeen))
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            options.forEach { (label, selected, onClick) ->
+                CompactTogglePill(
+                    label = label,
+                    selected = selected,
+                    onClick = onClick,
+                    modifier = Modifier.weight(1f),
                 )
             }
+        }
+    }
+}
 
-            FilterChip(
-                selected = hideUndated,
-                onClick = onToggleUndated,
-                label = {
-                    Text(
-                        text = "Senza data",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
+@Composable
+internal fun CompactTogglePill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    leadingDotColor: Color? = null,
+    showCheckWhenSelected: Boolean = false,
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        },
+        border = BorderStroke(
+            1.dp,
+            if (selected) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            },
+        ),
+        modifier = modifier
+            .height(29.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (leadingDotColor != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = leadingDotColor,
+                    modifier = Modifier.size(6.dp),
+                ) {}
+                Spacer(Modifier.width(4.dp))
+            } else if (showCheckWhenSelected && selected) {
+                Text(
+                    text = "✓ ",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 10.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
                 },
-            )
-
-            FilterChip(
-                selected = hidePriceless,
-                onClick = onTogglePriceless,
-                label = {
-                    Text(
-                        text = "Senza prezzo",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
-                },
-            )
-
-            FilterChip(
-                selected = hideSeen,
-                onClick = onToggleSeen,
-                label = {
-                    Text(
-                        text = "Già visti",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
-                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                softWrap = false,
             )
         }
     }
