@@ -305,6 +305,15 @@ const NON_BOARDGAME_BRAND_PATTERNS: readonly RegExp[] = [
   /\bnoble\s+collection\b/i,
   /\bnemesis\s+now\b/i,
   /\bneca\b/i,
+  /\bkeeppley\b/i,
+  /\bbandai\b/i,
+  /\bfunism\b/i,
+  /\bmonogram\b/i,
+  /\bgood\s+smile\b/i,
+  /\bmegahouse\b/i,
+  /\bsega\b/i,
+  /\bfuryu\b/i,
+  /\btaito\b/i,
 ]
 
 export function isNonBoardgameBrand(brand?: string | null, title?: string | null): boolean {
@@ -332,6 +341,16 @@ const NON_BOARDGAME_PATTERNS: readonly RegExp[] = [
   /\bpeluche\b/i,
   /\bplush\b/i,
   /\bfunko\s+pop\b/i,
+  /\bfunko\b/i,
+  /\bbitty\s+pop\b/i,
+  /\bpocket\s+pop\b/i,
+  /\bpop\s+dlx\b/i,
+  /\bpop\s+keychain\b/i,
+  /\bblind\s+box\b/i,
+  /\bbag\s+clip\b/i,
+  /\bfigurina\b/i,
+  /\(\s*figura\s*\)/i,
+  /\bq\s+posket\b/i,
   /\blampada\b/i,
   /\bcalendario?\s+dell['’]?avvento\b/i,
   // Merch & Gadget: sticker, biglietti, voucher e cancelleria
@@ -356,13 +375,16 @@ const NON_BOARDGAME_PATTERNS: readonly RegExp[] = [
   /\bplay\s*mat\b/i,
   /\bplaymat\b/i,
   /\btappetin[oi]\b/i,
-  // Puzzle & Giocattoli (BRIO / GraviTrax / CreArt / tiptoi / Pantasy / Lemax)
+  // Puzzle & Giocattoli (BRIO / GraviTrax / CreArt / tiptoi / Pantasy / Lemax / Keeppley / LEGO SKU)
   /\bpan\d{4,}[a-z]*\b/i,
+  /\bkp\d{4,}[a-z]*\b/i,
+  /^\s*\d{5}\s*-\s+/i,
   /\bpantasy\b/i,
   /\bedifici\s+modulari\b/i,
   /\blemax\b/i,
   /\b(?:adattatore|alimentatore)\s+4\.5v\b/i,
   /\bpuzzle\s+\d+\s*pezzi\b/i,
+  /\b\d+\s+pezzi\b/i,
   /\bpuzzle\s+[23]d\b/i,
   /\b3d\s+puzzle\b/i,
   /\bpuzzle\s+ball\b/i,
@@ -391,6 +413,7 @@ const NON_BOARDGAME_PATTERNS: readonly RegExp[] = [
   /\bstructure\s+deck\b/i,
   /\btheme\s+deck\b/i,
   /\bdisplay\s+\d+\s*buste\b/i,
+  /\bbundle\s+\d+\s*buste\b/i,
   /\belite\s+trainer\b/i,
   /\btin\s+box\b/i,
   // Miniature da pittura & RPG / GDR

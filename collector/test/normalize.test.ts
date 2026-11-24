@@ -428,6 +428,16 @@ test('isNonBoardgameBrand filtra brand non-boardgame e gestisce eccezioni LEGO',
     'Noble Collection',
     'Nemesis Now',
     'NECA',
+    'Keeppley',
+    'Bandai',
+    'Funism',
+    'Monogram',
+    'Good Smile',
+    'Good Smile Company',
+    'MegaHouse',
+    'Sega',
+    'FuRyu',
+    'Taito',
   ]
   for (const brand of blockedBrands) {
     expect(isNonBoardgameBrand(brand, 'Prodotto Qualsiasi'), `expected blocked brand: ${brand}`).toBe(true)
@@ -501,6 +511,42 @@ test('isNonBoardgameTitle filtra Pantasy, Lemax, LEGO, nuovi pattern puzzle/dadi
     'Sushi Dice',
     '7 Wonders Dice',
     'Dice Scrapers',
+  ]
+  for (const title of protectedTitles) {
+    expect(isNonBoardgameTitle(title), `expected kept boardgame: ${title}`).toBe(false)
+  }
+})
+
+test('isNonBoardgameTitle filtra Funko varianti, statuette/blind box/bag clip, brick SKU, TCG bundle e puzzle pezzi', () => {
+  const blockedTitles = [
+    '31214 - ART - LOVE',
+    '75403 - STAR WARS - GROGU E CARROZZINA',
+    'KP28050 - CITY CORNER - BOUTIQUE DEI PROFUMI MAGICI',
+    'FUNKO Bitty POP: Star Wars',
+    'Pop Dlx: Lord Of The Rings',
+    'Pop Keychain - Grogu 4cm',
+    'Carrot Pocket Pop Pdq - Marvel #1',
+    'Figurina My Hero Academia (13 cm)',
+    "Aza Chobe (Figura) - Hell's Paradise",
+    'Uta (Figura) - Q Posket',
+    'Kingdom Hearts Bag Clip Blind Box Display (24 pezzi)',
+    'Pokemon - Bundle 6 Buste',
+    'Ravensburger Minions 3 da 35 pezzi',
+  ]
+  for (const title of blockedTitles) {
+    expect(isNonBoardgameTitle(title), `expected non-boardgame: ${title}`).toBe(true)
+  }
+
+  const protectedTitles = [
+    'Monkey Palace',
+    "LEGO NINJAGO: Destiny's Bounty Adventures",
+    'The Voynich Puzzle',
+    'My Puzzle Adventure',
+    '7 Wonders Dice',
+    'Dadi & Affetta',
+    'Ticket to Ride',
+    'CASCADIA – Organizer',
+    'SETI - Upgrade Kit',
   ]
   for (const title of protectedTitles) {
     expect(isNonBoardgameTitle(title), `expected kept boardgame: ${title}`).toBe(false)
