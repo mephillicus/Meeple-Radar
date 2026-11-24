@@ -20,7 +20,7 @@ export type AlertsReport = {
 
 export const DEFAULT_PRICE_DROP_THRESHOLD = 0.1
 const WEBHOOK_TIMEOUT_MS = 10_000
-const UNAVAILABLE_STATES = new Set(['preorder', 'out_of_stock', 'backorder'])
+const UNAVAILABLE_STATES = new Set(['preorder', 'out_of_stock', 'backorder', 'reprint'])
 
 export function detectFavoriteAlerts(
   snapshots: FavoriteListingSnapshot[],

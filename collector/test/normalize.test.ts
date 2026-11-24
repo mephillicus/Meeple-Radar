@@ -245,6 +245,46 @@ test('normalizeListing normalizza availability usando normalizeAvailability', ()
     releaseDateRaw: `${new Date().getUTCFullYear() + 1}-10-01`,
   })
   expect(futurePreorder.availability).toBe('preorder')
+
+  const reprintListing = normalizeListing('cranio', {
+    externalId: '3',
+    title: 'Bookshelf',
+    url: 'https://e.com/bookshelf',
+    availabilityRaw: 'https://schema.org/OutOfStock',
+    descriptionRaw: '<p>Prodotto esaurito, in rientro nella primavera 2027.</p>',
+  })
+  expect(reprintListing.availability).toBe('reprint')
+  expect(reprintListing.reprintDate).toBe('2027-04-15')
+  expect(reprintListing.releaseDate).toBeNull()
+
+  const dvgiochiNoReprint = normalizeListing('dvgiochi', {
+    externalId: '4',
+    title: 'Bookshelf',
+    url: 'https://www.dvgiochi.com/catalogo/bookshelf/',
+    availabilityRaw: 'false',
+    descriptionRaw: '<p>In rientro nella primavera 2027.</p>',
+  })
+  expect(dvgiochiNoReprint.reprintDate).toBeNull()
+  expect(dvgiochiNoReprint.availability).toBe('out_of_stock')
+})
+
+test('normalizeAvailability gestisce reprint, ristampa, riassortimento e promozione con reprintDate futura', () => {
+  const now = new Date('2026-06-15T12:00:00Z')
+  expect(normalizeAvailability('reprint', null, now)).toBe('reprint')
+  expect(normalizeAvailability('ristampa', null, now)).toBe('reprint')
+  expect(normalizeAvailability('riassortimento', null, now)).toBe('reprint')
+
+  // reprintDate strettamente futura promuove out_of_stock, backorder e null -> reprint
+  expect(normalizeAvailability('OutOfStock', null, now, '2027-04-15')).toBe('reprint')
+  expect(normalizeAvailability('BackOrder', null, now, '2027-04-15')).toBe('reprint')
+  expect(normalizeAvailability(null, null, now, '2027-04-15')).toBe('reprint')
+  // Non sovrascrive available, preorder o discontinued
+  expect(normalizeAvailability('InStock', null, now, '2027-04-15')).toBe('available')
+  expect(normalizeAvailability('PreOrder', null, now, '2027-04-15')).toBe('preorder')
+  expect(normalizeAvailability('Discontinued', null, now, '2027-04-15')).toBe('discontinued')
+  // reprintDate passata o odierna non promuove
+  expect(normalizeAvailability('OutOfStock', null, now, '2026-06-15')).toBe('out_of_stock')
+  expect(normalizeAvailability('OutOfStock', null, now, '2026-06-10')).toBe('out_of_stock')
 })
 
 test('isNonBoardgameTitle filtra merch, sleeves, puzzle, TCG, RPG/GDR e accessori dadi', () => {

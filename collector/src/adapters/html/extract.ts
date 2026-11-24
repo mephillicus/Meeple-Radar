@@ -206,18 +206,38 @@ function fromOpenGraph($: cheerio.CheerioAPI, pageUrl: string, canonical?: strin
   })
 }
 
+const ITALIAN_OR_NEUTRAL_LANG_RE = /italiano|italian|multilingu|indipendente/i
+const ENGLISH_LANG_RE = /inglese|english/i
+const TITLE_ENGLISH_EDITION_RE = /\b(?:edizione\s+inglese|ed\.?\s*inglese|english|eng)\b/i
+
+function applyEnglishOnlyEditionTitle($: cheerio.CheerioAPI, title: string): string {
+  const langs = $('.game-language-name')
+    .toArray()
+    .map((el) => $(el).text().trim())
+    .filter(Boolean)
+  if (langs.length === 0) return title
+  if (langs.some((l) => ITALIAN_OR_NEUTRAL_LANG_RE.test(l))) return title
+  if (!langs.some((l) => ENGLISH_LANG_RE.test(l))) return title
+  if (TITLE_ENGLISH_EDITION_RE.test(title)) return title
+  return `${title} (EDIZIONE INGLESE)`
+}
+
 export function extractProduct(html: string, pageUrl: string): RawProduct | null {
   const $ = cheerio.load(html)
   const canonical = asString($('link[rel="canonical"]').attr('href'))
   const jsonLd = fromJsonLd($, pageUrl, canonical)
   if (jsonLd?.status === 'rejected') return null
-  const product = jsonLd?.product ?? fromOpenGraph($, pageUrl, canonical)
-  if (!product) return null
+  const baseProduct = jsonLd?.product ?? fromOpenGraph($, pageUrl, canonical)
+  if (!baseProduct) return null
+
+  const title = applyEnglishOnlyEditionTitle($, baseProduct.title)
+  let product = title !== baseProduct.title ? { ...baseProduct, title } : baseProduct
+
   const descEl = $('div[itemprop="description"]').first().clone()
   descEl.find('script, style, noscript').remove()
   const visible = descEl.text().trim()
   if (visible && (!product.descriptionRaw || product.descriptionRaw.length < visible.length)) {
-    return { ...product, descriptionRaw: visible }
+    product = { ...product, descriptionRaw: visible }
   }
   return product
 }

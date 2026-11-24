@@ -112,6 +112,7 @@ export interface ListingStore {
   insertUserAction(gameId: number, action: 'favorite' | 'ignored' | 'unfavorite'): Promise<void>
   purgeStale(before: string): Promise<{ listings: number; products: number }>
   compactUserActions?(): Promise<number>
+  clearStalePartialSourceAvailability?(): Promise<number>
   getRecentRunLogs?(limit: number): Promise<RunLogEntry[]>
   findFavoriteListings?(): Promise<FavoriteListingSnapshot[]>
   insertUserAlerts?(alerts: UserAlertInput[]): Promise<number>
@@ -193,6 +194,7 @@ function buildProductPayload(p: Listing, updatedAt: string): Record<string, unkn
     ...(p.currency != null && { currency: p.currency }),
     ...(p.releaseDate != null && { release_date: p.releaseDate }),
     ...(p.releaseDate == null && p.clearReleaseDate === true && { release_date: null }),
+    ...(p.reprintDate != null && { reprint_date: p.reprintDate }),
     ...(p.imageUrl != null && { image_url: p.imageUrl }),
     ...(p.gameId != null && { game_id: p.gameId }),
     sources: JSON.stringify([]),
@@ -257,6 +259,7 @@ export function createSupabaseStore(
         ...(r.releaseDate != null && { release_date: r.releaseDate }),
         // Fonte autorevole senza data: azzera esplicitamente il vecchio valore.
         ...(r.releaseDate == null && r.clearReleaseDate === true && { release_date: null }),
+        reprint_date: r.reprintDate ?? null,
         ...(r.imageUrl != null && { image_url: r.imageUrl }),
         ...(r.gameId != null && { game_id: r.gameId }),
         last_seen_at: seen,
@@ -747,6 +750,17 @@ export function createSupabaseStore(
       return typeof data === 'number' ? data : Number(data ?? 0)
     },
 
+    async clearStalePartialSourceAvailability(): Promise<number> {
+      if (typeof client.rpc !== 'function') return 0
+      try {
+        const { data, error } = await client.rpc('clear_stale_partial_source_availability', { p_days: 14 })
+        if (error) return 0
+        return typeof data === 'number' ? data : Number(data ?? 0)
+      } catch {
+        return 0
+      }
+    },
+
     async purgeStale(before: string): Promise<{ listings: number; products: number }> {
       const fetchAll = async (
         run: (from: number, to: number) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
@@ -810,6 +824,11 @@ export function createSupabaseStore(
       if (typeof client.rpc === 'function') {
         try {
           await client.rpc('compact_user_action_seen')
+        } catch {
+          // Best-effort: la migrazione potrebbe non essere ancora applicata.
+        }
+        try {
+          await client.rpc('clear_stale_partial_source_availability', { p_days: 14 })
         } catch {
           // Best-effort: la migrazione potrebbe non essere ancora applicata.
         }

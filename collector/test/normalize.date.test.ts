@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { extractReleaseDate } from '../src/normalize.js'
+import { extractReleaseDate, extractReprintDate } from '../src/normalize.js'
 
 test('parses full ISO-like month (YYYY-MM) to first day', () => {
   expect(extractReleaseDate('2026-03')).toBe('2026-03-01')
@@ -110,4 +110,23 @@ test('giorno/mese con slash richiede indizio di uscita entro 30 caratteri', () =
   expect(extractReleaseDate('Stile 1/2 cooperativo')).toBeNull()
   expect(extractReleaseDate('Disponibile dal 15/10')).toBe(`${year}-10-15`)
   expect(extractReleaseDate('Per 2/4 giocatori, day one 20/11')).toBe(`${year}-11-20`)
+})
+
+test('reprint/restock cues: extractReleaseDate li ignora mentre extractReprintDate estrae la data di rientro', () => {
+  expect(extractReleaseDate('in rientro nella primavera 2027')).toBeNull()
+  expect(extractReprintDate('in rientro nella primavera 2027')).toBe('2027-04-15')
+
+  expect(extractReleaseDate('<p>Prodotto esaurito, <strong>in rientro nella primavera 2027</strong>.</p>')).toBeNull()
+  expect(extractReprintDate('<p>Prodotto esaurito, <strong>in rientro nella primavera 2027</strong>.</p>')).toBe('2027-04-15')
+
+  expect(extractReleaseDate('Ristampa prevista il 15/03/2027')).toBeNull()
+  expect(extractReprintDate('Ristampa prevista il 15/03/2027')).toBe('2027-03-15')
+
+  expect(extractReleaseDate('Torna disponibile 2027-05-10')).toBeNull()
+  expect(extractReprintDate('Torna disponibile 2027-05-10')).toBe('2027-05-10')
+
+  expect(extractReleaseDate('Riassortimento previsto per ottobre 2027')).toBeNull()
+  expect(extractReprintDate('Riassortimento previsto per ottobre 2027')).toBe('2027-10-01')
+
+  expect(extractReprintDate('In uscita il 15/03/2027')).toBeNull()
 })

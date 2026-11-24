@@ -201,3 +201,41 @@ test('populates publisher from JSON-LD brand for real board games and allowed LE
     publisher: 'LEGO',
   })
 })
+
+test('Uplay English-only .game-language-name appends (EDIZIONE INGLESE) without touching Italian/neutral titles', () => {
+  const englishOnly = `<html><body>
+    <script type="application/ld+json">{"@type":"Product","name":"Bookshelf","offers":{"@type":"Offer","price":"39.90","priceCurrency":"EUR"}}</script>
+    <span class="game-languages-label">Lingua:</span>
+    <span class="game-language-name">Inglese</span>
+  </body></html>`
+  expect(extractProduct(englishOnly, 'https://www.uplay.it/it/bookshelf.html')?.title).toBe(
+    'Bookshelf (EDIZIONE INGLESE)',
+  )
+
+  const alreadyMarked = `<html><body>
+    <script type="application/ld+json">{"@type":"Product","name":"Bookshelf (Edizione Inglese)","offers":{"@type":"Offer","price":"39.90","priceCurrency":"EUR"}}</script>
+    <span class="game-language-name">Inglese</span>
+  </body></html>`
+  expect(extractProduct(alreadyMarked, 'https://www.uplay.it/it/bookshelf.html')?.title).toBe(
+    'Bookshelf (Edizione Inglese)',
+  )
+
+  const italian = `<html><body>
+    <script type="application/ld+json">{"@type":"Product","name":"Bookshelf","offers":{"@type":"Offer","price":"39.90","priceCurrency":"EUR"}}</script>
+    <span class="game-language-name">Italiano</span>
+  </body></html>`
+  expect(extractProduct(italian, 'https://www.uplay.it/it/bookshelf.html')?.title).toBe('Bookshelf')
+
+  const independent = `<html><body>
+    <script type="application/ld+json">{"@type":"Product","name":"Bookshelf","offers":{"@type":"Offer","price":"39.90","priceCurrency":"EUR"}}</script>
+    <span class="game-language-name">Indipendente dalla lingua</span>
+  </body></html>`
+  expect(extractProduct(independent, 'https://www.uplay.it/it/bookshelf.html')?.title).toBe('Bookshelf')
+
+  const mixed = `<html><body>
+    <script type="application/ld+json">{"@type":"Product","name":"Bookshelf","offers":{"@type":"Offer","price":"39.90","priceCurrency":"EUR"}}</script>
+    <span class="game-language-name">Inglese</span>
+    <span class="game-language-name">Italiano</span>
+  </body></html>`
+  expect(extractProduct(mixed, 'https://www.uplay.it/it/bookshelf.html')?.title).toBe('Bookshelf')
+})

@@ -155,12 +155,20 @@ test('detectFavoriteAlerts handles canonical backorder and legacy/schema.org ava
         { listingId: 43, price: 50, currency: 'EUR', availability: 'false', recordedAt: '2026-11-14T06:00:00Z' },
       ],
     }),
+    snap({
+      listingId: 44,
+      history: [
+        { listingId: 44, price: 50, currency: 'EUR', availability: 'available', recordedAt: '2026-11-21T06:00:00Z' },
+        { listingId: 44, price: 50, currency: 'EUR', availability: 'reprint', recordedAt: '2026-11-14T06:00:00Z' },
+      ],
+    }),
   ])
-  expect(alerts).toHaveLength(4)
+  expect(alerts).toHaveLength(5)
   expect(alerts.map((a) => [a.alertType, a.listingId])).toEqual([
     ['back_in_stock', 40],
     ['back_in_stock', 41],
     ['back_in_stock', 42],
     ['back_in_stock', 43],
+    ['back_in_stock', 44],
   ])
 })

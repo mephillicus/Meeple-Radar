@@ -856,3 +856,101 @@ test('findFavoriteListings interroga listing_best_price e ricostruisce history (
     recordedAt: '2026-11-21T06:00:00Z',
   })
 })
+
+test('upsertListings scrive reprint_date (o null) mentre upsertProducts la include solo se non nulla', async () => {
+  const select = vi.fn().mockResolvedValue({ data: [{ id: 1 }], error: null })
+  const upsert = vi.fn((_rows: Record<string, unknown>[], _opts?: unknown) => ({ select, error: null }))
+  const from = vi.fn(() => ({ upsert }))
+  const store = createSupabaseStore({ from } as any, () => '2026-11-24T00:00:00Z')
+
+  await store.upsertListings([
+    {
+      sourceId: 'cranio',
+      externalId: 'b1',
+      title: 'Bookshelf',
+      url: 'https://e.com/bookshelf',
+      price: 39.9,
+      currency: 'EUR',
+      availability: 'reprint',
+      releaseDate: null,
+      reprintDate: '2027-04-15',
+      description: null,
+      imageUrl: null,
+      gameId: null,
+    },
+    {
+      sourceId: 'cranio',
+      externalId: 'b2',
+      title: 'Catan',
+      url: 'https://e.com/catan',
+      price: 39.9,
+      currency: 'EUR',
+      availability: 'available',
+      releaseDate: null,
+      reprintDate: null,
+      description: null,
+      imageUrl: null,
+      gameId: null,
+    },
+  ])
+  expect(upsert.mock.calls[0][0][0]).toHaveProperty('reprint_date', '2027-04-15')
+  expect(upsert.mock.calls[0][0][1]).toHaveProperty('reprint_date', null)
+
+  await store.upsertProducts([
+    {
+      sourceId: 'cranio',
+      externalId: 'b1',
+      title: 'Bookshelf',
+      url: 'https://e.com/bookshelf',
+      price: 39.9,
+      currency: 'EUR',
+      availability: 'reprint',
+      releaseDate: null,
+      reprintDate: '2027-04-15',
+      description: null,
+      imageUrl: null,
+      gameId: null,
+    },
+    {
+      sourceId: 'cranio',
+      externalId: 'b2',
+      title: 'Catan',
+      url: 'https://e.com/catan',
+      price: 39.9,
+      currency: 'EUR',
+      availability: 'available',
+      releaseDate: null,
+      reprintDate: null,
+      description: null,
+      imageUrl: null,
+      gameId: null,
+    },
+  ])
+  expect(upsert.mock.calls[1][0][0]).toHaveProperty('reprint_date', '2027-04-15')
+  expect(upsert.mock.calls[1][0][1]).not.toHaveProperty('reprint_date')
+})
+
+test('clearStalePartialSourceAvailability invoca rpc con p_days 14 best-effort ed e chiamata da purgeStale', async () => {
+  const rpc = vi.fn().mockResolvedValue({ data: 7, error: null })
+  const body = paged([])
+  const from = vi.fn(() => ({
+    select: vi.fn(() => ({
+      not: vi.fn(() => body),
+      is: vi.fn(() => body),
+      lt: vi.fn(() => body),
+      eq: vi.fn(() => ({ not: vi.fn(() => body) })),
+    })),
+    delete: () => ({ in: vi.fn().mockResolvedValue({ error: null }) }),
+  }))
+  const store = createSupabaseStore({ from, rpc } as any)
+
+  expect(await store.clearStalePartialSourceAvailability!()).toBe(7)
+  expect(rpc).toHaveBeenCalledWith('clear_stale_partial_source_availability', { p_days: 14 })
+
+  rpc.mockRejectedValueOnce(new Error('rpc missing'))
+  expect(await store.clearStalePartialSourceAvailability!()).toBe(0)
+
+  rpc.mockClear()
+  await store.purgeStale('2025-10-20')
+  expect(rpc).toHaveBeenCalledWith('clear_stale_partial_source_availability', { p_days: 14 })
+})

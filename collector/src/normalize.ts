@@ -107,6 +107,9 @@ function isPlausibleIso(iso: string, nowYear: number): boolean {
 
 const DM_RELEASE_CUE_RE = /\b(?:uscita|arrivo|dal\b|il\b|previst|disponibile|day\s*one\b|spedizion)/i
 const SEASON_RELEASE_CUE_RE = /\b(?:uscita|arrivo|disponibile|previst|preordine|spedizion)/i
+const REPRINT_CUE_RE =
+  /\b(?:rientro|riassortimento|ristampa|reprint|restock|nuova\s+stampa|torna\s+disponibile)\b/i
+const REPRINT_CUE_GLOBAL_RE = new RegExp(REPRINT_CUE_RE.source, 'gi')
 
 const FULL_MONTHS: Record<string, number> = {
   gennaio: 1, january: 1,
@@ -151,6 +154,11 @@ const STAGIONI: Record<string, { m: number; d: number }> = {
   inverno: { m: 1, d: 15 },
 }
 
+function isPrecededByReprintCue(text: string, idx: number, window = 45): boolean {
+  const before = text.slice(Math.max(0, idx - window), idx)
+  return REPRINT_CUE_RE.test(before)
+}
+
 export function extractReleaseDate(text?: string): string | null {
   if (!text) return null
   const cleaned = text.includes('<') ? htmlToText(text) : text
@@ -159,21 +167,24 @@ export function extractReleaseDate(text?: string): string | null {
   const nowYear = new Date().getUTCFullYear()
   const accept = (iso: string): boolean => isPlausibleIso(iso, nowYear)
 
-  const dmy = cleaned.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)
-  if (dmy) {
+  for (const dmy of cleaned.matchAll(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/g)) {
+    const idx = dmy.index ?? 0
+    if (isPrecededByReprintCue(cleaned, idx)) continue
     const iso = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
     if (accept(iso)) return iso
   }
 
   // anno-mese-giorno: la data intera, non va degradata al primo del mese
-  const ymd = cleaned.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/)
-  if (ymd) {
+  for (const ymd of cleaned.matchAll(/(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/g)) {
+    const idx = ymd.index ?? 0
+    if (isPrecededByReprintCue(cleaned, idx)) continue
     const iso = `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
     if (accept(iso)) return iso
   }
 
-  const ym = cleaned.match(/(\d{4})-(\d{1,2})(?!\d)/)
-  if (ym) {
+  for (const ym of cleaned.matchAll(/(\d{4})-(\d{1,2})(?!\d)/g)) {
+    const idx = ym.index ?? 0
+    if (isPrecededByReprintCue(cleaned, idx)) continue
     const iso = `${ym[1]}-${ym[2].padStart(2, '0')}-01`
     if (accept(iso)) return iso
   }
@@ -182,6 +193,7 @@ export function extractReleaseDate(text?: string): string | null {
   // da un indizio di uscita, così rapporti/giocatori ("2/4", "1/2", "9/10") non matchano.
   for (const dm of cleaned.matchAll(/(\d{1,2})\/(\d{1,2})(?![\/\-.]\d)/g)) {
     const idx = dm.index ?? 0
+    if (isPrecededByReprintCue(cleaned, idx)) continue
     const before = cleaned.slice(Math.max(0, idx - 30), idx)
     if (!DM_RELEASE_CUE_RE.test(before)) continue
     const iso = `${nowYear}-${dm[2].padStart(2, '0')}-${dm[1].padStart(2, '0')}`
@@ -189,9 +201,11 @@ export function extractReleaseDate(text?: string): string | null {
   }
 
   for (const mn of cleaned.matchAll(MONTH_NAME_RE)) {
+    const idx = mn.index ?? 0
+    if (isPrecededByReprintCue(cleaned, idx)) continue
     const monthKey = mn[2].toLowerCase()
     const isFull = monthKey in FULL_MONTHS
-    const after = cleaned.slice((mn.index ?? 0) + mn[0].length)
+    const after = cleaned.slice(idx + mn[0].length)
 
     // Le abbreviazioni a 3 lettere ("set", "may", "ago", ...) matchano solo se
     // precedute da un giorno ("15 set") o seguite subito da un anno 20xx ("set 2026").
@@ -211,6 +225,7 @@ export function extractReleaseDate(text?: string): string | null {
   for (const sn of cleaned.matchAll(/\b(primavera|estate|autunno|inverno)\b/gi)) {
     const seasonKey = sn[1].toLowerCase()
     const idx = sn.index ?? 0
+    if (isPrecededByReprintCue(cleaned, idx)) continue
     const after = cleaned.slice(idx + sn[0].length)
     const yearMatch = after.slice(0, 20).match(/^\s*(\d{4})\b/)
     const before = cleaned.slice(Math.max(0, idx - 30), idx)
@@ -226,11 +241,74 @@ export function extractReleaseDate(text?: string): string | null {
   return null
 }
 
+export function extractReprintDate(text?: string): string | null {
+  if (!text) return null
+  const cleaned = text.includes('<') ? htmlToText(text) : text
+  if (!cleaned) return null
+
+  const nowYear = new Date().getUTCFullYear()
+  const accept = (iso: string): boolean => isPlausibleIso(iso, nowYear)
+
+  for (const cue of cleaned.matchAll(REPRINT_CUE_GLOBAL_RE)) {
+    const cueEnd = (cue.index ?? 0) + cue[0].length
+    const snippet = cleaned.slice(cueEnd, cueEnd + 80)
+
+    for (const dmy of snippet.matchAll(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/g)) {
+      if ((dmy.index ?? 0) > 60) break
+      const iso = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
+      if (accept(iso)) return iso
+    }
+
+    for (const ymd of snippet.matchAll(/(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/g)) {
+      if ((ymd.index ?? 0) > 60) break
+      const iso = `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
+      if (accept(iso)) return iso
+    }
+
+    for (const ym of snippet.matchAll(/(\d{4})-(\d{1,2})(?!\d)/g)) {
+      if ((ym.index ?? 0) > 60) break
+      const iso = `${ym[1]}-${ym[2].padStart(2, '0')}-01`
+      if (accept(iso)) return iso
+    }
+
+    for (const mn of snippet.matchAll(MONTH_NAME_RE)) {
+      const idx = mn.index ?? 0
+      if (idx > 60) break
+      const monthKey = mn[2].toLowerCase()
+      const isFull = monthKey in FULL_MONTHS
+      const after = snippet.slice(idx + mn[0].length)
+      if (!isFull && !mn[1] && !/^\s*20\d\d\b/.test(after)) continue
+
+      const monthPart = String(ALL_MONTHS[monthKey]).padStart(2, '0')
+      const dayPart = (mn[1] ?? after.match(/^\s*(\d{1,2})\b/)?.[1] ?? '1').padStart(2, '0')
+      const yearMatch = after.slice(0, 20).match(/^\s*(?:\d{1,2}[,\s]+)?(\d{4})\b/)
+      const year = Number(yearMatch?.[1] ?? nowYear)
+      const iso = `${year}-${monthPart}-${dayPart}`
+      if (accept(iso)) return iso
+    }
+
+    for (const sn of snippet.matchAll(/\b(primavera|estate|autunno|inverno)\b/gi)) {
+      const idx = sn.index ?? 0
+      if (idx > 60) break
+      const seasonKey = sn[1].toLowerCase()
+      const after = snippet.slice(idx + sn[0].length)
+      const yearMatch = after.slice(0, 20).match(/^\s*(\d{4})\b/)
+      const mg = STAGIONI[seasonKey]
+      const year = Number(yearMatch?.[1] ?? nowYear)
+      const iso = `${year}-${String(mg.m).padStart(2, '0')}-${String(mg.d).padStart(2, '0')}`
+      if (accept(iso)) return iso
+    }
+  }
+
+  return null
+}
+
 export type CanonicalAvailability =
   | 'available'
   | 'out_of_stock'
   | 'preorder'
   | 'backorder'
+  | 'reprint'
   | 'discontinued'
 
 const AVAILABILITY_MAP: Record<string, CanonicalAvailability> = {
@@ -256,6 +334,9 @@ const AVAILABILITY_MAP: Record<string, CanonicalAvailability> = {
   backordered: 'backorder',
   ordinabile: 'backorder',
   suordinazione: 'backorder',
+  reprint: 'reprint',
+  ristampa: 'reprint',
+  riassortimento: 'reprint',
   discontinued: 'discontinued',
   fuoriproduzione: 'discontinued',
 }
@@ -264,20 +345,35 @@ export function normalizeAvailability(
   raw?: string | null,
   releaseDate?: string | null,
   now?: Date,
+  reprintDate?: string | null,
 ): CanonicalAvailability | null {
-  if (raw === undefined || raw === null) return null
-  const stripped = raw
-    .trim()
-    .replace(/^https?:\/\/schema\.org\//i, '')
-    .toLowerCase()
-    .replace(/[\s_-]+/g, '')
-  if (stripped === '') return null
+  let mapped: CanonicalAvailability | null = null
+  if (raw !== undefined && raw !== null) {
+    const stripped = raw
+      .trim()
+      .replace(/^https?:\/\/schema\.org\//i, '')
+      .toLowerCase()
+      .replace(/[\s_-]+/g, '')
+    if (stripped !== '') {
+      mapped = AVAILABILITY_MAP[stripped] ?? null
+    }
+  }
 
-  const mapped = AVAILABILITY_MAP[stripped] ?? null
+  const todayIso = (now ?? new Date()).toISOString().slice(0, 10)
+
   if (mapped === 'available' && releaseDate && isValidIso(releaseDate)) {
-    const todayIso = (now ?? new Date()).toISOString().slice(0, 10)
     if (releaseDate > todayIso) return 'preorder'
   }
+
+  if (
+    reprintDate &&
+    isValidIso(reprintDate) &&
+    reprintDate > todayIso &&
+    (mapped === 'out_of_stock' || mapped === 'backorder' || mapped === null)
+  ) {
+    return 'reprint'
+  }
+
   return mapped
 }
 
@@ -467,6 +563,7 @@ export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
   const releaseDate = dateFromListing
     ? isoOrNull(raw.releaseDateRaw, undefined)
     : isoOrNull(raw.releaseDateRaw, raw.descriptionRaw)
+  const reprintDate = dateFromListing ? null : extractReprintDate(raw.descriptionRaw)
   return {
     sourceId,
     externalId: raw.externalId,
@@ -477,8 +574,9 @@ export function normalizeListing(sourceId: string, raw: RawProduct): Listing {
     url: raw.url,
     price: toPrice(raw.priceRaw, raw.minorUnitRaw),
     currency: raw.currencyRaw ? raw.currencyRaw.toUpperCase() : null,
-    availability: normalizeAvailability(raw.availabilityRaw, releaseDate),
+    availability: normalizeAvailability(raw.availabilityRaw, releaseDate, undefined, reprintDate),
     releaseDate,
+    reprintDate,
     // L'assenza di data da una fonte autorevole è un dato ("DA DEFINIRE"):
     // segna la riga perché lo store azzeri una data scritta in precedenza.
     clearReleaseDate: (dateFromListing && releaseDate === null) || undefined,
