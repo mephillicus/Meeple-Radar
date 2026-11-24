@@ -373,6 +373,7 @@ class DefaultListingRepository(
                             customDescription = matchingProduct?.description?.takeIf(String::isNotBlank) ?: savedGame.description,
                             lookupTitle = title,
                             bggSelectionKeys = selectionKeys,
+                            reprintDate = matchingProduct?.reprintDate,
                         )
                     }
                 }
@@ -409,6 +410,7 @@ class DefaultListingRepository(
                             customDescription = savedProduct.description?.takeIf(String::isNotBlank) ?: savedGame?.description,
                             lookupTitle = title,
                             bggSelectionKeys = selectionKeys,
+                            reprintDate = savedProduct.reprintDate,
                         )
                     }
                 }
@@ -443,6 +445,7 @@ class DefaultListingRepository(
                         game = gameToUse,
                         offers = emptyList(),
                         customDescription = matchingProduct?.description ?: savedGame?.description,
+                        reprintDate = matchingProduct?.reprintDate,
                     )
                 }
             }

@@ -65,8 +65,10 @@ fun filterAndSortListings(
             val isItemPreorder = matchItemReleaseDateAsPreorder &&
                 item.releaseDate != null &&
                 !item.releaseDate.isBefore(today)
+            val isItemReprint = item.reprintDate != null && !item.reprintDate.isBefore(today)
             (AvailabilityStatus.PREORDER in state.selectedAvailability && isItemPreorder) ||
-                item.offers.any { availabilityStatus(it.availability, it.releaseDate, today) in state.selectedAvailability }
+                (AvailabilityStatus.REPRINT in state.selectedAvailability && isItemReprint) ||
+                item.offers.any { availabilityStatus(it.availability, it.releaseDate, today, it.reprintDate) in state.selectedAvailability }
         }
         val searchMatch = if (queryWords.isEmpty()) {
             true

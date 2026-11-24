@@ -63,6 +63,10 @@ fun buildIncomingItems(
             val releaseDate = futureStoreReleaseDate
                 ?: groupListings.mapNotNull { it.releaseDate }.minOrNull()
                 ?: product?.releaseDate
+            val futureStoreReprintDate = groupListings.mapNotNull { it.reprintDate }.filter { !it.isBefore(today) }.minOrNull()
+            val reprintDate = futureStoreReprintDate
+                ?: groupListings.mapNotNull { it.reprintDate }.minOrNull()
+                ?: product?.reprintDate
             val offers = groupListings.map { listing ->
                 Offer(
                     sourceId = listing.sourceId,
@@ -77,8 +81,9 @@ fun buildIncomingItems(
                     releaseDate = listing.releaseDate ?: releaseDate,
                     listingId = listing.id,
                     priceDropPct = priceDropsByListingId[listing.id],
+                    reprintDate = listing.reprintDate ?: reprintDate,
                 )
-            } + listOfNotNull(product?.publisherOffer(releaseDate))
+            } + listOfNotNull(product?.publisherOffer(releaseDate, reprintDate))
             val customDescription = product?.description?.takeIf { it.isNotBlank() }
                 ?: game?.description?.takeIf { it.isNotBlank() }
                 ?: groupListings.firstNotNullOfOrNull { it.description?.takeIf(String::isNotBlank) }
@@ -125,6 +130,7 @@ fun buildIncomingItems(
                 bggSelectionKeys = bggSelectionKeys,
                 isNewlyAdded = isNewlyAdded,
                 isSeen = isSeen,
+                reprintDate = reprintDate,
             )
         }
         .filter {
@@ -147,7 +153,7 @@ internal fun isWithin24Hours(firstSeenAtStr: String?, today: LocalDate): Boolean
     }.getOrDefault(false)
 }
 
-private fun Product.publisherOffer(releaseDate: LocalDate?): Offer? {
+private fun Product.publisherOffer(releaseDate: LocalDate?, reprintDate: LocalDate? = null): Offer? {
     val offerUrl = url ?: return null
     val offerPrice = price ?: return null
     val offerCurrency = currency?.takeIf(String::isNotBlank) ?: return null
@@ -170,5 +176,6 @@ private fun Product.publisherOffer(releaseDate: LocalDate?): Offer? {
         url = offerUrl,
         availability = null,
         releaseDate = releaseDate,
+        reprintDate = reprintDate,
     )
 }

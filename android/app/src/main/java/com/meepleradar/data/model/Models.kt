@@ -36,6 +36,7 @@ data class Listing(
     val description: String? = null,
     val firstSeenAt: String? = null,
     val updatedAt: String? = null,
+    val reprintDate: LocalDate? = null,
 )
 
 data class Product(
@@ -50,6 +51,7 @@ data class Product(
     val publisher: String? = null,
     val gameId: Long? = null,
     val updatedAt: String? = null,
+    val reprintDate: LocalDate? = null,
 )
 
 data class Price(val amount: Double, val currency: String)
@@ -63,6 +65,7 @@ data class Offer(
     val releaseDate: LocalDate? = null,
     val listingId: Long? = null,
     val priceDropPct: Double? = null,
+    val reprintDate: LocalDate? = null,
 )
 
 data class ListingBestPrice(
@@ -130,6 +133,7 @@ data class IncomingItem(
     val bggSelectionKeys: List<String> = emptyList(),
     val isNewlyAdded: Boolean = false,
     val isSeen: Boolean = false,
+    val reprintDate: LocalDate? = null,
 )
 
 data class GameSavePreview(

@@ -27,6 +27,11 @@ val BggGoldText = Color(0xFFB45309)
 val BggGoldDarkBackground = Color(0xFF451A03)
 val BggGoldDarkText = Color(0xFFFDE68A)
 
+val ReprintRed = Color(0xFFD32F2F)
+val ReprintRedBackground = Color(0xFFFEE2E2)
+val ReprintRedDark = Color(0xFFF87171)
+val ReprintRedDarkBackground = Color(0xFF7F1D1D)
+
 val DarkColors = darkColorScheme(
     primary = Violet80,
     onPrimary = Color(0xFF1E1B4B),

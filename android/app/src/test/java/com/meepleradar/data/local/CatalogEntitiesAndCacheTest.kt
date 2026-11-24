@@ -29,6 +29,7 @@ class CatalogEntitiesAndCacheTest {
             publisher = "Asmodee",
             gameId = 7L,
             updatedAt = "2026-11-20T12:00:00Z",
+            reprintDate = LocalDate.of(2027, 2, 15),
         )
 
         val roundTrip = ProductEntity.from(original).toDomain()
@@ -54,6 +55,7 @@ class CatalogEntitiesAndCacheTest {
             description = "Classico gestionale",
             firstSeenAt = "2026-11-18T08:00:00Z",
             updatedAt = "2026-11-20T09:00:00Z",
+            reprintDate = LocalDate.of(2027, 4, 10),
         )
         val game = Game(
             id = 3L,

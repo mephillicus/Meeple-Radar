@@ -47,6 +47,12 @@ class IncomingFormattingTest {
     }
 
     @Test
+    fun `reprintLabel mostra Ristampa con data formattata o sola etichetta`() {
+        assertEquals("Ristampa 20/03/2027", reprintLabel(LocalDate.of(2027, 3, 20)))
+        assertEquals("Ristampa", reprintLabel(null))
+    }
+
+    @Test
     fun `bestPriceLabel sceglie il prezzo EUR piu basso e ricade su valuta originale`() {
         val offers = listOf(offer(49.9, "EUR"), offer(39.9, "EUR"), offer(35.0, "USD"))
 

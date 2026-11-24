@@ -3,6 +3,7 @@ package com.meepleradar.ui.incoming
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Offer
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -34,3 +35,10 @@ fun dateLabel(item: IncomingItem): String {
         UNDATED_LABEL
     }
 }
+
+fun reprintLabel(reprintDate: LocalDate?): String =
+    if (reprintDate != null) {
+        "Ristampa ${reprintDate.format(DATE_FORMAT)}"
+    } else {
+        "Ristampa"
+    }

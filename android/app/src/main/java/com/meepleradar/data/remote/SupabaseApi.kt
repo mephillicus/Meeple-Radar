@@ -717,6 +717,7 @@ private data class ProductDto(
     val currency: String? = null,
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("reprint_date") val reprintDate: String? = null,
     @SerialName("description") val description: String? = null,
     val publisher: String? = null,
     @SerialName("game_id") val gameId: Long? = null,
@@ -734,6 +735,7 @@ private data class ProductDto(
         publisher = publisher,
         gameId = gameId,
         updatedAt = updatedAt,
+        reprintDate = reprintDate.asLocalDateOrNull(),
     )
 }
 
@@ -747,6 +749,7 @@ private data class ListingDto(
     val currency: String? = null,
     val availability: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("reprint_date") val reprintDate: String? = null,
     @SerialName("image_url") val imageUrl: String? = null,
     @SerialName("game_id") val gameId: Long? = null,
     @SerialName("match_confidence") val matchConfidence: Double? = null,
@@ -771,6 +774,7 @@ private data class ListingDto(
         description = description,
         firstSeenAt = firstSeenAt,
         updatedAt = updatedAt,
+        reprintDate = reprintDate.asLocalDateOrNull(),
     )
 }
 

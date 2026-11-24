@@ -4,6 +4,7 @@ import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
 import com.meepleradar.data.model.availabilityStatus
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,6 +35,38 @@ class OfferPresentationTest {
         assertEquals(AvailabilityStatus.DISCONTINUED, availabilityStatus("Discontinued"))
         assertEquals(AvailabilityStatus.UNKNOWN, availabilityStatus("custom-status"))
         assertEquals(AvailabilityStatus.UNKNOWN, availabilityStatus(null))
+    }
+
+    @Test
+    fun `riconosce ristampa da testo e da reprintDate futura`() {
+        val today = LocalDate.of(2026, 11, 24)
+        val futureReprint = today.plusDays(30)
+        val pastReprint = today.minusDays(5)
+        val futureRelease = today.plusDays(15)
+
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus("reprint", today = today))
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus("Ristampa", today = today))
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus("riassortimento", today = today))
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus("http://schema.org/Reprint", today = today))
+
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus(null, today = today, reprintDate = futureReprint))
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus("OutOfStock", today = today, reprintDate = futureReprint))
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus("BackOrder", today = today, reprintDate = futureReprint))
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus("custom-status", today = today, reprintDate = futureReprint))
+        assertEquals(AvailabilityStatus.REPRINT, availabilityStatus("OutOfStock", today = today, reprintDate = today))
+
+        assertEquals(AvailabilityStatus.AVAILABLE, availabilityStatus("InStock", today = today, reprintDate = futureReprint))
+        assertEquals(AvailabilityStatus.PREORDER, availabilityStatus("OutOfStock", releaseDate = futureRelease, today = today, reprintDate = futureReprint))
+        assertEquals(AvailabilityStatus.UNAVAILABLE, availabilityStatus("OutOfStock", today = today, reprintDate = pastReprint))
+    }
+
+    @Test
+    fun `availabilityLabel formatta correttamente ristampa con e senza data`() {
+        val reprintWithDate = offer(39.9, "reprint").copy(reprintDate = LocalDate.of(2027, 3, 20))
+        val reprintWithoutDate = offer(39.9, "ristampa")
+
+        assertEquals("Ristampa 20/03/2027", availabilityLabel(reprintWithDate))
+        assertEquals("Ristampa", availabilityLabel(reprintWithoutDate))
     }
 
     @Test

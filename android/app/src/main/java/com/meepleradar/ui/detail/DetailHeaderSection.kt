@@ -32,6 +32,8 @@ import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.ui.components.GameCover
 import com.meepleradar.ui.components.RatingBadge
+import com.meepleradar.ui.components.ReprintBadge
+import com.meepleradar.ui.components.shouldShowReprintBadge
 import com.meepleradar.ui.incoming.dateLabel
 
 @Composable
@@ -84,6 +86,10 @@ internal fun DetailHeader(content: DetailUiState.Content, imageLookup: BoardGame
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+
+                    if (content.item.shouldShowReprintBadge()) {
+                        ReprintBadge(reprintDate = content.item.reprintDate)
                     }
 
                     Row(

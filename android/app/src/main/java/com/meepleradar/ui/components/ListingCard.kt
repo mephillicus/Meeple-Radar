@@ -42,11 +42,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.meepleradar.data.model.AvailabilityStatus
 import com.meepleradar.data.model.Game
 import com.meepleradar.data.model.IncomingItem
 import com.meepleradar.data.model.ItemKind
 import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.Price
+import com.meepleradar.data.model.availabilityStatus
 import com.meepleradar.data.remote.BoardGameImageLookup
 import com.meepleradar.ui.incoming.availabilityColor
 import com.meepleradar.ui.incoming.bestPriceLabel
@@ -54,11 +56,16 @@ import com.meepleradar.ui.incoming.bestPricedOffer
 import com.meepleradar.ui.incoming.dateLabel
 import com.meepleradar.ui.incoming.offerPriceColor
 import com.meepleradar.ui.incoming.orderedOffersForDisplay
+import com.meepleradar.ui.incoming.reprintLabel
 import com.meepleradar.ui.theme.BggGoldBackground
 import com.meepleradar.ui.theme.BggGoldDarkBackground
 import com.meepleradar.ui.theme.BggGoldDarkText
 import com.meepleradar.ui.theme.BggGoldText
 import com.meepleradar.ui.theme.MeepleRadarTheme
+import com.meepleradar.ui.theme.ReprintRed
+import com.meepleradar.ui.theme.ReprintRedBackground
+import com.meepleradar.ui.theme.ReprintRedDark
+import com.meepleradar.ui.theme.ReprintRedDarkBackground
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -146,6 +153,10 @@ fun ListingCard(
                             modifier = Modifier.size(6.dp),
                         ) {}
                     }
+                }
+
+                if (item.shouldShowReprintBadge()) {
+                    ReprintBadge(reprintDate = item.reprintDate)
                 }
 
                 // Price, Price-Drop Badge, Rating Badge, and Small Action Buttons (Favorite & Ignore)
@@ -327,6 +338,32 @@ fun PriceDropBadge(dropPct: Double, modifier: Modifier = Modifier) {
         )
     }
 }
+
+@Composable
+fun ReprintBadge(reprintDate: LocalDate?, modifier: Modifier = Modifier) {
+    val isDark = isSystemInDarkTheme()
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = if (isDark) ReprintRedDarkBackground else ReprintRedBackground,
+    ) {
+        Text(
+            text = reprintLabel(reprintDate),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDark) ReprintRedDark else ReprintRed,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
+}
+
+internal fun IncomingItem.shouldShowReprintBadge(today: LocalDate = LocalDate.now()): Boolean =
+    reprintDate != null || offers.any {
+        availabilityStatus(it.availability, it.releaseDate, today, it.reprintDate) == AvailabilityStatus.REPRINT
+    }
 
 private fun IncomingItem.isExpansionGame(): Boolean =
     game?.kind?.contains("expansion", ignoreCase = true) == true ||

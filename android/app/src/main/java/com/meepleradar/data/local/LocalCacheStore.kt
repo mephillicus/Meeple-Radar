@@ -296,6 +296,7 @@ private data class CachedListing(
     val description: String? = null,
     val firstSeenAt: String? = null,
     val updatedAt: String? = null,
+    val reprintDate: String? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -313,6 +314,7 @@ private data class CachedListing(
         description = description,
         firstSeenAt = firstSeenAt,
         updatedAt = updatedAt,
+        reprintDate = reprintDate.asLocalDateOrNull(),
     )
     companion object {
         fun from(l: Listing) = CachedListing(
@@ -331,6 +333,7 @@ private data class CachedListing(
             description = l.description,
             firstSeenAt = l.firstSeenAt,
             updatedAt = l.updatedAt,
+            reprintDate = l.reprintDate?.toString(),
         )
     }
 }
@@ -374,6 +377,7 @@ private data class CachedProduct(
     val publisher: String? = null,
     val gameId: Long? = null,
     val updatedAt: String? = null,
+    val reprintDate: String? = null,
 ) {
     fun toDomain() = Product(
         id = id,
@@ -387,6 +391,7 @@ private data class CachedProduct(
         publisher = publisher,
         gameId = gameId,
         updatedAt = updatedAt,
+        reprintDate = reprintDate.asLocalDateOrNull(),
     )
     companion object {
         fun from(p: Product) = CachedProduct(
@@ -401,6 +406,7 @@ private data class CachedProduct(
             publisher = p.publisher,
             gameId = p.gameId,
             updatedAt = p.updatedAt,
+            reprintDate = p.reprintDate?.toString(),
         )
     }
 }

@@ -196,12 +196,12 @@ class FavoritesViewModel(
     ): Boolean = when (filter) {
         FavoriteAvailabilityFilter.ALL -> true
         FavoriteAvailabilityFilter.AVAILABLE -> item.offers.any {
-            availabilityStatus(it.availability, it.releaseDate, today) == AvailabilityStatus.AVAILABLE
+            availabilityStatus(it.availability, it.releaseDate, today, it.reprintDate) == AvailabilityStatus.AVAILABLE
         }
         FavoriteAvailabilityFilter.PREORDER -> (item.releaseDate != null && !item.releaseDate.isBefore(today)) ||
-            item.offers.any { availabilityStatus(it.availability, it.releaseDate, today) == AvailabilityStatus.PREORDER }
+            item.offers.any { availabilityStatus(it.availability, it.releaseDate, today, it.reprintDate) == AvailabilityStatus.PREORDER }
         FavoriteAvailabilityFilter.UNAVAILABLE -> {
-            val statuses = item.offers.map { availabilityStatus(it.availability, it.releaseDate, today) }
+            val statuses = item.offers.map { availabilityStatus(it.availability, it.releaseDate, today, it.reprintDate) }
             val isAvailable = AvailabilityStatus.AVAILABLE in statuses
             val isPreorder = (item.releaseDate != null && !item.releaseDate.isBefore(today)) ||
                 AvailabilityStatus.PREORDER in statuses

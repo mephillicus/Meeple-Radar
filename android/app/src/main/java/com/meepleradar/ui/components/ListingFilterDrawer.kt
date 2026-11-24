@@ -392,12 +392,13 @@ fun ListingFilterDrawerContent(
 
                 HorizontalDivider()
 
-                // Sezione 3: Disponibilità (2 righe da 3 colonne con pallino colorato)
+                // Sezione 3: Disponibilità (griglia a 3 colonne con pallino colorato)
                 val allAvailability = remember { AvailabilityStatus.entries.toSet() }
                 val availabilityOptions = remember {
                     listOf(
                         Triple(AvailabilityStatus.AVAILABLE, "Disp.", Color(0xFF22C55E)),
                         Triple(AvailabilityStatus.PREORDER, "Preord.", Color(0xFF3B82F6)),
+                        Triple(AvailabilityStatus.REPRINT, "Ristampa", Color(0xFFD32F2F)),
                         Triple(AvailabilityStatus.BACKORDER, "Richiesta", Color(0xFFF59E0B)),
                         Triple(AvailabilityStatus.UNAVAILABLE, "Non disp.", Color(0xFF94A3B8)),
                         Triple(AvailabilityStatus.DISCONTINUED, "Fuori prod.", Color(0xFFEF4444)),
@@ -443,6 +444,9 @@ fun ListingFilterDrawerContent(
                                     },
                                     modifier = Modifier.weight(1f),
                                 )
+                            }
+                            repeat(3 - rowOptions.size) {
+                                Spacer(Modifier.weight(1f))
                             }
                         }
                     }

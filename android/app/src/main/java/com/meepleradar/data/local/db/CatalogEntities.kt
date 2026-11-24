@@ -36,6 +36,7 @@ data class ListingEntity(
     val description: String?,
     @ColumnInfo(name = "first_seen_at") val firstSeenAt: String?,
     @ColumnInfo(name = "updated_at") val updatedAt: String?,
+    @ColumnInfo(name = "reprint_date") val reprintDate: String? = null,
 ) {
     fun toDomain() = Listing(
         id = id,
@@ -53,6 +54,7 @@ data class ListingEntity(
         description = description,
         firstSeenAt = firstSeenAt,
         updatedAt = updatedAt,
+        reprintDate = reprintDate.asLocalDateOrNull(),
     )
 
     companion object {
@@ -72,6 +74,7 @@ data class ListingEntity(
             description = listing.description,
             firstSeenAt = listing.firstSeenAt,
             updatedAt = listing.updatedAt,
+            reprintDate = listing.reprintDate?.toString(),
         )
     }
 }
@@ -138,6 +141,7 @@ data class ProductEntity(
     val publisher: String?,
     @ColumnInfo(name = "game_id") val gameId: Long?,
     @ColumnInfo(name = "updated_at") val updatedAt: String?,
+    @ColumnInfo(name = "reprint_date") val reprintDate: String? = null,
 ) {
     fun toDomain() = Product(
         id = id,
@@ -151,6 +155,7 @@ data class ProductEntity(
         publisher = publisher,
         gameId = gameId,
         updatedAt = updatedAt,
+        reprintDate = reprintDate.asLocalDateOrNull(),
     )
 
     companion object {
@@ -166,6 +171,7 @@ data class ProductEntity(
             publisher = product.publisher,
             gameId = product.gameId,
             updatedAt = product.updatedAt,
+            reprintDate = product.reprintDate?.toString(),
         )
     }
 }

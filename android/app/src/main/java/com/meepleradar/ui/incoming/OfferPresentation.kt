@@ -9,15 +9,18 @@ import com.meepleradar.data.model.Offer
 import com.meepleradar.data.model.availabilityStatus
 import com.meepleradar.ui.theme.BggGoldDarkText
 import com.meepleradar.ui.theme.BggGoldText
+import com.meepleradar.ui.theme.ReprintRed
+import com.meepleradar.ui.theme.ReprintRedDark
 
 private val UnknownAvailabilityDark = Color(0xFF38BDF8)
 private val UnknownAvailabilityLight = Color(0xFF0284C7)
 
-fun availabilityLabel(offer: Offer): String? = when (availabilityStatus(offer.availability, offer.releaseDate)) {
+fun availabilityLabel(offer: Offer): String? = when (availabilityStatus(offer.availability, offer.releaseDate, reprintDate = offer.reprintDate)) {
     AvailabilityStatus.AVAILABLE -> "Disponibile"
     AvailabilityStatus.UNAVAILABLE -> "Non disponibile"
     AvailabilityStatus.PREORDER -> "In preordine"
     AvailabilityStatus.BACKORDER -> "Ordinabile su richiesta"
+    AvailabilityStatus.REPRINT -> reprintLabel(offer.reprintDate)
     AvailabilityStatus.DISCONTINUED -> "Fuori produzione"
     AvailabilityStatus.UNKNOWN -> offer.availability
         ?.takeIf { it.isNotBlank() }
@@ -27,7 +30,12 @@ fun availabilityLabel(offer: Offer): String? = when (availabilityStatus(offer.av
 fun lowestComparableEuroPrice(offers: List<Offer>): Double? = offers
     .asSequence()
     .filter { it.price?.currency == "EUR" }
-    .filter { availabilityStatus(it.availability, it.releaseDate) !in setOf(AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED) }
+    .filter {
+        availabilityStatus(it.availability, it.releaseDate, reprintDate = it.reprintDate) !in setOf(
+            AvailabilityStatus.UNAVAILABLE,
+            AvailabilityStatus.DISCONTINUED,
+        )
+    }
     .mapNotNull { it.price?.amount?.takeIf { amount -> amount.isFinite() && amount >= 0.0 } }
     .minOrNull()
 
@@ -36,13 +44,16 @@ fun bestComparableEuroOffers(offers: List<Offer>): Set<Offer> {
     return offers.filter { offer ->
         offer.price?.currency == "EUR" &&
             offer.price.amount == lowestPrice &&
-            availabilityStatus(offer.availability, offer.releaseDate) !in setOf(AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED)
+            availabilityStatus(offer.availability, offer.releaseDate, reprintDate = offer.reprintDate) !in setOf(
+                AvailabilityStatus.UNAVAILABLE,
+                AvailabilityStatus.DISCONTINUED,
+            )
     }.toSet()
 }
 
 fun orderedOffersForDisplay(offers: List<Offer>): List<Offer> = offers.sortedWith(
     compareBy<Offer> {
-        when (availabilityStatus(it.availability, it.releaseDate)) {
+        when (availabilityStatus(it.availability, it.releaseDate, reprintDate = it.reprintDate)) {
             AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED -> 1
             else -> 0
         }
@@ -65,20 +76,23 @@ fun bestPricedOffer(offers: List<Offer>): Offer? {
 }
 
 @Composable
-fun availabilityColor(offer: Offer): Color = when (availabilityStatus(offer.availability, offer.releaseDate)) {
+fun availabilityColor(offer: Offer): Color = when (availabilityStatus(offer.availability, offer.releaseDate, reprintDate = offer.reprintDate)) {
     AvailabilityStatus.AVAILABLE -> MaterialTheme.colorScheme.tertiary
     AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED -> MaterialTheme.colorScheme.error
     AvailabilityStatus.PREORDER -> MaterialTheme.colorScheme.primary
     AvailabilityStatus.BACKORDER -> MaterialTheme.colorScheme.secondary
+    AvailabilityStatus.REPRINT -> if (isSystemInDarkTheme()) ReprintRedDark else ReprintRed
     AvailabilityStatus.UNKNOWN -> unknownAvailabilityColor(offer)
 }
 
 @Composable
 fun offerPriceColor(offer: Offer, offers: List<Offer>): Color {
-    return when (availabilityStatus(offer.availability, offer.releaseDate)) {
+    val status = availabilityStatus(offer.availability, offer.releaseDate, reprintDate = offer.reprintDate)
+    return when (status) {
         AvailabilityStatus.UNAVAILABLE, AvailabilityStatus.DISCONTINUED -> MaterialTheme.colorScheme.error
         AvailabilityStatus.PREORDER -> MaterialTheme.colorScheme.primary
         AvailabilityStatus.BACKORDER -> MaterialTheme.colorScheme.secondary
+        AvailabilityStatus.REPRINT -> if (isSystemInDarkTheme()) ReprintRedDark else ReprintRed
         AvailabilityStatus.UNKNOWN -> unknownAvailabilityColor(offer)
         else -> {
             val lowestPrice = lowestComparableEuroPrice(offers)
@@ -87,7 +101,7 @@ fun offerPriceColor(offer: Offer, offers: List<Offer>): Color {
                     MaterialTheme.colorScheme.tertiary
                 offer.price?.currency == "EUR" && lowestPrice != null ->
                     if (isSystemInDarkTheme()) BggGoldDarkText else BggGoldText
-                availabilityStatus(offer.availability, offer.releaseDate) == AvailabilityStatus.AVAILABLE ->
+                status == AvailabilityStatus.AVAILABLE ->
                     MaterialTheme.colorScheme.tertiary
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             }
