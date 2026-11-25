@@ -12,11 +12,13 @@ export function normalizeTitle(title: string): string {
   s = s.replace(/\bs#!t(s?)\b/g, 'shit$1').replace(/\bsh!t(s?)\b/g, 'shit$1')
   // 3. Punteggiatura separatrice (-, –, —, /, :) -> spazio prima di rimuovere i caratteri non-word
   s = s.replace(/[-–—/:]+/g, ' ')
-  // 4. Rimozione caratteri non-word/non-space residui e collasso spazi
+  // 4. Congiunzione "&" circondata da spazi -> " e " (es. "Rivali & Rinnegati" -> "rivali e rinnegati", preserva "D&D" -> "dd")
+  s = s.replace(/\s+&\s+/g, ' e ')
+  // 5. Rimozione caratteri non-word/non-space residui e collasso spazi
   s = s.replace(/[^\w\s]/gu, '').replace(/\s+/g, ' ').trim()
-  // 5. Uniforma "<N> minutes" in "<N> minute"
+  // 6. Uniforma "<N> minutes" in "<N> minute"
   s = s.replace(/\b(\d+)\s+minutes\b/g, '$1 minute')
-  // 6. Rimuove suffissi generici di edizione/formato in coda (fino a 3 passate),
+  // 7. Rimuove suffissi generici di edizione/formato in coda (fino a 3 passate),
   //    solo se preceduti da almeno una parola (\s+).
   for (let i = 0; i < 3; i++) {
     const next = s.replace(TRAILING_SUFFIX_RE, '')

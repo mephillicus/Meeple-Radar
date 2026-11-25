@@ -37,6 +37,15 @@ test('normalizeTitle deduplica varianti di punteggiatura, minuti, suffissi descr
   expect(normalizeTitle('Gioco di Carte')).toBe('gioco di carte')
 })
 
+test('normalizeTitle uniforma la congiunzione & circondata da spazi a "e" preservando sigle compatte', () => {
+  expect(normalizeTitle('Ahoy: Rivali & Rinnegati')).toBe('ahoy rivali e rinnegati')
+  expect(normalizeTitle('Ahoy - Rivali e Rinnegati')).toBe('ahoy rivali e rinnegati')
+  expect(normalizeTitle('Ahoy: Fauci & Fortuna')).toBe('ahoy fauci e fortuna')
+  expect(normalizeTitle('Ahoy - Fauci E Fortuna')).toBe('ahoy fauci e fortuna')
+  expect(normalizeTitle('D&D')).toBe('dd')
+  expect(normalizeTitle('Cat&Mouse')).toBe('catmouse')
+})
+
 test('areTitlesNearDuplicate cattura varianti tipografiche/censurate vicine senza fondere numeri diversi', () => {
   expect(areTitlesNearDuplicate('adult sts', 'adult shits')).toBe(true)
   expect(areTitlesNearDuplicate('adult shits', 'adult shits')).toBe(true)
