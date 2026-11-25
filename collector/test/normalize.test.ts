@@ -46,6 +46,24 @@ test('normalizeTitle uniforma la congiunzione & circondata da spazi a "e" preser
   expect(normalizeTitle('Cat&Mouse')).toBe('catmouse')
 })
 
+test('normalizeTitle rimuove accenti e normalizza esp/espansione solo a metà titolo', () => {
+  expect(normalizeTitle('Alta Società')).toBe('alta societa')
+  expect(normalizeTitle('Alta Società')).toBe(normalizeTitle("ALTA SOCIETA'"))
+  expect(normalizeTitle('Simple e Madama – Dimmi di sì')).toBe('simple e madama dimmi di si')
+  expect(normalizeTitle('Simple e Madama – Dimmi di sì')).toBe(normalizeTitle("SIMPLE & MADAMA - DIMMI DI SI'"))
+  expect(normalizeTitle('Wingspan: Esp. Oceania')).toBe('wingspan oceania')
+  expect(normalizeTitle('Wingspan: Esp. Oceania')).toBe(normalizeTitle('Wingspan: Espansione Oceania'))
+  expect(normalizeTitle('Wyrmspan: Esp. Accademia dei draghi')).toBe('wyrmspan accademia dei draghi')
+  expect(normalizeTitle('Wyrmspan: Esp. Accademia dei draghi')).toBe(normalizeTitle('Wyrmspan - Accademia dei draghi'))
+  expect(normalizeTitle('Arkham Horror LCG - Le Chiavi Scarlatte, Esp. Campagna')).toBe(
+    'arkham horror lcg le chiavi scarlatte campagna',
+  )
+  expect(normalizeTitle('Arkham Horror LCG - Le Chiavi Scarlatte, Esp. Campagna')).toBe(
+    normalizeTitle('Arkham Horror LCG - Le Chiavi Scarlatte - Campagna'),
+  )
+  expect(normalizeTitle('Container: Expansion')).toBe('container expansion')
+})
+
 test('areTitlesNearDuplicate cattura varianti tipografiche/censurate vicine senza fondere numeri diversi', () => {
   expect(areTitlesNearDuplicate('adult sts', 'adult shits')).toBe(true)
   expect(areTitlesNearDuplicate('adult shits', 'adult shits')).toBe(true)
@@ -598,6 +616,13 @@ test('isNonBoardgameTitle filtra Funko varianti, statuette/blind box/bag clip, b
     'Pokemon - Bundle 6 Buste',
     'Ravensburger Minions 3 da 35 pezzi',
     'Puzzle 1000pz World Tour Santorini',
+    'D&D Unpainted Miniatures: Beholder',
+    'Magnete Flessibile Super Mario',
+    'Tote Bag Cotone Studio Ghibli',
+    'Zelda - Nintendo Switch',
+    'Mario Kart - Switch 2',
+    'Magic Spindown D20 Life Counter',
+    'Dragon Shield Codex Book Folio 360',
   ]
   for (const title of blockedTitles) {
     expect(isNonBoardgameTitle(title), `expected non-boardgame: ${title}`).toBe(true)

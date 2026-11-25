@@ -6,8 +6,8 @@ const TRAILING_SUFFIX_RE =
 
 export function normalizeTitle(title: string): string {
   // Normalizzazione deterministica anti-duplicato (allineata 1:1 con SQL public.normalize_collector_title):
-  // 1. Lowercase
-  let s = title.toLowerCase()
+  // 1. Lowercase + accent folding (es. "Alta Società" -> "alta societa", "Dimmi di sì" -> "dimmi di si")
+  let s = title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   // 2. De-offuscamento parole censurate (es. "Adult S#!ts" -> "adult shits")
   s = s.replace(/\bs#!t(s?)\b/g, 'shit$1').replace(/\bsh!t(s?)\b/g, 'shit$1')
   // 3. Punteggiatura separatrice (-, –, —, /, :) -> spazio prima di rimuovere i caratteri non-word
@@ -25,7 +25,13 @@ export function normalizeTitle(title: string): string {
     if (next === s) break
     s = next
   }
-  return s
+  // 8. Rimuove "esp" / "espansione" solo a metà titolo (preceduto e seguito da almeno una parola)
+  for (let i = 0; i < 2; i++) {
+    const next = s.replace(/(?<=\S)\s+(?:espansione|esp)\s+(?=\S)/g, ' ')
+    if (next === s) break
+    s = next
+  }
+  return s.replace(/\s+/g, ' ').trim()
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -559,6 +565,13 @@ const NON_BOARDGAME_PATTERNS: readonly RegExp[] = [
   /\bset\s+(?:di\s+)?dadi\b/i,
   /\bset\s+\d+\s+dadi\b/i,
   /\bdadi\s+custom\b/i,
+  // Residui Uplay (miniature da dipingere, magneti, tote bag, Nintendo Switch, spindown dice, folio)
+  /\bunpainted\s+miniatures\b/i,
+  /\bmagnete\s+flessibile\b/i,
+  /\btote\s+bag\b/i,
+  /\b(?:nintendo\s+switch|switch\s+2)\b/i,
+  /\bspindown\s+d\d+\b/i,
+  /\bcodex\s+book\s+folio\b/i,
 ]
 
 export function isNonBoardgameTitle(title: string): boolean {
