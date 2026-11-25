@@ -478,6 +478,22 @@ test('isNonBoardgameBrand filtra brand non-boardgame e gestisce eccezioni LEGO',
     'Sega',
     'FuRyu',
     'Taito',
+    'Two Dots',
+    'ToyLab',
+    'Zuru',
+    'Waboba',
+    'Playmobil',
+    'MGA Entertainment',
+    'Giochi Preziosi',
+    'Bburago',
+    'Jada',
+    'Stopuzzle',
+    'SD Toys',
+    'Ubisoft',
+    'Semic',
+    'Cinereplicas',
+    'Cosmic Group',
+    'Giunti',
   ]
   for (const brand of blockedBrands) {
     expect(isNonBoardgameBrand(brand, 'Prodotto Qualsiasi'), `expected blocked brand: ${brand}`).toBe(true)
@@ -572,6 +588,7 @@ test('isNonBoardgameTitle filtra Funko varianti, statuette/blind box/bag clip, b
     'Kingdom Hearts Bag Clip Blind Box Display (24 pezzi)',
     'Pokemon - Bundle 6 Buste',
     'Ravensburger Minions 3 da 35 pezzi',
+    'Puzzle 1000pz World Tour Santorini',
   ]
   for (const title of blockedTitles) {
     expect(isNonBoardgameTitle(title), `expected non-boardgame: ${title}`).toBe(true)
